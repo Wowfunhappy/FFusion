@@ -253,7 +253,7 @@ static enum PixelFormat FindPixFmtFromVideo(AVCodec *codec, AVCodecContext *avct
 	enum PixelFormat pix_fmt;
 	AVPacket pkt;
 
-	avcodec_get_context_defaults2(&tmpContext, CODEC_TYPE_VIDEO);
+	avcodec_get_context_defaults3(&tmpContext, AVMEDIA_TYPE_VIDEO);
 	avcodec_get_frame_defaults(&tmpFrame);
 	tmpContext.width = avctx->width;
 	tmpContext.height = avctx->height;
@@ -264,7 +264,7 @@ static enum PixelFormat FindPixFmtFromVideo(AVCodec *codec, AVCodecContext *avct
 	tmpContext.extradata = avctx->extradata;
 	tmpContext.extradata_size = avctx->extradata_size;
 
-	avcodec_open(&tmpContext, codec);
+	avcodec_open2(&tmpContext, codec, NULL);
 	av_init_packet(&pkt);
 	pkt.data = (UInt8*)data;
 	pkt.size = bufferSize;
@@ -281,7 +281,7 @@ static enum PixelFormat FindPixFmtFromVideo(AVCodec *codec, AVCodecContext *avct
 	return pix_fmt;
 }
 
-static void SetupMultithreadedDecoding(AVCodecContext *s, enum CodecID codecID)
+static void SetupMultithreadedDecoding(AVCodecContext *s, enum AVCodecID codecID)
 {
 	int nthreads = 1;
 	size_t len = 4;
@@ -609,7 +609,7 @@ pascal ComponentResult FFusionCodecInitialize(FFusionGlobals glob, ImageSubCodec
     return noErr;
 }
 
-static inline int shouldDecode(FFusionGlobals glob, enum CodecID codecID)
+static inline int shouldDecode(FFusionGlobals glob, enum AVCodecID codecID)
 {
 	FFusionDecodeAbilities decode = FFUSION_PREFER_DECODE;
 	if (glob->componentType == 'avc1'){
@@ -664,7 +664,7 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 
     if (!glob->avCodec)
     { OSType componentType = glob->componentType;
-	  enum CodecID codecID = getCodecID(componentType);
+	  enum AVCodecID codecID = getCodecID(componentType);
 
 #if TARGET_OS_MAC
 		SwitchCocoaToMultiThreadedMode();
@@ -690,7 +690,7 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
         // we do the same for the AVCodecContext since all context values are
         // correctly initialized when calling the alloc function
 
-        glob->avContext = avcodec_alloc_context2(CODEC_TYPE_VIDEO);
+        glob->avContext = avcodec_alloc_context3(AVMEDIA_TYPE_VIDEO);
 
 		// Use low delay
 		glob->avContext->flags |= CODEC_FLAG_LOW_DELAY;
@@ -822,7 +822,7 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 
         // Finally we open the avcodec
 
-        if (avcodec_open(glob->avContext, glob->avCodec))
+        if (avcodec_open2(glob->avContext, glob->avCodec, NULL))
         {
             Codecprintf(glob->fileLog, "Error opening avcodec!\n");
 
@@ -901,7 +901,7 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 
 static int qtTypeForFrameInfo(int original, int fftype, int skippable)
 {
-	if(fftype == FF_I_TYPE)
+	if(fftype == AV_PICTURE_TYPE_I)
 	{
 		if(!skippable)
 			return kCodecFrameTypeKey;
@@ -1009,7 +1009,7 @@ pascal ComponentResult FFusionCodecBeginBand(FFusionGlobals glob, CodecDecompres
 		else
 		{
 			/* Reset context, safe marking in such a case */
-			glob->begin.lastFrameType = FF_I_TYPE;
+			glob->begin.lastFrameType = AV_PICTURE_TYPE_I;
 			FFusionDataReadUnparsed(&(glob->data));
 			glob->begin.lastPFrameData = NULL;
 			redisplayFirstFrame = 1;
@@ -1049,7 +1049,7 @@ pascal ComponentResult FFusionCodecBeginBand(FFusionGlobals glob, CodecDecompres
 		}
 		else if(glob->packedType != PACKED_QUICKTIME_KNOWS_ORDER)
 		{
-			if(type == FF_B_TYPE && glob->packedType == PACKED_ALL_IN_FIRST_FRAME && glob->begin.futureType == 0)
+			if(type == AV_PICTURE_TYPE_B && glob->packedType == PACKED_ALL_IN_FIRST_FRAME && glob->begin.futureType == 0)
 				/* Badly framed.  We hit a B frame after it was supposed to be displayed, switch to delaying by a frame */
 				glob->packedType = PACKED_DELAY_BY_ONE_FRAME;
 			else if(glob->packedType == PACKED_DELAY_BY_ONE_FRAME && parsedBufSize < bufferSize - 16)
@@ -1057,11 +1057,11 @@ pascal ComponentResult FFusionCodecBeginBand(FFusionGlobals glob, CodecDecompres
 				glob->packedType = PACKED_ALL_IN_FIRST_FRAME;
 
 			myDrp->frameData = FFusionDataAppend(&(glob->data), buffer, parsedBufSize, type);
-			if(type != FF_I_TYPE)
+			if(type != AV_PICTURE_TYPE_I)
 				myDrp->frameData->prereqFrame = glob->begin.lastPFrameData;
 			if(glob->packedType == PACKED_DELAY_BY_ONE_FRAME)
 			{
-				if(type != FF_B_TYPE)
+				if(type != AV_PICTURE_TYPE_B)
 				{
 					FrameData *nextPFrame = myDrp->frameData;
 					FrameData *lastPFrame = glob->begin.lastPFrameData;
@@ -1080,10 +1080,10 @@ pascal ComponentResult FFusionCodecBeginBand(FFusionGlobals glob, CodecDecompres
 					type = displayType;
 				}
 			}
-			else if(type != FF_B_TYPE)
+			else if(type != AV_PICTURE_TYPE_B)
 				glob->begin.lastPFrameData = myDrp->frameData;
 
-			if(type == FF_I_TYPE && glob->packedType == PACKED_ALL_IN_FIRST_FRAME)
+			if(type == AV_PICTURE_TYPE_I && glob->packedType == PACKED_ALL_IN_FIRST_FRAME)
 				/* Wipe memory of past P frames */
 				glob->begin.futureType = 0;
 
@@ -1094,7 +1094,7 @@ pascal ComponentResult FFusionCodecBeginBand(FFusionGlobals glob, CodecDecompres
 				buffer += parsedBufSize;
 				bufferSize -= parsedBufSize;
 				success = ffusionParse(glob->begin.parser, buffer, bufferSize, &parsedBufSize, &type, &skippable, &skipped);
-				if(success && type == FF_B_TYPE)
+				if(success && type == AV_PICTURE_TYPE_B)
 				{
 					/* A B frame follows us, so setup the P frame for the future and set dependencies */
 					glob->begin.futureType = oldType;
@@ -1290,7 +1290,7 @@ pascal ComponentResult FFusionCodecDecodeBand(FFusionGlobals glob, ImageSubCodec
 	else
 		myDrp->buffer = retainBuffer(glob, (FFusionBuffer *)tempFrame.opaque);
 
-	if(tempFrame.pict_type == FF_I_TYPE)
+	if(tempFrame.pict_type == AV_PICTURE_TYPE_I)
 		/* Wipe memory of past P frames */
 		setFutureFrame(glob, NULL);
 	glob->decode.lastFrame = myDrp->frameNumber;

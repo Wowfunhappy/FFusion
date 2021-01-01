@@ -63,6 +63,20 @@
 #undef malloc
 #undef free
 
+//FIXME: get rid of this dependancy
+typedef struct ParseContext1{
+	ParseContext pc;
+	/* XXX/FIXME PC1 vs. PC */
+	/* MPEG-2-specific */
+	AVRational frame_rate;
+	int progressive_sequence;
+	int width, height;
+	
+	/* XXX: suppress that, needed by MPEG-4 */
+	struct MpegEncContext *enc;
+	int first_picture;
+} ParseContext1;
+
 static const int nfchans_tbl[8] = { 2, 1, 2, 3, 3, 4, 4, 5 };
 //RJVB
 #ifndef FFUSION_CODEC_ONLY
@@ -221,7 +235,7 @@ static int parse_mpeg4_stream(FFusionParserContext *parser, const uint8_t *buf, 
 	{ int parse_res = ff_mpeg4_decode_picture_header(s, gb);
 		if(parse_res == FRAME_SKIPPED) {
 			*out_buf_size = buf_size;
-			*type = FF_P_TYPE;
+			*type = AV_PICTURE_TYPE_P;
 			*skippable = 1;
 			*skipped = 1;
 		}
@@ -230,7 +244,7 @@ static int parse_mpeg4_stream(FFusionParserContext *parser, const uint8_t *buf, 
 	}
 
 	*type = s->pict_type;
-	*skippable = (*type == FF_B_TYPE);
+	*skippable = (*type == AV_PICTURE_TYPE_B);
 	*skipped = 0;
 
 	if(endOfFrame == END_NOT_FOUND)
@@ -250,7 +264,7 @@ static int parse_mpeg12_stream(FFusionParserContext *ffparser, const uint8_t *bu
 
 	*out_buf_size = buf_size;
 	*type = ffparser->pc->pict_type;
-	*skippable = *type == FF_B_TYPE;
+	*skippable = *type == AV_PICTURE_TYPE_B;
 	*skipped = 0;
 
 	return 1;
@@ -535,8 +549,8 @@ static int inline decode_slice_header(H264ParserContext *context, const uint8_t 
 	int field_pic_flag = 0;
 	int bottom_field_flag = 0;
 	int frame_number;
-//	static const uint8_t slice_type_map[5] = {FF_P_TYPE, FF_B_TYPE, FF_I_TYPE, FF_SP_TYPE, FF_SI_TYPE};
-	static const uint8_t slice_type_map[5] = {FF_P_TYPE, FF_P_TYPE, FF_I_TYPE, FF_SP_TYPE, FF_SI_TYPE};
+//	static const uint8_t slice_type_map[5] = {AV_PICTURE_TYPE_P, AV_PICTURE_TYPE_B, AV_PICTURE_TYPE_I, AV_PICTURE_TYPE_SP, AV_PICTURE_TYPE_SI};
+	static const uint8_t slice_type_map[5] = {AV_PICTURE_TYPE_P, AV_PICTURE_TYPE_P, AV_PICTURE_TYPE_I, AV_PICTURE_TYPE_SP, AV_PICTURE_TYPE_SI};
 
 	init_get_bits(gb, buf, 8 * buf_size);
 
@@ -749,7 +763,7 @@ static int inline decode_nals(H264ParserContext *context, const uint8_t *buf, in
 						if(pts > context->prevPts)
 						{
 							if(pts < context->prevPts)
-								lowestType = FF_B_TYPE;
+								lowestType = AV_PICTURE_TYPE_B;
 							context->prevPts = pts;
 						}
 					}
@@ -758,7 +772,7 @@ static int inline decode_nals(H264ParserContext *context, const uint8_t *buf, in
 				// Parser users assume I-frames are IDR-frames
 				// but in H.264 they don't have to be.
 				// Mark these as P-frames if they effectively are.
-				if (lowestType == FF_I_TYPE) lowestType = FF_P_TYPE;
+				if (lowestType == AV_PICTURE_TYPE_I) lowestType = AV_PICTURE_TYPE_P;
 			}
 			else if(nalType == 5)
 			{
@@ -770,7 +784,7 @@ static int inline decode_nals(H264ParserContext *context, const uint8_t *buf, in
 				*precedesAPastFrame = 0;
 #endif
 				*skippable = 0;
-				lowestType = FF_I_TYPE;
+				lowestType = AV_PICTURE_TYPE_I;
 			}
 		}
 		buf_index += nalsize;

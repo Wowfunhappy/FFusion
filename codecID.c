@@ -19,7 +19,7 @@
 
 int getCodecID(OSType componentType)
 {
-	enum CodecID codecID = CODEC_ID_NONE;
+	enum AVCodecID codecID = CODEC_ID_NONE;
 	switch(componentType)
 	{
 

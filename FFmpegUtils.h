@@ -58,8 +58,8 @@ void FFASBDToAVCodecContext(AudioStreamBasicDescription *asbd, AVCodecContext *a
 
 void FFInitFFmpeg();
 
-enum CodecID FFFourCCToCodecID(OSType formatID);
-OSType FFCodecIDToFourCC(enum CodecID codecID);
+enum AVCodecID FFFourCCToCodecID(OSType formatID);
+OSType FFCodecIDToFourCC(enum AVCodecID codecID);
 
 #ifdef __cplusplus
 }

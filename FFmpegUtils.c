@@ -251,9 +251,9 @@ void FFInitFFmpeg()
 		if( cpuFlags & AV_CPU_FLAG_SSE42 ){
 			strncat( cpuFlagString, " SSE42", sizeof(cpuFlagString) - strlen(cpuFlagString) - 1 );
 		}
-		if( cpuFlags & AV_CPU_FLAG_IWMMXT ){
+		/*if( cpuFlags & AV_CPU_FLAG_IWMMXT ){
 			strncat( cpuFlagString, " IWMMXT", sizeof(cpuFlagString) - strlen(cpuFlagString) - 1 );
-		}
+		}*/
 		Codecprintf( stderr, "Extensions supported by the current CPU: %s\n", cpuFlagString );
 #ifdef _NSLOGGERCLIENT_H
 		NSCodecFlushLog();
@@ -296,7 +296,7 @@ static const struct {
 };
 #endif
 
-enum CodecID FFFourCCToCodecID(OSType formatID)
+enum AVCodecID FFFourCCToCodecID(OSType formatID)
 {
 #ifndef FFUSION_CODEC_ONLY
 	for (int i = 0; kAudioCodecMap[i].codecID != CODEC_ID_NONE; i++) {
@@ -307,7 +307,7 @@ enum CodecID FFFourCCToCodecID(OSType formatID)
 	return CODEC_ID_NONE;
 }
 
-OSType FFCodecIDToFourCC(enum CodecID codecID)
+OSType FFCodecIDToFourCC(enum AVCodecID codecID)
 {
 #ifndef FFUSION_CODEC_ONLY
 	for (int i = 0; kAudioCodecMap[i].codecID != CODEC_ID_NONE; i++) {

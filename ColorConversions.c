@@ -609,7 +609,7 @@ static FASTCALL void ClearY422(UInt8 *baseAddr, long rowBytes, int width, int he
 	}
 }
 
-OSType ColorConversionDstForPixFmt(enum CodecID codecID, enum PixelFormat ffPixFmt)
+OSType ColorConversionDstForPixFmt(enum AVCodecID codecID, enum PixelFormat ffPixFmt)
 {
 	switch (ffPixFmt) {
 		case PIX_FMT_RGB555LE:
@@ -643,7 +643,7 @@ OSType ColorConversionDstForPixFmt(enum CodecID codecID, enum PixelFormat ffPixF
 	}
 }
 
-int ColorConversionFindFor( ColorConversionFuncs *funcs, enum CodecID codecID, enum PixelFormat ffPixFmt,
+int ColorConversionFindFor( ColorConversionFuncs *funcs, enum AVCodecID codecID, enum PixelFormat ffPixFmt,
 						   AVPicture *ffPicture, OSType qtPixFmt, UInt8 *baseAddr, long rowBytes, int width, int height )
 {
 	switch (ffPixFmt) {

@@ -63,7 +63,7 @@ int prepare_track(ff_global_ptr storage, Track targetTrack, Handle dataRef, OSTy
 	/* Search the AVFormatContext for a video stream */
 	for(j = 0; j < ic->nb_streams && !outstr; j++) {
 		st = ic->streams[j];
-		if(st->codec->codec_type == CODEC_TYPE_VIDEO)
+		if(st->codec->codec_type == AVMEDIA_TYPE_VIDEO)
 			outstr = st;
 	}
 // RJVB
@@ -71,7 +71,7 @@ int prepare_track(ff_global_ptr storage, Track targetTrack, Handle dataRef, OSTy
 	/* Search the AVFormatContext for an audio stream (no video stream exists) */
 	for(j = 0; j < ic->nb_streams && !outstr; j++) {
 		st = ic->streams[j];
-		if(st->codec->codec_type == CODEC_TYPE_AUDIO)
+		if(st->codec->codec_type == AVMEDIA_TYPE_AUDIO)
 			outstr = st;
 	}
 #endif
@@ -83,11 +83,11 @@ int prepare_track(ff_global_ptr storage, Track targetTrack, Handle dataRef, OSTy
 	map->index = st->index;
 	map->str = outstr;
 
-	if(st->codec->codec_type == CODEC_TYPE_VIDEO)
+	if(st->codec->codec_type == AVMEDIA_TYPE_VIDEO)
 		initialize_video_map(map, targetTrack, dataRef, dataRefType, storage->firstFrames + st->index);
 // RJVB
 #ifndef FFUSION_CODEC_ONLY
-	else if(st->codec->codec_type == CODEC_TYPE_AUDIO)
+	else if(st->codec->codec_type == AVMEDIA_TYPE_AUDIO)
 		initialize_audio_map(map, targetTrack, dataRef, dataRefType, storage->firstFrames + st->index);
 #endif
 
@@ -325,7 +325,7 @@ bail:
 } /* initialize_audio_map() */
 #endif
 
-OSType map_video_codec_to_mov_tag(enum CodecID codec_id)
+OSType map_video_codec_to_mov_tag(enum AVCodecID codec_id)
 {
 	switch(codec_id) {
 		case CODEC_ID_FLV1:
@@ -340,7 +340,7 @@ OSType map_video_codec_to_mov_tag(enum CodecID codec_id)
 	return 0;
 }
 
-OSType forced_map_video_codec_to_mov_tag(enum CodecID codec_id)
+OSType forced_map_video_codec_to_mov_tag(enum AVCodecID codec_id)
 {
 	switch (codec_id) {
 		case CODEC_ID_H264:
@@ -352,7 +352,7 @@ OSType forced_map_video_codec_to_mov_tag(enum CodecID codec_id)
 }
 
 /* maps the codec_id tag of libavformat to a constant the AudioToolbox can work with */
-void map_avi_to_mov_tag(enum CodecID codec_id, AudioStreamBasicDescription *asbd, NCStream *map, int channels)
+void map_avi_to_mov_tag(enum AVCodecID codec_id, AudioStreamBasicDescription *asbd, NCStream *map, int channels)
 {
 	OSType fourcc = FFCodecIDToFourCC(codec_id);
 

@@ -94,7 +94,7 @@ struct _ff_global_context {
 	int map_count;
 	int64_t header_offset;
 	
-	AVPacket firstFrames[MAX_STREAMS];
+	AVPacket firstFrames[16];
 };
 typedef struct _ff_global_context ff_global_context;
 typedef ff_global_context *ff_global_ptr;
@@ -103,7 +103,7 @@ typedef ff_global_context *ff_global_ptr;
 ComponentResult check_system();
 
 /* Public interface of the DataRef interface */
-OSStatus url_open_dataref(ByteIOContext **pb, Handle dataRef, OSType dataRefType, DataHandler *dataHandler, Boolean *wideSupport, int64_t *dataSize);
+OSStatus url_open_dataref(AVIOContext **pb, Handle dataRef, OSType dataRefType, DataHandler *dataHandler, Boolean *wideSupport, int64_t *dataSize);
 
 /* Import routines */
 int prepare_track(ff_global_ptr storage, Track targetTrack, Handle dataRef, OSType dataRefType);
@@ -117,9 +117,9 @@ ComponentResult import_with_idle(ff_global_ptr storage, long inFlags, long *outF
 ComponentResult create_placeholder_track(Movie movie, Track *placeholderTrack, TimeValue duration, Handle dataRef, OSType dataRefType);
 void send_movie_changed_notification(Movie movie);
 
-OSType map_video_codec_to_mov_tag(enum CodecID codec_id);
-OSType forced_map_video_codec_to_mov_tag(enum CodecID codec_id);
-void map_avi_to_mov_tag(enum CodecID codec_id, AudioStreamBasicDescription *asbd, NCStream *map, int channels);
+OSType map_video_codec_to_mov_tag(enum AVCodecID codec_id);
+OSType forced_map_video_codec_to_mov_tag(enum AVCodecID codec_id);
+void map_avi_to_mov_tag(enum AVCodecID codec_id, AudioStreamBasicDescription *asbd, NCStream *map, int channels);
 uint8_t *create_cookie(AVCodecContext *codec, size_t *cookieSize, UInt32 formatID, int vbr);
 Handle create_strf_ext(AVCodecContext *codec);
 void set_track_clean_aperture_ext(ImageDescriptionHandle imgDesc, Fixed displayW, Fixed displayH, Fixed pixelW, Fixed pixelH);
