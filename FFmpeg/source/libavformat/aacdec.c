@@ -22,18 +22,19 @@
 
 #include "libavutil/intreadwrite.h"
 #include "avformat.h"
+#include "internal.h"
 #include "rawdec.h"
 #include "id3v1.h"
-
+#include "apetag.h"
 
 static int adts_aac_probe(AVProbeData *p)
 {
     int max_frames = 0, first_frames = 0;
     int fsize, frames;
-    uint8_t *buf0 = p->buf;
-    uint8_t *buf2;
-    uint8_t *buf;
-    uint8_t *end = buf0 + p->buf_size - 7;
+    const uint8_t *buf0 = p->buf;
+    const uint8_t *buf2;
+    const uint8_t *buf;
+    const uint8_t *end = buf0 + p->buf_size - 7;
 
     buf = buf0;
 
@@ -44,51 +45,56 @@ static int adts_aac_probe(AVProbeData *p)
             uint32_t header = AV_RB16(buf2);
             if((header&0xFFF6) != 0xFFF0)
                 break;
-            fsize = (AV_RB32(buf2+3)>>13) & 0x8FFF;
+            fsize = (AV_RB32(buf2 + 3) >> 13) & 0x1FFF;
             if(fsize < 7)
                 break;
+            fsize = FFMIN(fsize, end - buf2);
             buf2 += fsize;
         }
         max_frames = FFMAX(max_frames, frames);
         if(buf == buf0)
             first_frames= frames;
     }
-    if   (first_frames>=3) return AVPROBE_SCORE_MAX/2+1;
-    else if(max_frames>500)return AVPROBE_SCORE_MAX/2;
-    else if(max_frames>=3) return AVPROBE_SCORE_MAX/4;
+    if   (first_frames>=3) return AVPROBE_SCORE_EXTENSION + 1;
+    else if(max_frames>500)return AVPROBE_SCORE_EXTENSION;
+    else if(max_frames>=3) return AVPROBE_SCORE_EXTENSION / 2;
     else if(max_frames>=1) return 1;
     else                   return 0;
 }
 
-static int adts_aac_read_header(AVFormatContext *s,
-                                AVFormatParameters *ap)
+static int adts_aac_read_header(AVFormatContext *s)
 {
     AVStream *st;
 
-    st = av_new_stream(s, 0);
+    st = avformat_new_stream(s, NULL);
     if (!st)
         return AVERROR(ENOMEM);
 
     st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
-    st->codec->codec_id = s->iformat->value;
-    st->need_parsing = AVSTREAM_PARSE_FULL;
+    st->codec->codec_id = s->iformat->raw_codec_id;
+    st->need_parsing = AVSTREAM_PARSE_FULL_RAW;
 
     ff_id3v1_read(s);
+    if (s->pb->seekable &&
+        !av_dict_get(s->metadata, "", NULL, AV_DICT_IGNORE_SUFFIX)) {
+        int64_t cur = avio_tell(s->pb);
+        ff_ape_parse_tag(s);
+        avio_seek(s->pb, cur, SEEK_SET);
+    }
 
     //LCM of all possible ADTS sample rates
-    av_set_pts_info(st, 64, 1, 28224000);
+    avpriv_set_pts_info(st, 64, 1, 28224000);
 
     return 0;
 }
 
-AVInputFormat aac_demuxer = {
-    "aac",
-    NULL_IF_CONFIG_SMALL("raw ADTS AAC"),
-    0,
-    adts_aac_probe,
-    adts_aac_read_header,
-    ff_raw_read_partial_packet,
-    .flags= AVFMT_GENERIC_INDEX,
-    .extensions = "aac",
-    .value = CODEC_ID_AAC,
+AVInputFormat ff_aac_demuxer = {
+    .name           = "aac",
+    .long_name      = NULL_IF_CONFIG_SMALL("raw ADTS AAC (Advanced Audio Coding)"),
+    .read_probe     = adts_aac_probe,
+    .read_header    = adts_aac_read_header,
+    .read_packet    = ff_raw_read_partial_packet,
+    .flags          = AVFMT_GENERIC_INDEX,
+    .extensions     = "aac",
+    .raw_codec_id   = AV_CODEC_ID_AAC,
 };

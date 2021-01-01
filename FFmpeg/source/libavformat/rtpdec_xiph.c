@@ -27,12 +27,13 @@
  * @author Josh Allmann <joshua.allmann@gmail.com>
  */
 
+#include "libavutil/attributes.h"
+#include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
 #include "libavutil/base64.h"
 #include "libavcodec/bytestream.h"
 
-#include <assert.h>
-
+#include "internal.h"
 #include "rtpdec.h"
 #include "rtpdec_formats.h"
 
@@ -42,7 +43,7 @@
 struct PayloadContext {
     unsigned ident;             ///< 24-bit stream configuration identifier
     uint32_t timestamp;
-    ByteIOContext* fragment;    ///< buffer for split payloads
+    AVIOContext* fragment;    ///< buffer for split payloads
     uint8_t *split_buf;
     int split_pos, split_buf_len, split_buf_size;
     int split_pkts;
@@ -57,7 +58,7 @@ static inline void free_fragment_if_needed(PayloadContext * data)
 {
     if (data->fragment) {
         uint8_t* p;
-        url_close_dyn_buf(data->fragment, &p);
+        avio_close_dyn_buf(data->fragment, &p);
         av_free(p);
         data->fragment = NULL;
     }
@@ -70,12 +71,20 @@ static void xiph_free_context(PayloadContext * data)
     av_free(data);
 }
 
-static int xiph_handle_packet(AVFormatContext * ctx,
-                              PayloadContext * data,
-                              AVStream * st,
-                              AVPacket * pkt,
-                              uint32_t * timestamp,
-                              const uint8_t * buf, int len, int flags)
+static av_cold int xiph_vorbis_init(AVFormatContext *ctx, int st_index,
+                                    PayloadContext *data)
+{
+    if (st_index < 0)
+        return 0;
+    ctx->streams[st_index]->need_parsing = AVSTREAM_PARSE_HEADERS;
+    return 0;
+}
+
+
+static int xiph_handle_packet(AVFormatContext *ctx, PayloadContext *data,
+                              AVStream *st, AVPacket *pkt, uint32_t *timestamp,
+                              const uint8_t *buf, int len, uint16_t seq,
+                              int flags)
 {
 
     int ident, fragmented, tdt, num_pkts, pkt_len;
@@ -176,14 +185,14 @@ static int xiph_handle_packet(AVFormatContext * ctx,
         // end packet has been lost somewhere, so drop buffered data
         free_fragment_if_needed(data);
 
-        if((res = url_open_dyn_buf(&data->fragment)) < 0)
+        if((res = avio_open_dyn_buf(&data->fragment)) < 0)
             return res;
 
-        put_buffer(data->fragment, buf, pkt_len);
+        avio_write(data->fragment, buf, pkt_len);
         data->timestamp = *timestamp;
 
     } else {
-        assert(fragmented < 4);
+        av_assert1(fragmented < 4);
         if (data->timestamp != *timestamp) {
             // skip if fragmented timestamp is incorrect;
             // a start packet has been lost somewhere
@@ -198,23 +207,16 @@ static int xiph_handle_packet(AVFormatContext * ctx,
         }
 
         // copy data to fragment buffer
-        put_buffer(data->fragment, buf, pkt_len);
+        avio_write(data->fragment, buf, pkt_len);
 
         if (fragmented == 3) {
             // end of xiph data packet
-            av_init_packet(pkt);
-            pkt->size = url_close_dyn_buf(data->fragment, &pkt->data);
-
-            if (pkt->size < 0) {
+            int ret = ff_rtp_finalize_packet(pkt, &data->fragment, st->index);
+            if (ret < 0) {
                 av_log(ctx, AV_LOG_ERROR,
                        "Error occurred when getting fragment buffer.");
-                return pkt->size;
+                return ret;
             }
-
-            pkt->stream_index = st->index;
-            pkt->destruct = av_destruct_packet;
-
-            data->fragment = NULL;
 
             return 0;
         }
@@ -243,7 +245,7 @@ static int get_base128(const uint8_t ** buf, const uint8_t * buf_end)
 /**
  * Based off parse_packed_headers in Vorbis RTP
  */
-static unsigned int
+static int
 parse_packed_headers(const uint8_t * packed_headers,
                      const uint8_t * packed_headers_end,
                      AVCodecContext * codec, PayloadContext * xiph_data)
@@ -287,11 +289,11 @@ parse_packed_headers(const uint8_t * packed_headers,
      * -- FF_INPUT_BUFFER_PADDING_SIZE required */
     extradata_alloc = length + length/255 + 3 + FF_INPUT_BUFFER_PADDING_SIZE;
 
-    ptr = codec->extradata = av_malloc(extradata_alloc);
-    if (!ptr) {
+    if (ff_alloc_extradata(codec, extradata_alloc)) {
         av_log(codec, AV_LOG_ERROR, "Out of memory\n");
         return AVERROR(ENOMEM);
     }
+    ptr = codec->extradata;
     *ptr++ = 2;
     ptr += av_xiphlacing(ptr, length1);
     ptr += av_xiphlacing(ptr, length2);
@@ -313,11 +315,11 @@ static int xiph_parse_fmtp_pair(AVStream* stream,
 
     if (!strcmp(attr, "sampling")) {
         if (!strcmp(value, "YCbCr-4:2:0")) {
-            codec->pix_fmt = PIX_FMT_YUV420P;
+            codec->pix_fmt = AV_PIX_FMT_YUV420P;
         } else if (!strcmp(value, "YCbCr-4:4:2")) {
-            codec->pix_fmt = PIX_FMT_YUV422P;
+            codec->pix_fmt = AV_PIX_FMT_YUV422P;
         } else if (!strcmp(value, "YCbCr-4:4:4")) {
-            codec->pix_fmt = PIX_FMT_YUV444P;
+            codec->pix_fmt = AV_PIX_FMT_YUV444P;
         } else {
             av_log(codec, AV_LOG_ERROR,
                    "Unsupported pixel format %s\n", attr);
@@ -372,9 +374,12 @@ static int xiph_parse_fmtp_pair(AVStream* stream,
 }
 
 static int xiph_parse_sdp_line(AVFormatContext *s, int st_index,
-                                 PayloadContext *data, const char *line)
+                               PayloadContext *data, const char *line)
 {
     const char *p;
+
+    if (st_index < 0)
+        return 0;
 
     if (av_strstart(line, "fmtp:", &p)) {
         return ff_parse_fmtp(s->streams[st_index], data, p,
@@ -387,19 +392,20 @@ static int xiph_parse_sdp_line(AVFormatContext *s, int st_index,
 RTPDynamicProtocolHandler ff_theora_dynamic_handler = {
     .enc_name         = "theora",
     .codec_type       = AVMEDIA_TYPE_VIDEO,
-    .codec_id         = CODEC_ID_THEORA,
+    .codec_id         = AV_CODEC_ID_THEORA,
     .parse_sdp_a_line = xiph_parse_sdp_line,
-    .open             = xiph_new_context,
-    .close            = xiph_free_context,
+    .alloc            = xiph_new_context,
+    .free             = xiph_free_context,
     .parse_packet     = xiph_handle_packet
 };
 
 RTPDynamicProtocolHandler ff_vorbis_dynamic_handler = {
     .enc_name         = "vorbis",
     .codec_type       = AVMEDIA_TYPE_AUDIO,
-    .codec_id         = CODEC_ID_VORBIS,
+    .codec_id         = AV_CODEC_ID_VORBIS,
+    .init             = xiph_vorbis_init,
     .parse_sdp_a_line = xiph_parse_sdp_line,
-    .open             = xiph_new_context,
-    .close            = xiph_free_context,
+    .alloc            = xiph_new_context,
+    .free             = xiph_free_context,
     .parse_packet     = xiph_handle_packet
 };

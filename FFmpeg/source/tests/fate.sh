@@ -28,33 +28,36 @@ lock(){
 checkout(){
     case "$repo" in
         file:*|/*) src="${repo#file:}"      ;;
-        git:*)     git clone "$repo" "$src" ;;
-        svn:*)     svn co    "$repo" "$src" ;;
+        git:*)     git clone --quiet "$repo" "$src" ;;
     esac
 }
 
 update()(
     cd ${src} || return
     case "$repo" in
-        git:*) git pull ;;
-        svn:*) svn up   ;;
+        git:*) git pull --quiet ;;
     esac
 )
 
 configure()(
     cd ${build} || return
-    ${src}/configure                                                    \
+    ${shell} ${src}/configure                                           \
         --prefix="${inst}"                                              \
         --samples="${samples}"                                          \
         --enable-gpl                                                    \
+        --enable-memory-poisoning                                       \
+        --enable-avresample                                             \
         ${arch:+--arch=$arch}                                           \
         ${cpu:+--cpu="$cpu"}                                            \
         ${cross_prefix:+--cross-prefix="$cross_prefix"}                 \
+        ${as:+--as="$as"}                                               \
         ${cc:+--cc="$cc"}                                               \
+        ${ld:+--ld="$ld"}                                               \
         ${target_os:+--target-os="$target_os"}                          \
         ${sysroot:+--sysroot="$sysroot"}                                \
         ${target_exec:+--target-exec="$target_exec"}                    \
         ${target_path:+--target-path="$target_path"}                    \
+        ${target_samples:+--target-samples="$target_samples"}           \
         ${extra_cflags:+--extra-cflags="$extra_cflags"}                 \
         ${extra_ldflags:+--extra-ldflags="$extra_ldflags"}              \
         ${extra_libs:+--extra-libs="$extra_libs"}                       \
@@ -67,17 +70,18 @@ compile()(
 )
 
 fate()(
+    test "$build_only" = "yes" && return
     cd ${build} || return
     ${make} ${makeopts} -k fate
 )
 
 clean(){
-    rm -r ${build} ${inst}
+    rm -rf ${build} ${inst}
 }
 
 report(){
     date=$(date -u +%Y%m%d%H%M%S)
-    echo "fate:0:${date}:${slot}:${version}:$1:$2" >report
+    echo "fate:0:${date}:${slot}:${version}:$1:$2:${comment}" >report
     cat ${build}/config.fate ${build}/tests/data/fate/*.rep >>report
     test -n "$fate_recv" && $tar report *.log | gzip | $fate_recv
 }
@@ -93,8 +97,8 @@ lock ${workdir}     || die "${workdir} locked"
 cd ${workdir}       || die "cd ${workdir} failed"
 
 src=${workdir}/src
-build=${workdir}/build
-inst=${workdir}/install
+: ${build:=${workdir}/build}
+: ${inst:=${workdir}/install}
 
 test -d "$src" && update || checkout || die "Error fetching source"
 

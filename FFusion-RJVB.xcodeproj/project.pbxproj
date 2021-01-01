@@ -17,7 +17,6 @@
 		D620105116C5507C00DC6EE5 /* libavutil.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 11D4EFA20A3CE8C10066D45F /* libavutil.a */; };
 		D620105216C5507C00DC6EE5 /* libavcore.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 3DEFA3F8120560AD0097FE4C /* libavcore.a */; };
 		D620105316C5507C00DC6EE5 /* libavcodec.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 11D4EFA10A3CE8C10066D45F /* libavcodec.a */; };
-		D620108516C57CF400DC6EE5 /* FFmpeg-LICENSE.txt in Resources */ = {isa = PBXBuildFile; fileRef = D620108316C57CF400DC6EE5 /* FFmpeg-LICENSE.txt */; };
 		D620108616C57CF400DC6EE5 /* LICENSE-libopenjpeg1.txt in Resources */ = {isa = PBXBuildFile; fileRef = D620108416C57CF400DC6EE5 /* LICENSE-libopenjpeg1.txt */; };
 		D67BC47316B166FF00E26386 /* Perian_icon.icns in Resources */ = {isa = PBXBuildFile; fileRef = 83D1D6F40B4C85AB00E09EC9 /* Perian_icon.icns */; };
 		D67BC47816B166FF00E26386 /* ff_private.c in Sources */ = {isa = PBXBuildFile; fileRef = 11C85ED60A641E6400DF3D73 /* ff_private.c */; };
@@ -5024,7 +5023,6 @@
 			files = (
 				D67BC47316B166FF00E26386 /* Perian_icon.icns in Resources */,
 				D67BC4D816B1698400E26386 /* FFusionInfoPlist.strings in Resources */,
-				D620108516C57CF400DC6EE5 /* FFmpeg-LICENSE.txt in Resources */,
 				D620108616C57CF400DC6EE5 /* LICENSE-libopenjpeg1.txt in Resources */,
 				D617D1B916CE9B06000EC428 /* NSLogger-LICENSE.txt in Resources */,
 			);
@@ -5303,7 +5301,7 @@
 					DEBUG_BUILD,
 					FFUSION_CODEC_ONLY,
 				);
-				GCC_VERSION = org.macports.compilers.gcc.4.7;
+				GCC_VERSION = "";
 				HEADER_SEARCH_PATHS = (
 					"$(BUILT_PRODUCTS_DIR)/$(arch)",
 					libmatroska,
@@ -5357,7 +5355,7 @@
 				GCC_PRECOMPILE_PREFIX_HEADER = NO;
 				GCC_PREFIX_HEADER = "";
 				GCC_PREPROCESSOR_DEFINITIONS = FFUSION_CODEC_ONLY;
-				GCC_VERSION = org.macports.compilers.gcc.4.7;
+				GCC_VERSION = "";
 				HEADER_SEARCH_PATHS = (
 					"$(PROJECT_DIR)",
 					"FFmpeg/osx86/include/**",
@@ -5414,7 +5412,7 @@
 					DEBUG_BUILD,
 					FFUSION_CODEC_ONLY,
 				);
-				GCC_VERSION = org.macports.compilers.gcc.4.7;
+				GCC_VERSION = "";
 				HEADER_SEARCH_PATHS = (
 					"\\\"$(BUILT_PRODUCTS_DIR)\\\"/$(arch)",
 					libmatroska,

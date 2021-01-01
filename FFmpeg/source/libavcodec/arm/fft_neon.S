@@ -24,11 +24,10 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "asm.S"
+#include "libavutil/arm/asm.S"
 
 #define M_SQRT1_2 0.70710678118654752440
 
-        .text
 
 function fft4_neon
         vld1.32         {d0-d3}, [r0,:128]
@@ -144,7 +143,7 @@ function fft16_neon
         vswp            d29, d30                @ q14{r12,i12,i14,r15} q15{r13,i13,i15,r14}
         vadd.f32        q0,  q12, q13           @ {t1,t2,t5,t6}
         vadd.f32        q1,  q14, q15           @ {t1a,t2a,t5a,t6a}
-        movrel          r2,  X(ff_cos_16)
+        movrelx         r2,  X(ff_cos_16)
         vsub.f32        q13, q12, q13           @ {t3,t4,t7,t8}
         vrev64.32       d1,  d1
         vsub.f32        q15, q14, q15           @ {t3a,t4a,t7a,t8a}
@@ -291,7 +290,7 @@ function fft\n\()_neon
         bl              fft\n4\()_neon
         mov             r0,  r4
         pop             {r4, lr}
-        movrel          r1,  X(ff_cos_\n)
+        movrelx         r1,  X(ff_cos_\n)
         mov             r2,  #\n4/2
         b               fft_pass_neon
 endfunc
@@ -349,9 +348,7 @@ function ff_fft_permute_neon, export=1
         pop             {r4,pc}
 endfunc
 
-        .section .rodata
-        .align 4
-fft_tab_neon:
+const   fft_tab_neon
         .word fft4_neon
         .word fft8_neon
         .word fft16_neon
@@ -367,8 +364,12 @@ fft_tab_neon:
         .word fft16384_neon
         .word fft32768_neon
         .word fft65536_neon
-ELF     .size fft_tab_neon, . - fft_tab_neon
+endconst
 
-        .align 4
-pmmp:   .float  +1.0, -1.0, -1.0, +1.0
-mppm:   .float  -M_SQRT1_2, M_SQRT1_2, M_SQRT1_2, -M_SQRT1_2
+const   pmmp, align=4
+        .float          +1.0, -1.0, -1.0, +1.0
+endconst
+
+const   mppm, align=4
+        .float          -M_SQRT1_2, M_SQRT1_2, M_SQRT1_2, -M_SQRT1_2
+endconst

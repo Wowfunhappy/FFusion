@@ -34,14 +34,17 @@
 #include <string.h>
 
 #include "avcodec.h"
-#include "dsputil.h"
-#include "libavcore/imgutils.h"
+#include "internal.h"
+#include "libavutil/imgutils.h"
+#include "libavutil/internal.h"
+#include "libavutil/intreadwrite.h"
+#include "libavutil/mem.h"
 
 #include "truemotion1data.h"
 
 typedef struct TrueMotion1Context {
     AVCodecContext *avctx;
-    AVFrame frame;
+    AVFrame *frame;
 
     const uint8_t *buf;
     int size;
@@ -306,22 +309,21 @@ static void gen_vector_table24(TrueMotion1Context *s, const uint8_t *sel_vector_
  * there was an error while decoding the header */
 static int truemotion1_decode_header(TrueMotion1Context *s)
 {
-    int i;
+    int i, ret;
     int width_shift = 0;
     int new_pix_fmt;
     struct frame_header header;
-    uint8_t header_buffer[128];  /* logical maximum size of the header */
+    uint8_t header_buffer[128] = { 0 };  /* logical maximum size of the header */
     const uint8_t *sel_vector_table;
 
     header.header_size = ((s->buf[0] >> 5) | (s->buf[0] << 3)) & 0x7f;
-    if (s->buf[0] < 0x10)
+    if (s->buf[0] < 0x10 || header.header_size >= s->size)
     {
         av_log(s->avctx, AV_LOG_ERROR, "invalid header size (%d)\n", s->buf[0]);
-        return -1;
+        return AVERROR_INVALIDDATA;
     }
 
     /* unscramble the header bytes with a XOR operation */
-    memset(header_buffer, 0, 128);
     for (i = 1; i < header.header_size; i++)
         header_buffer[i - 1] = s->buf[i] ^ s->buf[i + 1];
 
@@ -342,7 +344,7 @@ static int truemotion1_decode_header(TrueMotion1Context *s)
         if (header.header_type > 3)
         {
             av_log(s->avctx, AV_LOG_ERROR, "invalid header type (%d)\n", header.header_type);
-            return -1;
+            return AVERROR_INVALIDDATA;
         } else if ((header.header_type == 2) || (header.header_type == 3)) {
             s->flags = header.flags;
             if (!(s->flags & FLAG_INTERFRAME))
@@ -353,16 +355,9 @@ static int truemotion1_decode_header(TrueMotion1Context *s)
         s->flags = FLAG_KEYFRAME;
 
     if (s->flags & FLAG_SPRITE) {
-        av_log(s->avctx, AV_LOG_INFO, "SPRITE frame found, please report the sample to the developers\n");
+        avpriv_request_sample(s->avctx, "Frame with sprite");
         /* FIXME header.width, height, xoffset and yoffset aren't initialized */
-#if 0
-        s->w = header.width;
-        s->h = header.height;
-        s->x = header.xoffset;
-        s->y = header.yoffset;
-#else
-        return -1;
-#endif
+        return AVERROR_PATCHWELCOME;
     } else {
         s->w = header.xsize;
         s->h = header.ysize;
@@ -370,14 +365,14 @@ static int truemotion1_decode_header(TrueMotion1Context *s)
             if ((s->w < 213) && (s->h >= 176))
             {
                 s->flags |= FLAG_INTERPOLATED;
-                av_log(s->avctx, AV_LOG_INFO, "INTERPOLATION selected, please report the sample to the developers\n");
+                avpriv_request_sample(s->avctx, "Interpolated frame");
             }
         }
     }
 
     if (header.compression >= 17) {
         av_log(s->avctx, AV_LOG_ERROR, "invalid compression type (%d)\n", header.compression);
-        return -1;
+        return AVERROR_INVALIDDATA;
     }
 
     if ((header.deltaset != s->last_deltaset) ||
@@ -391,28 +386,29 @@ static int truemotion1_decode_header(TrueMotion1Context *s)
             sel_vector_table = tables[header.vectable - 1];
         else {
             av_log(s->avctx, AV_LOG_ERROR, "invalid vector table id (%d)\n", header.vectable);
-            return -1;
+            return AVERROR_INVALIDDATA;
         }
     }
 
     if (compression_types[header.compression].algorithm == ALGO_RGB24H) {
-        new_pix_fmt = PIX_FMT_RGB32;
+        new_pix_fmt = AV_PIX_FMT_RGB32;
         width_shift = 1;
     } else
-        new_pix_fmt = PIX_FMT_RGB555; // RGB565 is supported as well
+        new_pix_fmt = AV_PIX_FMT_RGB555; // RGB565 is supported as well
 
     s->w >>= width_shift;
-    if (av_image_check_size(s->w, s->h, 0, s->avctx) < 0)
-        return -1;
+    if ((ret = av_image_check_size(s->w, s->h, 0, s->avctx)) < 0)
+        return ret;
 
     if (s->w != s->avctx->width || s->h != s->avctx->height ||
         new_pix_fmt != s->avctx->pix_fmt) {
-        if (s->frame.data[0])
-            s->avctx->release_buffer(s->avctx, &s->frame);
+        av_frame_unref(s->frame);
         s->avctx->sample_aspect_ratio = (AVRational){ 1 << width_shift, 1 };
         s->avctx->pix_fmt = new_pix_fmt;
         avcodec_set_dimensions(s->avctx, s->w, s->h);
         av_fast_malloc(&s->vert_pred, &s->vert_pred_size, s->avctx->width * sizeof(unsigned int));
+        if (!s->vert_pred)
+            return AVERROR(ENOMEM);
     }
 
     /* There is 1 change bit per 4 pixels, so each change byte represents
@@ -425,7 +421,7 @@ static int truemotion1_decode_header(TrueMotion1Context *s)
         if (compression_types[header.compression].algorithm == ALGO_RGB24H)
             gen_vector_table24(s, sel_vector_table);
         else
-        if (s->avctx->pix_fmt == PIX_FMT_RGB555)
+        if (s->avctx->pix_fmt == AV_PIX_FMT_RGB555)
             gen_vector_table15(s, sel_vector_table);
         else
             gen_vector_table16(s, sel_vector_table);
@@ -470,15 +466,19 @@ static av_cold int truemotion1_decode_init(AVCodecContext *avctx)
 
     // FIXME: it may change ?
 //    if (avctx->bits_per_sample == 24)
-//        avctx->pix_fmt = PIX_FMT_RGB24;
+//        avctx->pix_fmt = AV_PIX_FMT_RGB24;
 //    else
-//        avctx->pix_fmt = PIX_FMT_RGB555;
+//        avctx->pix_fmt = AV_PIX_FMT_RGB555;
 
-    s->frame.data[0] = NULL;
+    s->frame = av_frame_alloc();
+    if (!s->frame)
+        return AVERROR(ENOMEM);
 
     /* there is a vertical predictor for each pixel in a line; each vertical
      * predictor is 0 to start with */
     av_fast_malloc(&s->vert_pred, &s->vert_pred_size, s->avctx->width * sizeof(unsigned int));
+    if (!s->vert_pred)
+        return AVERROR(ENOMEM);
 
     return 0;
 }
@@ -519,6 +519,10 @@ hres,vres,i,i%vres (0 < i < 4)
 }
 
 #define APPLY_C_PREDICTOR() \
+    if(index > 1023){\
+        av_log(s->avctx, AV_LOG_ERROR, " index %d went out of bounds\n", index); \
+        return; \
+    }\
     predictor_pair = s->c_predictor_table[index]; \
     horiz_pred += (predictor_pair >> 1); \
     if (predictor_pair & 1) { \
@@ -536,6 +540,10 @@ hres,vres,i,i%vres (0 < i < 4)
         index++;
 
 #define APPLY_C_PREDICTOR_24() \
+    if(index > 1023){\
+        av_log(s->avctx, AV_LOG_ERROR, " index %d went out of bounds\n", index); \
+        return; \
+    }\
     predictor_pair = s->c_predictor_table[index]; \
     horiz_pred += (predictor_pair >> 1); \
     if (predictor_pair & 1) { \
@@ -554,6 +562,10 @@ hres,vres,i,i%vres (0 < i < 4)
 
 
 #define APPLY_Y_PREDICTOR() \
+    if(index > 1023){\
+        av_log(s->avctx, AV_LOG_ERROR, " index %d went out of bounds\n", index); \
+        return; \
+    }\
     predictor_pair = s->y_predictor_table[index]; \
     horiz_pred += (predictor_pair >> 1); \
     if (predictor_pair & 1) { \
@@ -571,6 +583,10 @@ hres,vres,i,i%vres (0 < i < 4)
         index++;
 
 #define APPLY_Y_PREDICTOR_24() \
+    if(index > 1023){\
+        av_log(s->avctx, AV_LOG_ERROR, " index %d went out of bounds\n", index); \
+        return; \
+    }\
     predictor_pair = s->y_predictor_table[index]; \
     horiz_pred += (predictor_pair >> 1); \
     if (predictor_pair & 1) { \
@@ -599,7 +615,7 @@ static void truemotion1_decode_16bit(TrueMotion1Context *s)
     unsigned int horiz_pred;
     unsigned int *vert_pred;
     unsigned int *current_pixel_pair;
-    unsigned char *current_line = s->frame.data[0];
+    unsigned char *current_line = s->frame->data[0];
     int keyframe = s->flags & FLAG_KEYFRAME;
 
     /* these variables are for managing the stream of macroblock change bits */
@@ -713,7 +729,7 @@ static void truemotion1_decode_16bit(TrueMotion1Context *s)
         if (((y + 1) & 3) == 0)
             mb_change_bits += s->mb_change_bits_row_size;
 
-        current_line += s->frame.linesize[0];
+        current_line += s->frame->linesize[0];
     }
 }
 
@@ -725,7 +741,7 @@ static void truemotion1_decode_24bit(TrueMotion1Context *s)
     unsigned int horiz_pred;
     unsigned int *vert_pred;
     unsigned int *current_pixel_pair;
-    unsigned char *current_line = s->frame.data[0];
+    unsigned char *current_line = s->frame->data[0];
     int keyframe = s->flags & FLAG_KEYFRAME;
 
     /* these variables are for managing the stream of macroblock change bits */
@@ -839,32 +855,27 @@ static void truemotion1_decode_24bit(TrueMotion1Context *s)
         if (((y + 1) & 3) == 0)
             mb_change_bits += s->mb_change_bits_row_size;
 
-        current_line += s->frame.linesize[0];
+        current_line += s->frame->linesize[0];
     }
 }
 
 
 static int truemotion1_decode_frame(AVCodecContext *avctx,
-                                    void *data, int *data_size,
+                                    void *data, int *got_frame,
                                     AVPacket *avpkt)
 {
     const uint8_t *buf = avpkt->data;
-    int buf_size = avpkt->size;
+    int ret, buf_size = avpkt->size;
     TrueMotion1Context *s = avctx->priv_data;
 
     s->buf = buf;
     s->size = buf_size;
 
-    if (truemotion1_decode_header(s) == -1)
-        return -1;
+    if ((ret = truemotion1_decode_header(s)) < 0)
+        return ret;
 
-    s->frame.reference = 1;
-    s->frame.buffer_hints = FF_BUFFER_HINTS_VALID |
-        FF_BUFFER_HINTS_PRESERVE | FF_BUFFER_HINTS_REUSABLE;
-    if (avctx->reget_buffer(avctx, &s->frame) < 0) {
-        av_log(s->avctx, AV_LOG_ERROR, "get_buffer() failed\n");
-        return -1;
-    }
+    if ((ret = ff_reget_buffer(avctx, s->frame)) < 0)
+        return ret;
 
     if (compression_types[s->compression].algorithm == ALGO_RGB24H) {
         truemotion1_decode_24bit(s);
@@ -872,8 +883,10 @@ static int truemotion1_decode_frame(AVCodecContext *avctx,
         truemotion1_decode_16bit(s);
     }
 
-    *data_size = sizeof(AVFrame);
-    *(AVFrame*)data = s->frame;
+    if ((ret = av_frame_ref(data, s->frame)) < 0)
+        return ret;
+
+    *got_frame      = 1;
 
     /* report that the buffer was completely consumed */
     return buf_size;
@@ -883,23 +896,20 @@ static av_cold int truemotion1_decode_end(AVCodecContext *avctx)
 {
     TrueMotion1Context *s = avctx->priv_data;
 
-    if (s->frame.data[0])
-        avctx->release_buffer(avctx, &s->frame);
-
-    av_free(s->vert_pred);
+    av_frame_free(&s->frame);
+    av_freep(&s->vert_pred);
 
     return 0;
 }
 
-AVCodec truemotion1_decoder = {
-    "truemotion1",
-    AVMEDIA_TYPE_VIDEO,
-    CODEC_ID_TRUEMOTION1,
-    sizeof(TrueMotion1Context),
-    truemotion1_decode_init,
-    NULL,
-    truemotion1_decode_end,
-    truemotion1_decode_frame,
-    CODEC_CAP_DR1,
-    .long_name = NULL_IF_CONFIG_SMALL("Duck TrueMotion 1.0"),
+AVCodec ff_truemotion1_decoder = {
+    .name           = "truemotion1",
+    .long_name      = NULL_IF_CONFIG_SMALL("Duck TrueMotion 1.0"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_TRUEMOTION1,
+    .priv_data_size = sizeof(TrueMotion1Context),
+    .init           = truemotion1_decode_init,
+    .close          = truemotion1_decode_end,
+    .decode         = truemotion1_decode_frame,
+    .capabilities   = CODEC_CAP_DR1,
 };

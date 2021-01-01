@@ -1,19 +1,17 @@
 \input texinfo @c -*- texinfo -*-
 
-@settitle FFplay Documentation
+@settitle ffplay Documentation
 @titlepage
-@sp 7
-@center @titlefont{FFplay Documentation}
-@sp 3
+@center @titlefont{ffplay Documentation}
 @end titlepage
+
+@top
+
+@contents
 
 @chapter Synopsis
 
-@example
-@c man begin SYNOPSIS
-ffplay [options] @file{input_file}
-@c man end
-@end example
+ffplay [@var{options}] [@file{input_file}]
 
 @chapter Description
 @c man begin DESCRIPTION
@@ -36,8 +34,9 @@ Force displayed width.
 @item -y @var{height}
 Force displayed height.
 @item -s @var{size}
-Set frame size (WxH or abbreviation), needed for videos which don't
-contain a header with the frame size like raw YUV.
+Set frame size (WxH or abbreviation), needed for videos which do
+not contain a header with the frame size like raw YUV.  This option
+has been deprecated in favor of private options, try -video_size.
 @item -an
 Disable audio.
 @item -vn
@@ -56,27 +55,59 @@ Force format.
 Set window title (default is the input filename).
 @item -loop @var{number}
 Loops movie playback <number> times. 0 means forever.
-@item -vf @var{filter_graph}
-@var{filter_graph} is a description of the filter graph to apply to
-the input video.
-Use the option "-filters" to show all the available filters (including
-also sources and sinks).
+@item -showmode @var{mode}
+Set the show mode to use.
+Available values for @var{mode} are:
+@table @samp
+@item 0, video
+show video
+@item 1, waves
+show audio waves
+@item 2, rdft
+show audio frequency band using RDFT ((Inverse) Real Discrete Fourier Transform)
+@end table
 
+Default value is "video", if video is not present or cannot be played
+"rdft" is automatically selected.
+
+You can interactively cycle through the available show modes by
+pressing the key @key{w}.
+
+@item -vf @var{filtergraph}
+Create the filtergraph specified by @var{filtergraph} and use it to
+filter the video stream.
+
+@var{filtergraph} is a description of the filtergraph to apply to
+the stream, and must have a single video input and a single video
+output. In the filtergraph, the input is associated to the label
+@code{in}, and the output to the label @code{out}. See the
+ffmpeg-filters manual for more information about the filtergraph
+syntax.
+
+@item -af @var{filtergraph}
+@var{filtergraph} is a description of the filtergraph to apply to
+the input audio.
+Use the option "-filters" to show all the available filters (including
+sources and sinks).
+
+@item -i @var{input_file}
+Read @var{input_file}.
 @end table
 
 @section Advanced options
 @table @option
 @item -pix_fmt @var{format}
 Set pixel format.
+This option has been deprecated in favor of private options, try -pixel_format.
+
 @item -stats
-Show the stream duration, the codec parameters, the current position in
-the stream and the audio/video synchronisation drift.
-@item -debug
-Print specific debug info.
+Print several playback statistics, in particular show the stream
+duration, the codec parameters, the current position in the stream and
+the audio/video synchronisation drift. It is on by default, to
+explicitly disable it you need to specify @code{-nostats}.
+
 @item -bug
 Work around bugs.
-@item -vismv
-Visualize motion vectors.
 @item -fast
 Non-spec-compliant optimizations.
 @item -genpts
@@ -114,6 +145,20 @@ Exit when video is done playing.
 Exit if any key is pressed.
 @item -exitonmousedown
 Exit if any mouse button is pressed.
+
+@item -codec:@var{media_specifier} @var{codec_name}
+Force a specific decoder implementation for the stream identified by
+@var{media_specifier}, which can assume the values @code{a} (audio),
+@code{v} (video), and @code{s} subtitle.
+
+@item -acodec @var{codec_name}
+Force a specific audio decoder.
+
+@item -vcodec @var{codec_name}
+Force a specific video decoder.
+
+@item -scodec @var{codec_name}
+Force a specific subtitle decoder.
 @end table
 
 @section While playing
@@ -129,13 +174,16 @@ Toggle full screen.
 Pause.
 
 @item a
-Cycle audio channel.
+Cycle audio channel in the curret program.
 
 @item v
 Cycle video channel.
 
 @item t
-Cycle subtitle channel.
+Cycle subtitle channel in the current program.
+
+@item c
+Cycle program.
 
 @item w
 Show audio waves.
@@ -146,6 +194,9 @@ Seek backward/forward 10 seconds.
 @item down/up
 Seek backward/forward 1 minute.
 
+@item page down/page up
+Seek backward/forward 10 minutes.
+
 @item mouse click
 Seek to percentage in file corresponding to fraction of width.
 
@@ -153,25 +204,73 @@ Seek to percentage in file corresponding to fraction of width.
 
 @c man end
 
-@include eval.texi
-@include demuxers.texi
-@include indevs.texi
-@include outdevs.texi
+@include config.texi
+@ifset config-all
+@ifset config-avutil
+@include utils.texi
+@end ifset
+@ifset config-avcodec
+@include codecs.texi
+@include bitstream_filters.texi
+@end ifset
+@ifset config-avformat
+@include formats.texi
 @include protocols.texi
+@end ifset
+@ifset config-avdevice
+@include devices.texi
+@end ifset
+@ifset config-swresample
+@include resampler.texi
+@end ifset
+@ifset config-swscale
+@include scaler.texi
+@end ifset
+@ifset config-avfilter
 @include filters.texi
+@end ifset
+@end ifset
+
+@chapter See Also
+
+@ifhtml
+@ifset config-all
+@url{ffplay.html,ffplay},
+@end ifset
+@ifset config-not-all
+@url{ffplay-all.html,ffmpeg-all},
+@end ifset
+@url{ffmpeg.html,ffmpeg}, @url{ffprobe.html,ffprobe}, @url{ffserver.html,ffserver},
+@url{ffmpeg-utils.html,ffmpeg-utils},
+@url{ffmpeg-scaler.html,ffmpeg-scaler},
+@url{ffmpeg-resampler.html,ffmpeg-resampler},
+@url{ffmpeg-codecs.html,ffmpeg-codecs},
+@url{ffmpeg-bitstream-filters.html,ffmpeg-bitstream-filters},
+@url{ffmpeg-formats.html,ffmpeg-formats},
+@url{ffmpeg-devices.html,ffmpeg-devices},
+@url{ffmpeg-protocols.html,ffmpeg-protocols},
+@url{ffmpeg-filters.html,ffmpeg-filters}
+@end ifhtml
+
+@ifnothtml
+@ifset config-all
+ffplay(1),
+@end ifset
+@ifset config-not-all
+ffplay-all(1),
+@end ifset
+ffmpeg(1), ffprobe(1), ffserver(1),
+ffmpeg-utils(1), ffmpeg-scaler(1), ffmpeg-resampler(1),
+ffmpeg-codecs(1), ffmpeg-bitstream-filters(1), ffmpeg-formats(1),
+ffmpeg-devices(1), ffmpeg-protocols(1), ffmpeg-filters(1)
+@end ifnothtml
+
+@include authors.texi
 
 @ignore
 
 @setfilename ffplay
 @settitle FFplay media player
-
-@c man begin SEEALSO
-ffmpeg(1), ffprobe(1), ffserver(1) and the FFmpeg HTML documentation
-@c man end
-
-@c man begin AUTHORS
-The FFmpeg developers
-@c man end
 
 @end ignore
 

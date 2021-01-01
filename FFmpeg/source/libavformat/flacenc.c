@@ -21,25 +21,22 @@
 
 #include "libavcodec/flac.h"
 #include "avformat.h"
+#include "avio_internal.h"
 #include "flacenc.h"
-#include "metadata.h"
 #include "vorbiscomment.h"
 #include "libavcodec/bytestream.h"
 
 
-static int flac_write_block_padding(ByteIOContext *pb, unsigned int n_padding_bytes,
+static int flac_write_block_padding(AVIOContext *pb, unsigned int n_padding_bytes,
                                     int last_block)
 {
-    put_byte(pb, last_block ? 0x81 : 0x01);
-    put_be24(pb, n_padding_bytes);
-    while (n_padding_bytes > 0) {
-        put_byte(pb, 0);
-        n_padding_bytes--;
-    }
+    avio_w8(pb, last_block ? 0x81 : 0x01);
+    avio_wb24(pb, n_padding_bytes);
+    ffio_fill(pb, 0, n_padding_bytes);
     return 0;
 }
 
-static int flac_write_block_comment(ByteIOContext *pb, AVMetadata **m,
+static int flac_write_block_comment(AVIOContext *pb, AVDictionary **m,
                                     int last_block, int bitexact)
 {
     const char *vendor = bitexact ? "ffmpeg" : LIBAVFORMAT_IDENT;
@@ -58,7 +55,7 @@ static int flac_write_block_comment(ByteIOContext *pb, AVMetadata **m,
     bytestream_put_be24(&p, len);
     ff_vorbiscomment_write(&p, m, vendor, count);
 
-    put_buffer(pb, p0, len+4);
+    avio_write(pb, p0, len+4);
     av_freep(&p0);
     p = NULL;
 
@@ -69,6 +66,15 @@ static int flac_write_header(struct AVFormatContext *s)
 {
     int ret;
     AVCodecContext *codec = s->streams[0]->codec;
+
+    if (s->nb_streams > 1) {
+        av_log(s, AV_LOG_ERROR, "only one stream is supported\n");
+        return AVERROR(EINVAL);
+    }
+    if (codec->codec_id != AV_CODEC_ID_FLAC) {
+        av_log(s, AV_LOG_ERROR, "unsupported codec\n");
+        return AVERROR(EINVAL);
+    }
 
     ret = ff_flac_write_header(s->pb, codec, 0);
     if (ret)
@@ -90,21 +96,21 @@ static int flac_write_header(struct AVFormatContext *s)
 
 static int flac_write_trailer(struct AVFormatContext *s)
 {
-    ByteIOContext *pb = s->pb;
+    AVIOContext *pb = s->pb;
     uint8_t *streaminfo;
     enum FLACExtradataFormat format;
     int64_t file_size;
 
-    if (!ff_flac_is_extradata_valid(s->streams[0]->codec, &format, &streaminfo))
+    if (!avpriv_flac_is_extradata_valid(s->streams[0]->codec, &format, &streaminfo))
         return -1;
 
-    if (!url_is_streamed(pb)) {
+    if (pb->seekable) {
         /* rewrite the STREAMINFO header block data */
-        file_size = url_ftell(pb);
-        url_fseek(pb, 8, SEEK_SET);
-        put_buffer(pb, streaminfo, FLAC_STREAMINFO_SIZE);
-        url_fseek(pb, file_size, SEEK_SET);
-        put_flush_packet(pb);
+        file_size = avio_tell(pb);
+        avio_seek(pb, 8, SEEK_SET);
+        avio_write(pb, streaminfo, FLAC_STREAMINFO_SIZE);
+        avio_seek(pb, file_size, SEEK_SET);
+        avio_flush(pb);
     } else {
         av_log(s, AV_LOG_WARNING, "unable to rewrite FLAC header.\n");
     }
@@ -113,21 +119,19 @@ static int flac_write_trailer(struct AVFormatContext *s)
 
 static int flac_write_packet(struct AVFormatContext *s, AVPacket *pkt)
 {
-    put_buffer(s->pb, pkt->data, pkt->size);
-    put_flush_packet(s->pb);
+    avio_write(s->pb, pkt->data, pkt->size);
     return 0;
 }
 
-AVOutputFormat flac_muxer = {
-    "flac",
-    NULL_IF_CONFIG_SMALL("raw FLAC"),
-    "audio/x-flac",
-    "flac",
-    0,
-    CODEC_ID_FLAC,
-    CODEC_ID_NONE,
-    flac_write_header,
-    flac_write_packet,
-    flac_write_trailer,
-    .flags= AVFMT_NOTIMESTAMPS,
+AVOutputFormat ff_flac_muxer = {
+    .name              = "flac",
+    .long_name         = NULL_IF_CONFIG_SMALL("raw FLAC"),
+    .mime_type         = "audio/x-flac",
+    .extensions        = "flac",
+    .audio_codec       = AV_CODEC_ID_FLAC,
+    .video_codec       = AV_CODEC_ID_NONE,
+    .write_header      = flac_write_header,
+    .write_packet      = flac_write_packet,
+    .write_trailer     = flac_write_trailer,
+    .flags             = AVFMT_NOTIMESTAMPS,
 };

@@ -36,8 +36,8 @@
 
 /**
  * Encode a single color run. At most 16 bits will be used.
- * \param len   length of the run, values > 255 mean "until end of line", may not be < 0.
- * \param color color to encode, only the lowest two bits are used and all others must be 0.
+ * @param len   length of the run, values > 255 mean "until end of line", may not be < 0.
+ * @param color color to encode, only the lowest two bits are used and all others must be 0.
  */
 static void put_xsub_rle(PutBitContext *pb, int len, int color)
 {
@@ -90,7 +90,7 @@ static int xsub_encode_rle(PutBitContext *pb, const uint8_t *bitmap,
         if (color != PADDING_COLOR && (PADDING + (w&1)))
             put_xsub_rle(pb, PADDING + (w&1), PADDING_COLOR);
 
-        align_put_bits(pb);
+        avpriv_align_put_bits(pb);
 
         bitmap += linesize;
     }
@@ -111,9 +111,8 @@ static int make_tc(uint64_t ms, int *tc)
 }
 
 static int xsub_encode(AVCodecContext *avctx, unsigned char *buf,
-                       int bufsize, void *data)
+                       int bufsize, const AVSubtitle *h)
 {
-    AVSubtitle *h = data;
     uint64_t startTime = h->pts / 1000; // FIXME: need better solution...
     uint64_t endTime = startTime + h->end_display_time - h->start_display_time;
     int start_tc[4], end_tc[4];
@@ -129,7 +128,7 @@ static int xsub_encode(AVCodecContext *avctx, unsigned char *buf,
     }
 
     // TODO: support multiple rects
-    if (h->num_rects > 1)
+    if (h->num_rects != 1)
         av_log(avctx, AV_LOG_WARNING, "Only single rects supported (%d in subtitle.)\n", h->num_rects);
 
     // TODO: render text-based subtitles into bitmaps
@@ -191,10 +190,10 @@ static int xsub_encode(AVCodecContext *avctx, unsigned char *buf,
                         h->rects[0]->w, h->rects[0]->h >> 1))
         return -1;
 
-    // Enforce total height to be be multiple of 2
+    // Enforce total height to be a multiple of 2
     if (h->rects[0]->h & 1) {
         put_xsub_rle(&pb, h->rects[0]->w, PADDING_COLOR);
-        align_put_bits(&pb);
+        avpriv_align_put_bits(&pb);
     }
 
     flush_put_bits(&pb);
@@ -210,13 +209,11 @@ static av_cold int xsub_encoder_init(AVCodecContext *avctx)
     return 0;
 }
 
-AVCodec xsub_encoder = {
-    "xsub",
-    AVMEDIA_TYPE_SUBTITLE,
-    CODEC_ID_XSUB,
-    0,
-    xsub_encoder_init,
-    xsub_encode,
-    NULL,
-    .long_name = NULL_IF_CONFIG_SMALL("DivX subtitles (XSUB)"),
+AVCodec ff_xsub_encoder = {
+    .name       = "xsub",
+    .long_name  = NULL_IF_CONFIG_SMALL("DivX subtitles (XSUB)"),
+    .type       = AVMEDIA_TYPE_SUBTITLE,
+    .id         = AV_CODEC_ID_XSUB,
+    .init       = xsub_encoder_init,
+    .encode_sub = xsub_encode,
 };

@@ -23,8 +23,9 @@
 #ifndef AVCODEC_TABLEPRINT_H
 #define AVCODEC_TABLEPRINT_H
 
-#include <stdint.h>
+#include <inttypes.h>
 #include <stdio.h>
+
 #include "libavutil/common.h"
 
 #define WRITE_1D_FUNC_ARGV(type, linebrk, fmtstr, ...)\
@@ -55,9 +56,9 @@ void write_##type##_2d_array(const void *arg, int len, int len2)\
 }
 
 /**
- * \defgroup printfuncs Predefined functions for printing tables
+ * @name Predefined functions for printing tables
  *
- * \{
+ * @{
  */
 void write_int8_t_array     (const int8_t   *, int);
 void write_uint8_t_array    (const uint8_t  *, int);
@@ -68,15 +69,22 @@ void write_int8_t_2d_array  (const void *, int, int);
 void write_uint8_t_2d_array (const void *, int, int);
 void write_uint32_t_2d_array(const void *, int, int);
 void write_float_2d_array   (const void *, int, int);
-/** \} */ // end of printfuncs group
+/** @} */ // end of printfuncs group
 
-/** Write a standard file header */
-void write_fileheader(void);
+/*
+ * MSVC doesn't have %zu, since it was introduced in C99,
+ * but has its own %Iu for printing size_t values.
+ */
+#if defined(_MSC_VER)
+#define FMT "Iu"
+#else
+#define FMT "zu"
+#endif
 
 #define WRITE_ARRAY(prefix, type, name)                 \
     do {                                                \
         const size_t array_size = FF_ARRAY_ELEMS(name); \
-        printf(prefix" "#type" "#name"[%zu] = {\n",     \
+        printf(prefix" "#type" "#name"[%"FMT"] = {\n",  \
                array_size);                             \
         write_##type##_array(name, array_size);         \
         printf("};\n");                                 \
@@ -86,10 +94,28 @@ void write_fileheader(void);
     do {                                                                \
         const size_t array_size1 = FF_ARRAY_ELEMS(name);                \
         const size_t array_size2 = FF_ARRAY_ELEMS(name[0]);             \
-        printf(prefix" "#type" "#name"[%zu][%zu] = {\n",                \
+        printf(prefix" "#type" "#name"[%"FMT"][%"FMT"] = {\n",          \
                array_size1, array_size2 );                              \
         write_##type##_2d_array(name, array_size1, array_size2);        \
         printf("};\n");                                                 \
     } while(0)
+
+
+WRITE_1D_FUNC(int8_t,   "%3"PRIi8, 15)
+WRITE_1D_FUNC(uint8_t,  "0x%02"PRIx8, 15)
+WRITE_1D_FUNC(uint16_t, "0x%08"PRIx16, 7)
+WRITE_1D_FUNC(uint32_t, "0x%08"PRIx32, 7)
+WRITE_1D_FUNC(float,    "%.18e", 3)
+
+WRITE_2D_FUNC(int8_t)
+WRITE_2D_FUNC(uint8_t)
+WRITE_2D_FUNC(uint32_t)
+WRITE_2D_FUNC(float)
+
+static inline void write_fileheader(void)
+{
+    printf("/* This file was automatically generated. */\n");
+    printf("#include <stdint.h>\n");
+}
 
 #endif /* AVCODEC_TABLEPRINT_H */

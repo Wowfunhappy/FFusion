@@ -38,12 +38,14 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavcodec/dsputil.h"
-#include "libavutil/x86_cpu.h"
+#include "libavutil/mem.h"
+#include "libavutil/x86/asm.h"
 #include "idct_xvid.h"
-#include "dsputil_mmx.h"
+#include "dsputil_x86.h"
 
-/*!
+#if HAVE_SSE2_INLINE
+
+/**
  * @file
  * @brief SSE2 idct compatible with xvidmmx
  */
@@ -356,7 +358,7 @@ inline void ff_idct_xvid_sse2(short *block)
     TEST_TWO_ROWS("5*16(%0)", "6*16(%0)", "%%eax", "%%edx", CLEAR_ODD(ROW5), CLEAR_EVEN(ROW6))
     TEST_ONE_ROW("7*16(%0)", "%%esi", CLEAR_ODD(ROW7))
     iLLM_HEAD
-    ASMALIGN(4)
+    ".p2align 4 \n\t"
     JNZ("%%ecx", "2f")
     JNZ("%%eax", "3f")
     JNZ("%%edx", "4f")
@@ -373,7 +375,7 @@ inline void ff_idct_xvid_sse2(short *block)
     JZ("%%esi", "1f")
     "5:                                                          \n\t"
     iMTX_MULT("7*16(%0)", MANGLE(iTab2), ROUND(walkenIdctRounders+5*16), PUT_ODD(ROW7))
-#if !ARCH_X86_64
+#if ARCH_X86_32
     iLLM_HEAD
 #endif
     iLLM_PASS("%0")
@@ -401,3 +403,5 @@ void ff_idct_xvid_sse2_add(uint8_t *dest, int line_size, short *block)
     ff_idct_xvid_sse2(block);
     ff_add_pixels_clamped_mmx(block, dest, line_size);
 }
+
+#endif /* HAVE_SSE2_INLINE */

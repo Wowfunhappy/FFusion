@@ -36,17 +36,6 @@
  * -2 if the bsid (version) element is invalid, -3 if the fscod (sample rate)
  * element is invalid, or -4 if the frmsizecod (bit rate) element is invalid.
  */
-int ff_ac3_parse_header(GetBitContext *gbc, AC3HeaderInfo *hdr);
-
-/**
- * Parse AC-3 frame header and sets channel_map
- * Parse the header up to the lfeon (channel_map in E-AC-3)
- * element, which is the first 52, 54 or 104 bits depending
- * on the audio coding mode.
- * @param[in]  gbc BitContext containing the first 54 bits of the frame.
- * @param[out] hdr Pointer to struct where header info is written.
- * @return value returned by ff_ac3_parse_header
- */
-int ff_ac3_parse_header_full(GetBitContext *gbc, AC3HeaderInfo *hdr);
+int avpriv_ac3_parse_header(GetBitContext *gbc, AC3HeaderInfo *hdr);
 
 #endif /* AVCODEC_AC3_PARSER_H */

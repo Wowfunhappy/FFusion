@@ -47,7 +47,7 @@ static int vaapi_mpeg4_start_frame(AVCodecContext *avctx, av_unused const uint8_
     VAIQMatrixBufferMPEG4 *iq_matrix;
     int i;
 
-    dprintf(avctx, "vaapi_mpeg4_start_frame()\n");
+    av_dlog(avctx, "vaapi_mpeg4_start_frame()\n");
 
     vactx->slice_param_size = sizeof(VASliceParameterBufferMPEG4);
 
@@ -60,7 +60,7 @@ static int vaapi_mpeg4_start_frame(AVCodecContext *avctx, av_unused const uint8_
     pic_param->forward_reference_picture                = VA_INVALID_ID;
     pic_param->backward_reference_picture               = VA_INVALID_ID;
     pic_param->vol_fields.value                         = 0; /* reset all bits */
-    pic_param->vol_fields.bits.short_video_header       = avctx->codec->id == CODEC_ID_H263;
+    pic_param->vol_fields.bits.short_video_header       = avctx->codec->id == AV_CODEC_ID_H263;
     pic_param->vol_fields.bits.chroma_format            = CHROMA_420;
     pic_param->vol_fields.bits.interlaced               = !s->progressive_sequence;
     pic_param->vol_fields.bits.obmc_disable             = 1;
@@ -78,8 +78,8 @@ static int vaapi_mpeg4_start_frame(AVCodecContext *avctx, av_unused const uint8_
     }
     pic_param->quant_precision                          = s->quant_precision;
     pic_param->vop_fields.value                         = 0; /* reset all bits */
-    pic_param->vop_fields.bits.vop_coding_type          = s->pict_type - FF_I_TYPE;
-    pic_param->vop_fields.bits.backward_reference_vop_coding_type = s->pict_type == FF_B_TYPE ? s->next_picture.pict_type - FF_I_TYPE : 0;
+    pic_param->vop_fields.bits.vop_coding_type          = s->pict_type - AV_PICTURE_TYPE_I;
+    pic_param->vop_fields.bits.backward_reference_vop_coding_type = s->pict_type == AV_PICTURE_TYPE_B ? s->next_picture.f.pict_type - AV_PICTURE_TYPE_I : 0;
     pic_param->vop_fields.bits.vop_rounding_type        = s->no_rounding;
     pic_param->vop_fields.bits.intra_dc_vlc_thr         = mpeg4_get_intra_dc_vlc_thr(s);
     pic_param->vop_fields.bits.top_field_first          = s->top_field_first;
@@ -92,13 +92,13 @@ static int vaapi_mpeg4_start_frame(AVCodecContext *avctx, av_unused const uint8_
     pic_param->TRB                                      = s->pb_time;
     pic_param->TRD                                      = s->pp_time;
 
-    if (s->pict_type == FF_B_TYPE)
+    if (s->pict_type == AV_PICTURE_TYPE_B)
         pic_param->backward_reference_picture = ff_vaapi_get_surface_id(&s->next_picture);
-    if (s->pict_type != FF_I_TYPE)
+    if (s->pict_type != AV_PICTURE_TYPE_I)
         pic_param->forward_reference_picture  = ff_vaapi_get_surface_id(&s->last_picture);
 
     /* Fill in VAIQMatrixBufferMPEG4 */
-    /* Only the first inverse quantisation method uses the weighthing matrices */
+    /* Only the first inverse quantisation method uses the weighting matrices */
     if (pic_param->vol_fields.bits.quant_type) {
         iq_matrix = ff_vaapi_alloc_iq_matrix(vactx, sizeof(VAIQMatrixBufferMPEG4));
         if (!iq_matrix)
@@ -115,64 +115,44 @@ static int vaapi_mpeg4_start_frame(AVCodecContext *avctx, av_unused const uint8_
     return 0;
 }
 
-static int vaapi_mpeg4_end_frame(AVCodecContext *avctx)
-{
-    return ff_vaapi_common_end_frame(avctx->priv_data);
-}
-
 static int vaapi_mpeg4_decode_slice(AVCodecContext *avctx, const uint8_t *buffer, uint32_t size)
 {
     MpegEncContext * const s = avctx->priv_data;
     VASliceParameterBufferMPEG4 *slice_param;
 
-    dprintf(avctx, "vaapi_mpeg4_decode_slice(): buffer %p, size %d\n", buffer, size);
-
-    /* video_plane_with_short_video_header() contains all GOBs
-     * in-order, and this is what VA API (Intel backend) expects: only
-     * a single slice param. So fake macroblock_number for FFmpeg so
-     * that we don't call vaapi_mpeg4_decode_slice() again
-     */
-    if (avctx->codec->id == CODEC_ID_H263)
-        size = s->gb.buffer_end - buffer;
+    av_dlog(avctx, "vaapi_mpeg4_decode_slice(): buffer %p, size %d\n", buffer, size);
 
     /* Fill in VASliceParameterBufferMPEG4 */
     slice_param = (VASliceParameterBufferMPEG4 *)ff_vaapi_alloc_slice(avctx->hwaccel_context, buffer, size);
     if (!slice_param)
         return -1;
     slice_param->macroblock_offset      = get_bits_count(&s->gb) % 8;
-    slice_param->macroblock_number      = s->mb_y * s->mb_width + s->mb_x;
+    slice_param->macroblock_number      = 0;
     slice_param->quant_scale            = s->qscale;
-
-    if (avctx->codec->id == CODEC_ID_H263)
-        s->mb_y = s->mb_height;
 
     return 0;
 }
 
 #if CONFIG_MPEG4_VAAPI_HWACCEL
-AVHWAccel mpeg4_vaapi_hwaccel = {
+AVHWAccel ff_mpeg4_vaapi_hwaccel = {
     .name           = "mpeg4_vaapi",
     .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = CODEC_ID_MPEG4,
-    .pix_fmt        = PIX_FMT_VAAPI_VLD,
-    .capabilities   = 0,
+    .id             = AV_CODEC_ID_MPEG4,
+    .pix_fmt        = AV_PIX_FMT_VAAPI_VLD,
     .start_frame    = vaapi_mpeg4_start_frame,
-    .end_frame      = vaapi_mpeg4_end_frame,
+    .end_frame      = ff_vaapi_mpeg_end_frame,
     .decode_slice   = vaapi_mpeg4_decode_slice,
-    .priv_data_size = 0,
 };
 #endif
 
 #if CONFIG_H263_VAAPI_HWACCEL
-AVHWAccel h263_vaapi_hwaccel = {
+AVHWAccel ff_h263_vaapi_hwaccel = {
     .name           = "h263_vaapi",
     .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = CODEC_ID_H263,
-    .pix_fmt        = PIX_FMT_VAAPI_VLD,
-    .capabilities   = 0,
+    .id             = AV_CODEC_ID_H263,
+    .pix_fmt        = AV_PIX_FMT_VAAPI_VLD,
     .start_frame    = vaapi_mpeg4_start_frame,
-    .end_frame      = vaapi_mpeg4_end_frame,
+    .end_frame      = ff_vaapi_mpeg_end_frame,
     .decode_slice   = vaapi_mpeg4_decode_slice,
-    .priv_data_size = 0,
 };
 #endif

@@ -18,8 +18,10 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/common.h"
+#include "libavutil/intreadwrite.h"
 #include "avcodec.h"
-#include "mpegaudio.h"
+#include "mpegaudiodecheader.h"
 
 
 static int mp3_header_compress(AVBitStreamFilterContext *bsfc, AVCodecContext *avctx, const char *args,
@@ -79,8 +81,7 @@ output_unchanged:
     return 1;
 }
 
-AVBitStreamFilter mp3_header_compress_bsf={
-    "mp3comp",
-    0,
-    mp3_header_compress,
+AVBitStreamFilter ff_mp3_header_compress_bsf={
+    .name   = "mp3comp",
+    .filter = mp3_header_compress,
 };

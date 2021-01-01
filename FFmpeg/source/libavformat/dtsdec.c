@@ -34,6 +34,7 @@ static int dts_probe(AVProbeData *p)
     uint32_t state = -1;
     int markers[3] = {0};
     int sum, max;
+    int64_t diff = 0;
 
     buf = p->buf;
 
@@ -54,25 +55,28 @@ static int dts_probe(AVProbeData *p)
         if (state == DCA_MARKER_14B_LE)
             if ((bytestream_get_be16(&bufp) & 0xF0FF) == 0xF007)
                 markers[2]++;
+
+        if (buf - p->buf >= 4)
+            diff += FFABS(AV_RL16(buf) - AV_RL16(buf-4));
     }
     sum = markers[0] + markers[1] + markers[2];
     max = markers[1] > markers[0];
     max = markers[2] > markers[max] ? 2 : max;
     if (markers[max] > 3 && p->buf_size / markers[max] < 32*1024 &&
-        markers[max] * 4 > sum * 3)
-        return AVPROBE_SCORE_MAX/2+1;
+        markers[max] * 4 > sum * 3 &&
+        diff / p->buf_size > 200)
+        return AVPROBE_SCORE_EXTENSION + 1;
 
     return 0;
 }
 
-AVInputFormat dts_demuxer = {
-    "dts",
-    NULL_IF_CONFIG_SMALL("raw DTS"),
-    0,
-    dts_probe,
-    ff_raw_audio_read_header,
-    ff_raw_read_partial_packet,
-    .flags= AVFMT_GENERIC_INDEX,
-    .extensions = "dts",
-    .value = CODEC_ID_DTS,
+AVInputFormat ff_dts_demuxer = {
+    .name           = "dts",
+    .long_name      = NULL_IF_CONFIG_SMALL("raw DTS"),
+    .read_probe     = dts_probe,
+    .read_header    = ff_raw_audio_read_header,
+    .read_packet    = ff_raw_read_partial_packet,
+    .flags          = AVFMT_GENERIC_INDEX,
+    .extensions     = "dts",
+    .raw_codec_id   = AV_CODEC_ID_DTS,
 };

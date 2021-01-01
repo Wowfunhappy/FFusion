@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2010 Bobby Bingham
-
+ *
  * This file is part of FFmpeg.
  *
  * FFmpeg is free software; you can redistribute it and/or
@@ -23,109 +23,209 @@
  * aspect ratio modification video filters
  */
 
+#include <float.h>
+
+#include "libavutil/common.h"
+#include "libavutil/eval.h"
+#include "libavutil/mathematics.h"
+#include "libavutil/opt.h"
+#include "libavutil/parseutils.h"
+
 #include "avfilter.h"
+#include "internal.h"
+#include "video.h"
 
 typedef struct {
-    AVRational aspect;
+    const AVClass *class;
+    AVRational dar;
+    AVRational sar;
+    int max;
+#if FF_API_OLD_FILTER_OPTS
+    float aspect_den;
+#endif
+    char *ratio_str;
 } AspectContext;
 
-static av_cold int init(AVFilterContext *ctx, const char *args, void *opaque)
+static av_cold int init(AVFilterContext *ctx)
 {
-    AspectContext *aspect = ctx->priv;
-    double  ratio;
-    int64_t gcd;
-    char c = 0;
+    AspectContext *s = ctx->priv;
+    int ret;
 
-    if (args) {
-        if (sscanf(args, "%d:%d%c", &aspect->aspect.num, &aspect->aspect.den, &c) != 2)
-            if (sscanf(args, "%lf%c", &ratio, &c) == 1)
-                aspect->aspect = av_d2q(ratio, 100);
-
-        if (c || aspect->aspect.num <= 0 || aspect->aspect.den <= 0) {
-            av_log(ctx, AV_LOG_ERROR,
-                   "Invalid string '%s' for aspect ratio.\n", args);
+#if FF_API_OLD_FILTER_OPTS
+    if (s->ratio_str && s->aspect_den > 0) {
+        double num;
+        av_log(ctx, AV_LOG_WARNING,
+               "num:den syntax is deprecated, please use num/den or named options instead\n");
+        ret = av_expr_parse_and_eval(&num, s->ratio_str, NULL, NULL,
+                                     NULL, NULL, NULL, NULL, NULL, 0, ctx);
+        if (ret < 0) {
+            av_log(ctx, AV_LOG_ERROR, "Unable to parse ratio numerator \"%s\"\n", s->ratio_str);
             return AVERROR(EINVAL);
         }
-
-        gcd = av_gcd(FFABS(aspect->aspect.num), FFABS(aspect->aspect.den));
-        if (gcd) {
-            aspect->aspect.num /= gcd;
-            aspect->aspect.den /= gcd;
+        s->sar = s->dar = av_d2q(num / s->aspect_den, s->max);
+    } else
+#endif
+    if (s->ratio_str) {
+        ret = av_parse_ratio(&s->sar, s->ratio_str, s->max, 0, ctx);
+        if (ret < 0 || s->sar.num < 0 || s->sar.den <= 0) {
+            av_log(ctx, AV_LOG_ERROR,
+                   "Invalid string '%s' for aspect ratio\n", s->ratio_str);
+            return AVERROR(EINVAL);
         }
+        s->dar = s->sar;
     }
-
-    if (aspect->aspect.den == 0)
-        aspect->aspect = (AVRational) {0, 1};
-
-    av_log(ctx, AV_LOG_INFO, "a:%d/%d\n", aspect->aspect.num, aspect->aspect.den);
     return 0;
 }
 
-static void start_frame(AVFilterLink *link, AVFilterBufferRef *picref)
+static int filter_frame(AVFilterLink *link, AVFrame *frame)
 {
-    AspectContext *aspect = link->dst->priv;
+    AspectContext *s = link->dst->priv;
 
-    picref->video->pixel_aspect = aspect->aspect;
-    avfilter_start_frame(link->dst->outputs[0], picref);
+    frame->sample_aspect_ratio = s->sar;
+    return ff_filter_frame(link->dst->outputs[0], frame);
+}
+
+#define OFFSET(x) offsetof(AspectContext, x)
+#define FLAGS AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM
+
+static inline void compute_dar(AVRational *dar, AVRational sar, int w, int h)
+{
+    if (sar.num && sar.den) {
+        av_reduce(&dar->num, &dar->den, sar.num * w, sar.den * h, INT_MAX);
+    } else {
+        av_reduce(&dar->num, &dar->den, w, h, INT_MAX);
+    }
 }
 
 #if CONFIG_SETDAR_FILTER
-/* for setdar filter, convert from frame aspect ratio to pixel aspect ratio */
+
 static int setdar_config_props(AVFilterLink *inlink)
 {
-    AspectContext *aspect = inlink->dst->priv;
-    AVRational dar = aspect->aspect;
+    AspectContext *s = inlink->dst->priv;
+    AVRational dar;
+    AVRational old_dar;
+    AVRational old_sar = inlink->sample_aspect_ratio;
 
-    av_reduce(&aspect->aspect.num, &aspect->aspect.den,
-               aspect->aspect.num * inlink->h,
-               aspect->aspect.den * inlink->w, 100);
+    if (s->dar.num && s->dar.den) {
+        av_reduce(&s->sar.num, &s->sar.den,
+                   s->dar.num * inlink->h,
+                   s->dar.den * inlink->w, INT_MAX);
+        inlink->sample_aspect_ratio = s->sar;
+        dar = s->dar;
+    } else {
+        inlink->sample_aspect_ratio = (AVRational){ 1, 1 };
+        dar = (AVRational){ inlink->w, inlink->h };
+    }
 
-    av_log(inlink->dst, AV_LOG_INFO, "w:%d h:%d -> dar:%d/%d par:%d/%d\n",
-           inlink->w, inlink->h, dar.num, dar.den, aspect->aspect.num, aspect->aspect.den);
+    compute_dar(&old_dar, old_sar, inlink->w, inlink->h);
+    av_log(inlink->dst, AV_LOG_VERBOSE, "w:%d h:%d dar:%d/%d sar:%d/%d -> dar:%d/%d sar:%d/%d\n",
+           inlink->w, inlink->h, old_dar.num, old_dar.den, old_sar.num, old_sar.den,
+           dar.num, dar.den, inlink->sample_aspect_ratio.num, inlink->sample_aspect_ratio.den);
+
     return 0;
 }
 
-AVFilter avfilter_vf_setdar = {
-    .name      = "setdar",
-    .description = NULL_IF_CONFIG_SMALL("Set the frame display aspect ratio."),
-
-    .init      = init,
-
-    .priv_size = sizeof(AspectContext),
-
-    .inputs    = (AVFilterPad[]) {{ .name             = "default",
-                                    .type             = AVMEDIA_TYPE_VIDEO,
-                                    .config_props     = setdar_config_props,
-                                    .get_video_buffer = avfilter_null_get_video_buffer,
-                                    .start_frame      = start_frame,
-                                    .end_frame        = avfilter_null_end_frame },
-                                  { .name = NULL}},
-
-    .outputs   = (AVFilterPad[]) {{ .name             = "default",
-                                    .type             = AVMEDIA_TYPE_VIDEO, },
-                                  { .name = NULL}},
+static const AVOption setdar_options[] = {
+    { "dar",   "set display aspect ratio", OFFSET(ratio_str), AV_OPT_TYPE_STRING, {.str="0"}, .flags=FLAGS },
+    { "ratio", "set display aspect ratio", OFFSET(ratio_str), AV_OPT_TYPE_STRING, {.str="0"}, .flags=FLAGS },
+    { "r",     "set display aspect ratio", OFFSET(ratio_str), AV_OPT_TYPE_STRING, {.str="0"}, .flags=FLAGS },
+#if FF_API_OLD_FILTER_OPTS
+    { "dar_den", NULL, OFFSET(aspect_den), AV_OPT_TYPE_FLOAT, { .dbl = 0 }, 0, FLT_MAX, FLAGS },
+#endif
+    { "max",   "set max value for nominator or denominator in the ratio", OFFSET(max), AV_OPT_TYPE_INT, {.i64=100}, 1, INT_MAX, FLAGS },
+    { NULL }
 };
+
+AVFILTER_DEFINE_CLASS(setdar);
+
+static const AVFilterPad avfilter_vf_setdar_inputs[] = {
+    {
+        .name         = "default",
+        .type         = AVMEDIA_TYPE_VIDEO,
+        .config_props = setdar_config_props,
+        .filter_frame = filter_frame,
+    },
+    { NULL }
+};
+
+static const AVFilterPad avfilter_vf_setdar_outputs[] = {
+    {
+        .name = "default",
+        .type = AVMEDIA_TYPE_VIDEO,
+    },
+    { NULL }
+};
+
+AVFilter avfilter_vf_setdar = {
+    .name        = "setdar",
+    .description = NULL_IF_CONFIG_SMALL("Set the frame display aspect ratio."),
+    .init        = init,
+    .priv_size   = sizeof(AspectContext),
+    .priv_class  = &setdar_class,
+    .inputs      = avfilter_vf_setdar_inputs,
+    .outputs     = avfilter_vf_setdar_outputs,
+};
+
 #endif /* CONFIG_SETDAR_FILTER */
 
 #if CONFIG_SETSAR_FILTER
-AVFilter avfilter_vf_setsar = {
-    .name      = "setsar",
-    .description = NULL_IF_CONFIG_SMALL("Set the pixel sample aspect ratio."),
 
-    .init      = init,
+static int setsar_config_props(AVFilterLink *inlink)
+{
+    AspectContext *s = inlink->dst->priv;
+    AVRational old_sar = inlink->sample_aspect_ratio;
+    AVRational old_dar, dar;
 
-    .priv_size = sizeof(AspectContext),
+    inlink->sample_aspect_ratio = s->sar;
 
-    .inputs    = (AVFilterPad[]) {{ .name             = "default",
-                                    .type             = AVMEDIA_TYPE_VIDEO,
-                                    .get_video_buffer = avfilter_null_get_video_buffer,
-                                    .start_frame      = start_frame,
-                                    .end_frame        = avfilter_null_end_frame },
-                                  { .name = NULL}},
+    compute_dar(&old_dar, old_sar, inlink->w, inlink->h);
+    compute_dar(&dar, s->sar, inlink->w, inlink->h);
+    av_log(inlink->dst, AV_LOG_VERBOSE, "w:%d h:%d sar:%d/%d dar:%d/%d -> sar:%d/%d dar:%d/%d\n",
+           inlink->w, inlink->h, old_sar.num, old_sar.den, old_dar.num, old_dar.den,
+           inlink->sample_aspect_ratio.num, inlink->sample_aspect_ratio.den, dar.num, dar.den);
 
-    .outputs   = (AVFilterPad[]) {{ .name             = "default",
-                                    .type             = AVMEDIA_TYPE_VIDEO, },
-                                  { .name = NULL}},
+    return 0;
+}
+
+static const AVOption setsar_options[] = {
+    { "sar",   "set sample (pixel) aspect ratio", OFFSET(ratio_str), AV_OPT_TYPE_STRING, {.str="0"}, .flags=FLAGS },
+    { "ratio", "set sample (pixel) aspect ratio", OFFSET(ratio_str), AV_OPT_TYPE_STRING, {.str="0"}, .flags=FLAGS },
+    { "r",     "set sample (pixel) aspect ratio", OFFSET(ratio_str), AV_OPT_TYPE_STRING, {.str="0"}, .flags=FLAGS },
+#if FF_API_OLD_FILTER_OPTS
+    { "sar_den", NULL, OFFSET(aspect_den), AV_OPT_TYPE_FLOAT, { .dbl = 0 }, 0, FLT_MAX, FLAGS },
+#endif
+    { "max",   "set max value for nominator or denominator in the ratio", OFFSET(max), AV_OPT_TYPE_INT, {.i64=100}, 1, INT_MAX, FLAGS },
+    { NULL }
 };
-#endif /* CONFIG_SETSAR_FILTER */
 
+AVFILTER_DEFINE_CLASS(setsar);
+
+static const AVFilterPad avfilter_vf_setsar_inputs[] = {
+    {
+        .name         = "default",
+        .type         = AVMEDIA_TYPE_VIDEO,
+        .config_props = setsar_config_props,
+        .filter_frame = filter_frame,
+    },
+    { NULL }
+};
+
+static const AVFilterPad avfilter_vf_setsar_outputs[] = {
+    {
+        .name = "default",
+        .type = AVMEDIA_TYPE_VIDEO,
+    },
+    { NULL }
+};
+
+AVFilter avfilter_vf_setsar = {
+    .name        = "setsar",
+    .description = NULL_IF_CONFIG_SMALL("Set the pixel sample aspect ratio."),
+    .init        = init,
+    .priv_size   = sizeof(AspectContext),
+    .priv_class  = &setsar_class,
+    .inputs      = avfilter_vf_setsar_inputs,
+    .outputs     = avfilter_vf_setsar_outputs,
+};
+
+#endif /* CONFIG_SETSAR_FILTER */

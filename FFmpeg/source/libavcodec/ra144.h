@@ -23,18 +23,21 @@
 #define AVCODEC_RA144_H
 
 #include <stdint.h>
-#include "dsputil.h"
+#include "lpc.h"
+#include "audio_frame_queue.h"
 
 #define NBLOCKS         4       ///< number of subblocks within a block
 #define BLOCKSIZE       40      ///< subblock size in 16-bit words
 #define BUFFERSIZE      146     ///< the size of the adaptive codebook
 #define FIXED_CB_SIZE   128     ///< size of fixed codebooks
-#define FRAMESIZE       20      ///< size of encoded frame
+#define FRAME_SIZE      20      ///< size of encoded frame
 #define LPC_ORDER       10      ///< order of LPC filter
 
-typedef struct {
+typedef struct RA144Context {
     AVCodecContext *avctx;
-    DSPContext dsp;
+    LPCContext lpc_ctx;
+    AudioFrameQueue afq;
+    int last_frame;
 
     unsigned int     old_energy;        ///< previous frame energy
 
@@ -53,11 +56,9 @@ typedef struct {
 
     /** Adaptive codebook, its size is two units bigger to avoid a
      *  buffer overflow. */
-    uint16_t adapt_cb[146+2];
+    int16_t adapt_cb[146+2];
 } RA144Context;
 
-void ff_add_wav(int16_t *dest, int n, int skip_first, int *m, const int16_t *s1,
-                const int8_t *s2, const int8_t *s3);
 void ff_copy_and_dup(int16_t *target, const int16_t *source, int offset);
 int ff_eval_refl(int *refl, const int16_t *coefs, AVCodecContext *avctx);
 void ff_eval_coefs(int *coefs, const int *refl);
@@ -68,7 +69,7 @@ int ff_interp(RA144Context *ractx, int16_t *out, int a, int copyold,
               int energy);
 unsigned int ff_rescale_rms(unsigned int rms, unsigned int energy);
 int ff_irms(const int16_t *data);
-void ff_subblock_synthesis(RA144Context *ractx, const uint16_t *lpc_coefs,
+void ff_subblock_synthesis(RA144Context *ractx, const int16_t *lpc_coefs,
                            int cba_idx, int cb1_idx, int cb2_idx,
                            int gval, int gain);
 

@@ -17,11 +17,10 @@
 ;*
 ;* You should have received a copy of the GNU Lesser General Public
 ;* License along with FFmpeg; if not, write to the Free Software
-;* 51, Inc., Foundation Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
-%include "x86inc.asm"
-%include "x86util.asm"
+%include "libavutil/x86/x86util.asm"
 
 SECTION_RODATA
 
@@ -39,7 +38,7 @@ cglobal deinterlace_line_mmx,         7,7,7, dst, lum_m4, lum_m3, lum_m2, lum_m1
 %endif
     pxor  mm7, mm7
     movq  mm6, [pw_4]
-.nextrow
+.nextrow:
     movd  mm0, [lum_m4q]
     movd  mm1, [lum_m3q]
     movd  mm2, [lum_m2q]

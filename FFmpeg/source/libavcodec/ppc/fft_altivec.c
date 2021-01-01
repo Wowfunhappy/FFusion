@@ -19,9 +19,12 @@
  * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
+
+#include "config.h"
+#include "libavutil/cpu.h"
+#include "libavutil/ppc/types_altivec.h"
+#include "libavutil/ppc/util_altivec.h"
 #include "libavcodec/fft.h"
-#include "util_altivec.h"
-#include "types_altivec.h"
 
 /**
  * Do a complex FFT with the parameters defined in ff_fft_init(). The
@@ -35,8 +38,8 @@
 void ff_fft_calc_altivec(FFTContext *s, FFTComplex *z);
 void ff_fft_calc_interleave_altivec(FFTContext *s, FFTComplex *z);
 
-#if HAVE_GNU_AS
-static void ff_imdct_half_altivec(FFTContext *s, FFTSample *output, const FFTSample *input)
+#if HAVE_GNU_AS && HAVE_ALTIVEC
+static void imdct_half_altivec(FFTContext *s, FFTSample *output, const FFTSample *input)
 {
     int j, k;
     int n = 1 << s->mdct_bits;
@@ -116,17 +119,17 @@ static void ff_imdct_half_altivec(FFTContext *s, FFTSample *output, const FFTSam
     } while(k >= 0);
 }
 
-static void ff_imdct_calc_altivec(FFTContext *s, FFTSample *output, const FFTSample *input)
+static void imdct_calc_altivec(FFTContext *s, FFTSample *output, const FFTSample *input)
 {
     int k;
     int n = 1 << s->mdct_bits;
     int n4 = n >> 2;
     int n16 = n >> 4;
-    vec_u32 sign = {1<<31,1<<31,1<<31,1<<31};
+    vec_u32 sign = {1U<<31,1U<<31,1U<<31,1U<<31};
     vec_u32 *p0 = (vec_u32*)(output+n4);
     vec_u32 *p1 = (vec_u32*)(output+n4*3);
 
-    ff_imdct_half_altivec(s, output+n4, input);
+    imdct_half_altivec(s, output + n4, input);
 
     for (k = 0; k < n16; k++) {
         vec_u32 a = p0[k] ^ sign;
@@ -135,13 +138,18 @@ static void ff_imdct_calc_altivec(FFTContext *s, FFTSample *output, const FFTSam
         p1[k]    = vec_perm(b, b, vcprm(3,2,1,0));
     }
 }
-#endif /* HAVE_GNU_AS */
+#endif /* HAVE_GNU_AS && HAVE_ALTIVEC */
 
-av_cold void ff_fft_init_altivec(FFTContext *s)
+av_cold void ff_fft_init_ppc(FFTContext *s)
 {
-#if HAVE_GNU_AS
+#if HAVE_GNU_AS && HAVE_ALTIVEC
+    if (!(av_get_cpu_flags() & AV_CPU_FLAG_ALTIVEC))
+        return;
+
     s->fft_calc   = ff_fft_calc_interleave_altivec;
-    s->imdct_calc = ff_imdct_calc_altivec;
-    s->imdct_half = ff_imdct_half_altivec;
-#endif
+    if (s->mdct_bits >= 5) {
+        s->imdct_calc = imdct_calc_altivec;
+        s->imdct_half = imdct_half_altivec;
+    }
+#endif /* HAVE_GNU_AS && HAVE_ALTIVEC */
 }
