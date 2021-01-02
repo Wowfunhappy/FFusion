@@ -174,11 +174,11 @@ static int h264_mp4toannexb_filter(AVBitStreamFilterContext *bsfc,
         buf      += ctx->length_size;
         unit_type = *buf & 0x1f;
 
-        if (buf + nal_size > buf_end || nal_size < 0)
+        if (nal_size > buf_end - buf || nal_size < 0)
             goto fail;
 
         /* prepend only to the first type 5 NAL unit of an IDR picture */
-        if (ctx->first_idr && unit_type == 5) {
+        if (ctx->first_idr && (unit_type == 5 || unit_type == 7 || unit_type == 8)) {
             if ((ret=alloc_and_copy(poutbuf, poutbuf_size,
                                avctx->extradata, avctx->extradata_size,
                                buf, nal_size)) < 0)

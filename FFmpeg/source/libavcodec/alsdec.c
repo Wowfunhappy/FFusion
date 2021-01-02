@@ -280,7 +280,7 @@ static av_cold int read_specific_config(ALSDecContext *ctx)
     GetBitContext gb;
     uint64_t ht_size;
     int i, config_offset;
-    MPEG4AudioConfig m4ac;
+    MPEG4AudioConfig m4ac = {0};
     ALSSpecificConfig *sconf = &ctx->sconf;
     AVCodecContext *avctx    = ctx->avctx;
     uint32_t als_id, header_size, trailer_size;
@@ -356,10 +356,14 @@ static av_cold int read_specific_config(ALSDecContext *ctx)
         ctx->cs_switch = 1;
 
         for (i = 0; i < avctx->channels; i++) {
+            sconf->chan_pos[i] = -1;
+        }
+
+        for (i = 0; i < avctx->channels; i++) {
             int idx;
 
             idx = get_bits(&gb, chan_pos_bits);
-            if (idx >= avctx->channels) {
+            if (idx >= avctx->channels || sconf->chan_pos[idx] != -1) {
                 av_log(avctx, AV_LOG_WARNING, "Invalid channel reordering.\n");
                 ctx->cs_switch = 0;
                 break;
@@ -676,7 +680,7 @@ static int read_var_block_data(ALSDecContext *ctx, ALSBlockData *bd)
 
 
     if (!sconf->rlslms) {
-        if (sconf->adapt_order) {
+        if (sconf->adapt_order && sconf->max_order) {
             int opt_order_length = av_ceil_log2(av_clip((bd->block_length >> 3) - 1,
                                                 2, sconf->max_order + 1));
             *bd->opt_order       = get_bits(gb, opt_order_length);
@@ -1238,6 +1242,7 @@ static int revert_channel_correlation(ALSDecContext *ctx, ALSBlockData *bd,
     ALSChannelData *ch = cd[c];
     unsigned int   dep = 0;
     unsigned int channels = ctx->avctx->channels;
+    unsigned int channel_size = ctx->sconf.frame_length + ctx->sconf.max_order;
 
     if (reverted[c])
         return 0;
@@ -1269,9 +1274,9 @@ static int revert_channel_correlation(ALSDecContext *ctx, ALSBlockData *bd,
 
     dep = 0;
     while (!ch[dep].stop_flag) {
-        unsigned int smp;
-        unsigned int begin = 1;
-        unsigned int end   = bd->block_length - 1;
+        ptrdiff_t smp;
+        ptrdiff_t begin = 1;
+        ptrdiff_t end   = bd->block_length - 1;
         int64_t y;
         int32_t *master = ctx->raw_samples[ch[dep].master_channel] + offset;
 
@@ -1280,9 +1285,26 @@ static int revert_channel_correlation(ALSDecContext *ctx, ALSBlockData *bd,
 
             if (ch[dep].time_diff_sign) {
                 t      = -t;
+                if (begin < t) {
+                    av_log(ctx->avctx, AV_LOG_ERROR, "begin %td smaller than time diff index %d.\n", begin, t);
+                    return AVERROR_INVALIDDATA;
+                }
                 begin -= t;
             } else {
+                if (end < t) {
+                    av_log(ctx->avctx, AV_LOG_ERROR, "end %td smaller than time diff index %d.\n", end, t);
+                    return AVERROR_INVALIDDATA;
+                }
                 end   -= t;
+            }
+
+            if (FFMIN(begin - 1, begin - 1 + t) < ctx->raw_buffer - master ||
+                FFMAX(end   + 1,   end + 1 + t) > ctx->raw_buffer + channels * channel_size - master) {
+                av_log(ctx->avctx, AV_LOG_ERROR,
+                       "sample pointer range [%p, %p] not contained in raw_buffer [%p, %p].\n",
+                       master + FFMIN(begin - 1, begin - 1 + t), master + FFMAX(end + 1,   end + 1 + t),
+                       ctx->raw_buffer, ctx->raw_buffer + channels * channel_size);
+                return AVERROR_INVALIDDATA;
             }
 
             for (smp = begin; smp < end; smp++) {
@@ -1297,6 +1319,16 @@ static int revert_channel_correlation(ALSDecContext *ctx, ALSBlockData *bd,
                 bd->raw_samples[smp] += y >> 7;
             }
         } else {
+
+            if (begin - 1 < ctx->raw_buffer - master ||
+                end   + 1 > ctx->raw_buffer + channels * channel_size - master) {
+                av_log(ctx->avctx, AV_LOG_ERROR,
+                       "sample pointer range [%p, %p] not contained in raw_buffer [%p, %p].\n",
+                       master + begin - 1, master + end + 1,
+                       ctx->raw_buffer, ctx->raw_buffer + channels * channel_size);
+                return AVERROR_INVALIDDATA;
+            }
+
             for (smp = begin; smp < end; smp++) {
                 y  = (1 << 6) +
                      MUL64(ch[dep].weighting[0], master[smp - 1]) +
@@ -1715,9 +1747,9 @@ static av_cold int decode_init(AVCodecContext *avctx)
 
     // allocate and assign channel data buffer for mcc mode
     if (sconf->mc_coding) {
-        ctx->chan_data_buffer  = av_malloc(sizeof(*ctx->chan_data_buffer) *
+        ctx->chan_data_buffer  = av_mallocz(sizeof(*ctx->chan_data_buffer) *
                                            num_buffers * num_buffers);
-        ctx->chan_data         = av_malloc(sizeof(*ctx->chan_data) *
+        ctx->chan_data         = av_mallocz(sizeof(*ctx->chan_data) *
                                            num_buffers);
         ctx->reverted_channels = av_malloc(sizeof(*ctx->reverted_channels) *
                                            num_buffers);

@@ -566,7 +566,7 @@ int av_opt_set_channel_layout(void *obj, const char *name, int64_t cl, int searc
                "The value set by option '%s' is not a channel layout.\n", o->name);
         return AVERROR(EINVAL);
     }
-    *(int *)(((int64_t *)target_obj) + o->offset) = cl;
+    *(int64_t *)(((uint8_t *)target_obj) + o->offset) = cl;
     return 0;
 }
 
@@ -1507,8 +1507,10 @@ void av_opt_freep_ranges(AVOptionRanges **rangesp)
 
     for (i = 0; i < ranges->nb_ranges; i++) {
         AVOptionRange *range = ranges->range[i];
-        av_freep(&range->str);
-        av_freep(&ranges->range[i]);
+        if (range) {
+            av_freep(&range->str);
+            av_freep(&ranges->range[i]);
+        }
     }
     av_freep(&ranges->range);
     av_freep(rangesp);

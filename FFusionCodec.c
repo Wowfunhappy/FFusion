@@ -394,7 +394,7 @@ pascal ComponentResult FFusionCodecOpen(FFusionGlobals glob, ComponentInstance s
 
     glob = (FFusionGlobals)NewPtrClear(sizeof(FFusionGlobalsRecord));
 
-    if (err = MemError())
+    if ((err = MemError()))
     {
         Codecprintf( stderr, "Unable to allocate globals! Exiting.\n");
     }

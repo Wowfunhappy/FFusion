@@ -278,7 +278,11 @@ static int mov_read_covr(MOVContext *c, AVIOContext *pb, int type, int len)
 static int mov_metadata_raw(MOVContext *c, AVIOContext *pb,
                             unsigned len, const char *key)
 {
-    char *value = av_malloc(len + 1);
+    char *value;
+    // Check for overflow.
+    if (len >= INT_MAX)
+        return AVERROR(EINVAL);
+    value = av_malloc(len + 1);
     if (!value)
         return AVERROR(ENOMEM);
     avio_read(pb, value, len);
@@ -382,7 +386,7 @@ static int mov_read_udta_string(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 
     if (!key)
         return 0;
-    if (atom.size < 0)
+    if (atom.size < 0 || str_size >= INT_MAX/2)
         return AVERROR_INVALIDDATA;
 
     str_size = FFMIN3(sizeof(str)-1, str_size, atom.size);
@@ -1193,6 +1197,10 @@ static int mov_read_stco(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     if (entries >= UINT_MAX/sizeof(int64_t))
         return AVERROR_INVALIDDATA;
 
+    if (sc->chunk_offsets)
+        av_log(c->fc, AV_LOG_WARNING, "Duplicate STCO atom\n");
+    av_free(sc->chunk_offsets);
+    sc->chunk_count = 0;
     sc->chunk_offsets = av_malloc(entries * sizeof(int64_t));
     if (!sc->chunk_offsets)
         return AVERROR(ENOMEM);
@@ -1709,6 +1717,10 @@ static int mov_read_stsc(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         return 0;
     if (entries >= UINT_MAX / sizeof(*sc->stsc_data))
         return AVERROR_INVALIDDATA;
+    if (sc->stsc_data)
+        av_log(c->fc, AV_LOG_WARNING, "Duplicate STSC atom\n");
+    av_free(sc->stsc_data);
+    sc->stsc_count = 0;
     sc->stsc_data = av_malloc(entries * sizeof(*sc->stsc_data));
     if (!sc->stsc_data)
         return AVERROR(ENOMEM);
@@ -1781,7 +1793,7 @@ static int mov_read_stss(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     if (!entries)
     {
         sc->keyframe_absent = 1;
-        if (!st->need_parsing)
+        if (!st->need_parsing && st->codec->codec_type == AVMEDIA_TYPE_VIDEO)
             st->need_parsing = AVSTREAM_PARSE_HEADERS;
         return 0;
     }
@@ -2144,6 +2156,11 @@ static void mov_build_index(MOVContext *mov, AVStream *st)
                         rap_group_index++;
                     }
                 }
+                if (sc->keyframe_absent
+                    && !sc->stps_count
+                    && !rap_group_present
+                    && st->codec->codec_type == AVMEDIA_TYPE_AUDIO)
+                     keyframe = 1;
                 if (keyframe)
                     distance = 0;
                 sample_size = sc->stsz_sample_size > 0 ? sc->stsz_sample_size : sc->sample_sizes[current_sample];
@@ -2269,7 +2286,7 @@ static int mov_open_dref(AVIOContext **pb, const char *src, MOVDref *ref,
     /* try relative path, we do not try the absolute because it can leak information about our
        system to an attacker */
     if (ref->nlvl_to > 0 && ref->nlvl_from > 0) {
-        char filename[1024];
+        char filename[1025];
         const char *src_path;
         int i, l;
 
@@ -2295,10 +2312,15 @@ static int mov_open_dref(AVIOContext **pb, const char *src, MOVDref *ref,
             filename[src_path - src] = 0;
 
             for (i = 1; i < ref->nlvl_from; i++)
-                av_strlcat(filename, "../", 1024);
+                av_strlcat(filename, "../", sizeof(filename));
 
-            av_strlcat(filename, ref->path + l + 1, 1024);
+            av_strlcat(filename, ref->path + l + 1, sizeof(filename));
+            if (!use_absolute_path)
+                if(strstr(ref->path + l + 1, "..") || ref->nlvl_from > 1)
+                    return AVERROR(ENOENT);
 
+            if (strlen(filename) + 1 == sizeof(filename))
+                return AVERROR(ENOENT);
             if (!avio_open2(pb, filename, AVIO_FLAG_READ, int_cb, NULL))
                 return 0;
         }
@@ -2764,6 +2786,7 @@ static int mov_read_cmov(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         goto free_and_return;
     if (ffio_init_context(&ctx, moov_data, moov_len, 0, NULL, NULL, NULL, NULL) != 0)
         goto free_and_return;
+    ctx.seekable = AVIO_SEEKABLE_NORMAL;
     atom.type = MKTAG('m','o','o','v');
     atom.size = moov_len;
     ret = mov_read_default(c, &ctx, atom);
@@ -2979,6 +3002,12 @@ static int mov_read_default(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     MOVAtom a;
     int i;
 
+    if (c->atom_depth > 10) {
+        av_log(c->fc, AV_LOG_ERROR, "Atoms too deeply nested\n");
+        return AVERROR_INVALIDDATA;
+    }
+    c->atom_depth ++;
+
     if (atom.size < 0)
         atom.size = INT64_MAX;
     while (total_size + 8 <= atom.size && !url_feof(pb)) {
@@ -2995,11 +3024,12 @@ static int mov_read_default(MOVContext *c, AVIOContext *pb, MOVAtom atom)
                 {
                     av_log(c->fc, AV_LOG_ERROR, "Broken file, trak/mdat not at top-level\n");
                     avio_skip(pb, -8);
+                    c->atom_depth --;
                     return 0;
                 }
             }
             total_size += 8;
-            if (a.size == 1) { /* 64 bit extended size */
+            if (a.size == 1 && total_size + 8 <= atom.size) { /* 64 bit extended size */
                 a.size = avio_rb64(pb) - 8;
                 total_size += 8;
             }
@@ -3031,13 +3061,16 @@ static int mov_read_default(MOVContext *c, AVIOContext *pb, MOVAtom atom)
             int64_t start_pos = avio_tell(pb);
             int64_t left;
             int err = parse(c, pb, a);
-            if (err < 0)
+            if (err < 0) {
+                c->atom_depth --;
                 return err;
+            }
             if (c->found_moov && c->found_mdat &&
                 ((!pb->seekable || c->fc->flags & AVFMT_FLAG_IGNIDX) ||
                  start_pos + a.size == avio_size(pb))) {
                 if (!pb->seekable || c->fc->flags & AVFMT_FLAG_IGNIDX)
                     c->next_root_atom = start_pos + a.size;
+                c->atom_depth --;
                 return 0;
             }
             left = a.size - avio_tell(pb) + start_pos;
@@ -3057,6 +3090,7 @@ static int mov_read_default(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     if (total_size < atom.size && atom.size < 0x7ffff)
         avio_skip(pb, atom.size - total_size);
 
+    c->atom_depth --;
     return 0;
 }
 

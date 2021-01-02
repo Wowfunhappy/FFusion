@@ -222,6 +222,18 @@ static int flv_write_header(AVFormatContext *s)
                        avcodec_get_name(enc->codec_id), i);
                 return AVERROR(EINVAL);
             }
+            if (enc->codec_id == AV_CODEC_ID_MPEG4 ||
+                enc->codec_id == AV_CODEC_ID_H263) {
+                int error = enc->strict_std_compliance > FF_COMPLIANCE_UNOFFICIAL;
+                av_log(s, error ? AV_LOG_ERROR : AV_LOG_WARNING,
+                       "Codec %s is not supported in the official FLV specification,\n", avcodec_get_name(enc->codec_id));
+
+                if (error) {
+                    av_log(s, AV_LOG_ERROR,
+                           "use vstrict=-1 / -strict -1 to use it anyway.\n");
+                    return AVERROR(EINVAL);
+                }
+            }
             break;
         case AVMEDIA_TYPE_AUDIO:
             if (audio_enc) {
@@ -472,7 +484,7 @@ static int flv_write_packet(AVFormatContext *s, AVPacket *pkt)
         avio_w8(pb, FLV_TAG_TYPE_VIDEO);
 
         flags = enc->codec_tag;
-        if (flags == 0) {
+        if (flags <= 0 || flags > 15) {
             av_log(s, AV_LOG_ERROR,
                    "Video codec '%s' is not compatible with FLV\n",
                    avcodec_get_name(enc->codec_id));

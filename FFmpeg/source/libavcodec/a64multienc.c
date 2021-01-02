@@ -78,9 +78,13 @@ static void to_meta_with_crop(AVCodecContext *avctx, AVFrame *p, int *dest)
             for (y = blocky; y < blocky + 8 && y < C64YRES; y++) {
                 for (x = blockx; x < blockx + 8 && x < C64XRES; x += 2) {
                     if(x < width && y < height) {
-                        /* build average over 2 pixels */
-                        luma = (src[(x + 0 + y * p->linesize[0])] +
-                                src[(x + 1 + y * p->linesize[0])]) / 2;
+                        if (x + 1 < width) {
+                            /* build average over 2 pixels */
+                            luma = (src[(x + 0 + y * p->linesize[0])] +
+                                    src[(x + 1 + y * p->linesize[0])]) / 2;
+                        } else {
+                            luma = src[(x + y * p->linesize[0])];
+                        }
                         /* write blocks as linear data now so they are suitable for elbg */
                         dest[0] = luma;
                     }
@@ -317,7 +321,9 @@ static int a64multi_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     } else {
         /* fill up mc_meta_charset with data until lifetime exceeds */
         if (c->mc_frame_counter < c->mc_lifetime) {
-            *p = *pict;
+            ret = av_frame_ref(p, pict);
+            if (ret < 0)
+                return ret;
             p->pict_type = AV_PICTURE_TYPE_I;
             p->key_frame = 1;
             to_meta_with_crop(avctx, p, meta + 32000 * c->mc_frame_counter);
@@ -334,8 +340,8 @@ static int a64multi_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
         req_size = 0;
         /* any frames to encode? */
         if (c->mc_lifetime) {
-            req_size = charset_size + c->mc_lifetime*(screen_size + colram_size);
-            if ((ret = ff_alloc_packet2(avctx, pkt, req_size)) < 0)
+            int alloc_size = charset_size + c->mc_lifetime*(screen_size + colram_size);
+            if ((ret = ff_alloc_packet2(avctx, pkt, alloc_size)) < 0)
                 return ret;
             buf = pkt->data;
 
@@ -352,6 +358,7 @@ static int a64multi_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
             /* advance pointers */
             buf      += charset_size;
             charset  += charset_size;
+            req_size += charset_size;
         }
 
         /* write x frames to buf */

@@ -251,6 +251,12 @@ void avcodec_align_dimensions2(AVCodecContext *s, int *width, int *height,
     int i;
     int w_align = 1;
     int h_align = 1;
+    AVPixFmtDescriptor const *desc = av_pix_fmt_desc_get(s->pix_fmt);
+
+    if (desc) {
+        w_align = 1 << desc->log2_chroma_w;
+        h_align = 1 << desc->log2_chroma_h;
+    }
 
     switch (s->pix_fmt) {
     case AV_PIX_FMT_YUV420P:
@@ -327,6 +333,8 @@ void avcodec_align_dimensions2(AVCodecContext *s, int *width, int *height,
     case AV_PIX_FMT_GBRP12BE:
     case AV_PIX_FMT_GBRP14LE:
     case AV_PIX_FMT_GBRP14BE:
+    case AV_PIX_FMT_GBRP16LE:
+    case AV_PIX_FMT_GBRP16BE:
         w_align = 16; //FIXME assume 16 pixel per macroblock
         h_align = 16 * 2; // interlaced needs 2 macroblocks height
         break;
@@ -334,7 +342,7 @@ void avcodec_align_dimensions2(AVCodecContext *s, int *width, int *height,
     case AV_PIX_FMT_YUVJ411P:
     case AV_PIX_FMT_UYYVYY411:
         w_align = 32;
-        h_align = 8;
+        h_align = 16 * 2;
         break;
     case AV_PIX_FMT_YUV410P:
         if (s->codec_id == AV_CODEC_ID_SVQ1) {
@@ -356,6 +364,10 @@ void avcodec_align_dimensions2(AVCodecContext *s, int *width, int *height,
             w_align = 4;
             h_align = 4;
         }
+        if (s->codec_id == AV_CODEC_ID_JV) {
+            w_align = 8;
+            h_align = 8;
+        }
         break;
     case AV_PIX_FMT_BGR24:
         if ((s->codec_id == AV_CODEC_ID_MSZH) ||
@@ -371,8 +383,6 @@ void avcodec_align_dimensions2(AVCodecContext *s, int *width, int *height,
         }
         break;
     default:
-        w_align = 1;
-        h_align = 1;
         break;
     }
 
@@ -780,6 +790,7 @@ int avcodec_default_get_buffer(AVCodecContext *avctx, AVFrame *frame)
 typedef struct CompatReleaseBufPriv {
     AVCodecContext avctx;
     AVFrame frame;
+    uint8_t avframe_padding[1024]; // hack to allow linking to a avutil with larger AVFrame
 } CompatReleaseBufPriv;
 
 static void compat_free_buffer(void *opaque, uint8_t *data)
@@ -1591,7 +1602,7 @@ int attribute_align_arg avcodec_encode_audio2(AVCodecContext *avctx,
                                               const AVFrame *frame,
                                               int *got_packet_ptr)
 {
-    AVFrame tmp;
+    AVFrame *extended_frame = NULL;
     AVFrame *padded_frame = NULL;
     int ret;
     AVPacket user_pkt = *avpkt;
@@ -1616,9 +1627,13 @@ int attribute_align_arg avcodec_encode_audio2(AVCodecContext *avctx,
         }
         av_log(avctx, AV_LOG_WARNING, "extended_data is not set.\n");
 
-        tmp = *frame;
-        tmp.extended_data = tmp.data;
-        frame = &tmp;
+        extended_frame = av_frame_alloc();
+        if (!extended_frame)
+            return AVERROR(ENOMEM);
+
+        memcpy(extended_frame, frame, sizeof(AVFrame));
+        extended_frame->extended_data = extended_frame->data;
+        frame = extended_frame;
     }
 
     /* check for valid frame size */
@@ -1626,14 +1641,15 @@ int attribute_align_arg avcodec_encode_audio2(AVCodecContext *avctx,
         if (avctx->codec->capabilities & CODEC_CAP_SMALL_LAST_FRAME) {
             if (frame->nb_samples > avctx->frame_size) {
                 av_log(avctx, AV_LOG_ERROR, "more samples than frame size (avcodec_encode_audio2)\n");
-                return AVERROR(EINVAL);
+                ret = AVERROR(EINVAL);
+                goto end;
             }
         } else if (!(avctx->codec->capabilities & CODEC_CAP_VARIABLE_FRAME_SIZE)) {
             if (frame->nb_samples < avctx->frame_size &&
                 !avctx->internal->last_audio_frame) {
                 ret = pad_last_frame(avctx, &padded_frame, frame);
                 if (ret < 0)
-                    return ret;
+                    goto end;
 
                 frame = padded_frame;
                 avctx->internal->last_audio_frame = 1;
@@ -1705,6 +1721,7 @@ int attribute_align_arg avcodec_encode_audio2(AVCodecContext *avctx,
 
 end:
     av_frame_free(&padded_frame);
+    av_free(extended_frame);
 
     return ret;
 }
@@ -3388,6 +3405,11 @@ int avpriv_bprint_to_extradata(AVCodecContext *avctx, struct AVBPrint *buf)
     ret = av_bprint_finalize(buf, &str);
     if (ret < 0)
         return ret;
+    if (!av_bprint_is_complete(buf)) {
+        av_free(str);
+        return AVERROR(ENOMEM);
+    }
+
     avctx->extradata = str;
     /* Note: the string is NUL terminated (so extradata can be read as a
      * string), but the ending character is not accounted in the size (in

@@ -1917,9 +1917,10 @@ static void vc1_interp_mc(VC1Context *v)
     uvmx = (mx + ((mx & 3) == 3)) >> 1;
     uvmy = (my + ((my & 3) == 3)) >> 1;
     if (v->field_mode) {
-        if (v->cur_field_type != v->ref_field_type[1])
+        if (v->cur_field_type != v->ref_field_type[1]) {
             my   = my   - 2 + 4 * v->cur_field_type;
             uvmy = uvmy - 2 + 4 * v->cur_field_type;
+        }
     }
     if (v->fastuvmc) {
         uvmx = uvmx + ((uvmx < 0) ? -(uvmx & 1) : (uvmx & 1));
@@ -6013,7 +6014,7 @@ static int vc1_decode_frame(AVCodecContext *avctx, void *data,
 
     /* skip B-frames if we don't have reference frames */
     if (s->last_picture_ptr == NULL && (s->pict_type == AV_PICTURE_TYPE_B || s->droppable)) {
-        goto err;
+        goto end;
     }
     if ((avctx->skip_frame >= AVDISCARD_NONREF && s->pict_type == AV_PICTURE_TYPE_B) ||
         (avctx->skip_frame >= AVDISCARD_NONKEY && s->pict_type != AV_PICTURE_TYPE_I) ||

@@ -990,7 +990,7 @@ found:
 	s->flags |= PARSER_FLAG_COMPLETE_FRAMES;
 
 	parserContext = malloc(sizeof(FFusionParserContext));
-	parserContext->avctx = avcodec_alloc_context();
+	parserContext->avctx = avcodec_alloc_context3(avcodec_find_decoder(codec_id));
 	parserContext->pc = s;
 	parserContext->parserStructure = ffParser;
 	if(ffParser->internalContextSize)

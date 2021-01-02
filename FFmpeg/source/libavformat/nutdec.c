@@ -288,7 +288,7 @@ static int decode_main_header(NUTContext *nut)
         while (tmp_fields-- > 8)
             ffio_read_varlen(bc);
 
-        if (count == 0 || i + count > 256) {
+        if (count <= 0 || count > 256 - (i <= 'N') - i) {
             av_log(s, AV_LOG_ERROR, "illegal count %d at %d\n", count, i);
             return AVERROR_INVALIDDATA;
         }
@@ -491,6 +491,10 @@ static int decode_info_header(NUTContext *nut)
                                      nut->time_base[chapter_start %
                                                     nut->time_base_count],
                                      start, start + chapter_len, NULL);
+        if (!chapter) {
+            av_log(s, AV_LOG_ERROR, "could not create chapter\n");
+            return AVERROR(ENOMEM);
+        }
         metadata = &chapter->metadata;
     } else if (stream_id_plus1) {
         st       = s->streams[stream_id_plus1 - 1];
@@ -534,7 +538,8 @@ static int decode_info_header(NUTContext *nut)
 
             if (stream_id_plus1 && !strcmp(name, "r_frame_rate")) {
                 sscanf(str_value, "%d/%d", &st->r_frame_rate.num, &st->r_frame_rate.den);
-                if (st->r_frame_rate.num >= 1000LL*st->r_frame_rate.den)
+                if (st->r_frame_rate.num >= 1000LL*st->r_frame_rate.den ||
+                    st->r_frame_rate.num < 0 || st->r_frame_rate.num < 0)
                     st->r_frame_rate.num = st->r_frame_rate.den = 0;
                 continue;
             }

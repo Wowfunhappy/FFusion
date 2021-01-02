@@ -818,9 +818,9 @@ static void LoggerLogToConsole(CFDataRef data)
 	CFMutableStringRef s = CFStringCreateMutable(NULL, 0);
 
 	char buf[32];
-	struct tm t;
-	gmtime_r(&timestamp.tv_sec, &t);
-	strftime(buf, sizeof(buf)-1, "%T", &t);
+	struct tm *t;
+	gmtime_r(&timestamp.tv_sec, t);
+	strftime(buf, sizeof(buf)-1, "%T", t);
 	CFStringRef ts = CFStringCreateWithBytesNoCopy(NULL, (const UInt8 *)buf, strlen(buf), kCFStringEncodingASCII, false, kCFAllocatorNull);
 	CFStringAppend(s, ts);
 	CFRelease(ts);
