@@ -690,7 +690,7 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
         // we do the same for the AVCodecContext since all context values are
         // correctly initialized when calling the alloc function
 
-        glob->avContext = avcodec_alloc_context3(AVMEDIA_TYPE_VIDEO);
+        glob->avContext = avcodec_alloc_context3(glob->avCodec);
 
 		// Use low delay
 		glob->avContext->flags |= CODEC_FLAG_LOW_DELAY;
