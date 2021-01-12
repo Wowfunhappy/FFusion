@@ -197,6 +197,8 @@ static int parse_mpeg4_extra(FFusionParserContext *parser, const uint8_t *buf, i
 	pc1->pc.frame_start_found = 0;
 
 	s->avctx = parser->avctx;
+	
+	/*Crash is here!*/
 	s->current_picture_ptr = &s->current_picture;
 
 	init_get_bits(gb, buf, 8 * buf_size);
@@ -228,6 +230,7 @@ static int parse_mpeg4_stream(FFusionParserContext *parser, const uint8_t *buf, 
 
 	s = pc1->enc;
 
+	/*Crash is here!*/
 	s->avctx = parser->avctx;
 	s->current_picture_ptr = &s->current_picture;
 

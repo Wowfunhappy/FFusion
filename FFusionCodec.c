@@ -162,8 +162,8 @@ typedef struct
 //---------------------------------------------------------------------------
 
 static OSErr FFusionDecompress(FFusionGlobals glob, AVCodecContext *context, UInt8 *dataPtr, int width, int height, AVFrame *picture, int length);
-static int FFusionGetBuffer(AVCodecContext *s, AVFrame *pic);
-static void FFusionReleaseBuffer(AVCodecContext *s, AVFrame *pic);
+static int FFusionGetBuffer(AVCodecContext *s, AVFrame *pic, int flags);
+static void FFusionFreeBuffer(void *opaque, uint8_t *data);
 static FFusionBuffer *retainBuffer(FFusionGlobals glob, FFusionBuffer *buf);
 static void releaseBuffer(AVCodecContext *s, AVFrame *pic);
 
@@ -797,8 +797,8 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 		// some hooks into ffmpeg's buffer allocation to get frames in
 		// decode order without delay more easily
 		glob->avContext->opaque = glob;
-		glob->avContext->get_buffer = FFusionGetBuffer;
-		glob->avContext->release_buffer = FFusionReleaseBuffer;
+		glob->avContext->get_buffer2 = FFusionGetBuffer;
+		//glob->avContext->release_buffer = FFusionReleaseBuffer;
 
 		// multi-slice decoding
 		SetupMultithreadedDecoding(glob->avContext, codecID);
@@ -1447,10 +1447,10 @@ pascal ComponentResult FFusionCodecGetCodecInfo(FFusionGlobals glob, CodecInfo *
 	return getFFusionCodecInfo(glob->self, glob->componentType, info);
 }
 
-static int FFusionGetBuffer(AVCodecContext *s, AVFrame *pic)
+static int FFusionGetBuffer(AVCodecContext *s, AVFrame *pic, int flags)
 {
 	FFusionGlobals glob = s->opaque;
-	int ret = avcodec_default_get_buffer(s, pic);
+	int ret = avcodec_default_get_buffer2(s, pic, flags);
 	int i;
 
 	if (ret >= 0) {
@@ -1499,9 +1499,22 @@ static void releaseBuffer(AVCodecContext *s, AVFrame *pic)
 //	FFusionDebugPrint("%p Released Buffer %p #%d to %d(%d).\n", glob, buf, buf->frameNumber, buf->retainCount, buf->ffmpegUsing);
 	if(!buf->retainCount && !buf->ffmpegUsing)
 	{
-		avcodec_default_release_buffer(s, pic);
+		//avcodec_default_release_buffer(s, pic);
 		buf->picture.data[0] = NULL;
 	}
+}
+
+void FFusionFreeBuffer(void *opaque, uint8_t *data)
+{
+	FFusionBuffer *buf = opaque;
+	if(buf->ffmpegUsing)
+	{
+		buf->ffmpegUsing = 0;
+		//releaseBuffer(s, pic);
+	}
+	//AVBufferRef *ref = (AVBufferRef *)opaque;
+	//av_buffer_unref(&ref);
+	//av_free(data);
 }
 
 //-----------------------------------------------------------------
