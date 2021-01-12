@@ -219,18 +219,14 @@ static int parse_mpeg4_extra(FFusionParserContext *parser, const uint8_t *buf, i
  */
 static int parse_mpeg4_stream(FFusionParserContext *parser, const uint8_t *buf, int buf_size, int *out_buf_size, int *type, int *skippable, int *skipped)
 {
-	ParseContext1 *pc1 = (ParseContext1 *)parser->pc->priv_data;
-	int endOfFrame;
+	ParseContext *pc1 = (ParseContext *)parser->pc->priv_data;
+	pc1->frame_start_found = 0;
+	
+	int endOfFrame = ff_mpeg4_find_frame_end(pc1, buf, buf_size);
+	
+	MpegEncContext *s = pc1;
 	GetBitContext gb1, *gb = &gb1;
-	MpegEncContext *s;
 
-	pc1->pc.frame_start_found = 0;
-
-	endOfFrame = ff_mpeg4_find_frame_end(&(pc1->pc), buf, buf_size);
-
-	s = pc1->enc;
-
-	/*Crash is here!*/
 	s->avctx = parser->avctx;
 	s->current_picture_ptr = &s->current_picture;
 
