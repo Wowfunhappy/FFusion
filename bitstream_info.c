@@ -190,15 +190,13 @@ int parse_ac3_bitstream(AudioStreamBasicDescription *asbd, AudioChannelLayout *a
 
 static int parse_mpeg4_extra(FFusionParserContext *parser, const uint8_t *buf, int buf_size)
 {
-	ParseContext1 *pc1 = (ParseContext1 *)parser->pc->priv_data;
-	MpegEncContext *s = pc1->enc;
+	ParseContext *pc1 = (ParseContext *)parser->pc->priv_data;
+	pc1->frame_start_found = 0;
+	
+	MpegEncContext *s = pc1;
 	GetBitContext gb1, *gb = &gb1;
 
-	pc1->pc.frame_start_found = 0;
-
 	s->avctx = parser->avctx;
-	
-	/*Crash is here!*/
 	s->current_picture_ptr = &s->current_picture;
 
 	init_get_bits(gb, buf, 8 * buf_size);
