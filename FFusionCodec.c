@@ -65,7 +65,12 @@
 //---------------------------------------------------------------------------
 
 // 64 because that's 2 * ffmpeg's INTERNAL_BUFFER_SIZE and QT sometimes uses more than 32
-#define FFUSION_MAX_BUFFERS 64
+
+//Wowfunhappy: Despite my best efforts, I do not understand what is going on with FFUSION_MAX_BUFFERS. I believe it is vestigal from before ffmpeg automatically reference counted frames. When this... thing... fills up, Quicktime starts dropping lots of frames. It was originally set to 64 (see above comment), which causes it to start dropping frames after a few seconds.
+
+// Wowfunhappy: I have limited free time, computers have lots of memory, and this is _ABSOLUTELY NOT_ production code, so we're just going to set this to an absurdly high value and call it a day.
+
+#define FFUSION_MAX_BUFFERS 99999
 
 #define kNumPixelFormatsSupportedFFusion 1
 
@@ -361,12 +366,15 @@ FFusionPacked DefaultPackedTypeForCodec(OSType codec)
 
 void setFutureFrame(FFusionGlobals glob, FFusionBuffer *newFuture)
 {
+	asl_log(NULL, NULL, ASL_LEVEL_ERR, "Point 5");
 	FFusionBuffer *temp = glob->decode.futureBuffer;
 	if(newFuture != NULL)
 		retainBuffer(glob, newFuture);
 	glob->decode.futureBuffer = newFuture;
-	if(temp != NULL)
-		releaseBuffer(glob->avContext, temp->frame);
+	if(temp != NULL) {
+		//asl_log(NULL, NULL, ASL_LEVEL_ERR, "Point 4");
+		//releaseBuffer(glob->avContext, temp->frame);
+	}
 }
 
 //---------------------------------------------------------------------------
@@ -1397,8 +1405,11 @@ pascal ComponentResult FFusionCodecEndBand(FFusionGlobals glob, ImageSubCodecDec
 	FFusionBuffer *buf = myDrp->buffer;
 	
 	glob->stats.type[drp->frameType].end_calls++;
-	if(buf && buf->frame)
-		releaseBuffer(glob->avContext, buf->frame);
+	asl_log(NULL, NULL, ASL_LEVEL_ERR, "Point 6");
+	if(buf && buf->frame) {
+		asl_log(NULL, NULL, ASL_LEVEL_ERR, "Point 3");
+		//releaseBuffer(glob->avContext, buf->frame);
+	}
 	
 	//	FFusionDebugPrint2("%p EndBand #%d.\n", glob, myDrp->frameNumber);
 #if TARGET_OS_WIN32
@@ -1473,8 +1484,9 @@ static int FFusionGetBuffer(AVCodecContext *s, AVFrame *pic, int flags)
 	return ret;
 }
 
-static void FFusionReleaseBuffer(AVCodecContext *s, AVFrame *pic)
+/*static void FFusionReleaseBuffer(AVCodecContext *s, AVFrame *pic)
 {
+	asl_log(NULL, NULL, ASL_LEVEL_ERR, "Point 2");
 	//	FFusionGlobals glob = s->opaque;
 	FFusionBuffer *buf = pic->opaque;
 	
@@ -1483,7 +1495,7 @@ static void FFusionReleaseBuffer(AVCodecContext *s, AVFrame *pic)
 		buf->ffmpegUsing = 0;
 		releaseBuffer(s, pic);
 	}
-}
+}*/
 
 static FFusionBuffer *retainBuffer(FFusionGlobals glob, FFusionBuffer *buf)
 {
@@ -1494,16 +1506,18 @@ static FFusionBuffer *retainBuffer(FFusionGlobals glob, FFusionBuffer *buf)
 
 static void releaseBuffer(AVCodecContext *s, AVFrame *pic)
 {
-	/*FFusionBuffer *buf = pic->opaque;
+	//asl_log(NULL, NULL, ASL_LEVEL_ERR, "Point 1");
+	FFusionBuffer *buf = pic->opaque;
 	
 	//buf->retainCount--;
-	//	FFusionGlobals glob = (FFusionGlobals)s->opaque;
+	FFusionGlobals glob = (FFusionGlobals)s->opaque;
+	asl_log(NULL, NULL, ASL_LEVEL_ERR, "%p Released Buffer %p #%d to %d(%d).\n", glob, buf, buf->frameNumber, buf->retainCount, buf->ffmpegUsing);
 	//	FFusionDebugPrint("%p Released Buffer %p #%d to %d(%d).\n", glob, buf, buf->frameNumber, buf->retainCount, buf->ffmpegUsing);
 	if(!buf->retainCount && !buf->ffmpegUsing)
 	{
 		//avcodec_default_release_buffer(s, pic);
 		buf->picture.data[0] = NULL;
-	}*/
+	}
 }
 
 //-----------------------------------------------------------------
