@@ -411,7 +411,7 @@ resource 'dlle' (kDivX1CodecInfoResID) {
 #define kCodecSubType 'VP80'
 #include "Resources/FFusionResourceInc.r"
 
-#define kCodecInfoResID kVP8CodecInfoResID
+#define kCodecInfoResID kVP9CodecInfoResID
 #define kCodecName "Google VP9 (FFusion)"
 
 #define kCodecDescription "FFusion decompresses video stored in Google VP9 format."
