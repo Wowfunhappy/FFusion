@@ -60,8 +60,9 @@
 #include "CodecIDs.h"
 #include "FFmpegUtils.h"
 
-#include <libavcodec/avcodec.h>
+//Wowfunhappy
 #include <libavformat/avformat.h>
+
 
 //---------------------------------------------------------------------------
 // Types
@@ -274,9 +275,10 @@ static enum AVPixelFormat FindPixFmtFromVideo(AVCodec *codec, AVCodecContext *av
 	pkt.data = (UInt8*)data;
 	pkt.size = bufferSize;
 	
-	/*while(av_read_frame(tmpContext, &pkt)>=0) {*/
-		avcodec_decode_video2(tmpContext, tmpFrame, &got_picture, &pkt);
-	//}
+	//HERE!!!
+	avcodec_decode_video2(tmpContext, tmpFrame, &got_picture, &pkt);
+
+	
     pix_fmt = tmpContext->pix_fmt;
     avcodec_close(tmpContext);
 	if( got_picture ){
@@ -286,6 +288,9 @@ static enum AVPixelFormat FindPixFmtFromVideo(AVCodec *codec, AVCodecContext *av
 	else{
 		asl_log(NULL, NULL, ASL_LEVEL_ERR, "Found no picture, fmt=%d", pix_fmt );
 		ffCodecprintf( stderr, "Found no picture, fmt=%d", pix_fmt );
+		
+		//Okay, so we'll just guess. Remove me later!
+		//return 0;
 	}
 	
 	return pix_fmt;
@@ -627,7 +632,7 @@ static inline int shouldDecode(FFusionGlobals glob, enum AVCodecID codecID)
 		decode = ffusionIsParsedVideoDecodable(glob->begin.parser);
 	}
 	if(decode > FFUSION_CANNOT_DECODE &&
-	   (codecID == CODEC_ID_H264 || codecID == CODEC_ID_MPEG4)
+	   (codecID == AV_CODEC_ID_H264 || codecID == AV_CODEC_ID_MPEG4)
 #if TARGET_OS_MAC
 	   && CFPreferencesGetAppBooleanValue(CFSTR("PreferAppleCodecs"), FFUSION_PREF_DOMAIN, NULL)
 #endif
@@ -685,17 +690,17 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 		
 		glob->packedType = DefaultPackedTypeForCodec(componentType);
 		
-		if(codecID == CODEC_ID_NONE)
+		if(codecID == AV_CODEC_ID_NONE)
 		{
 			FFusionDebugPrint2("Warning! Unknown codec type! Using MPEG4 by default.\n");
-			codecID = CODEC_ID_MPEG4;
+			codecID = AV_CODEC_ID_MPEG4;
 		}
 		
 		glob->avCodec = avcodec_find_decoder(codecID);
 				//		if(glob->packedType != PACKED_QUICKTIME_KNOWS_ORDER)
 		glob->begin.parser = ffusionParserInit(codecID);
 		
-		if ((codecID == CODEC_ID_MPEG4 || codecID == CODEC_ID_H264) && !glob->begin.parser)
+		if ((codecID == AV_CODEC_ID_MPEG4 || codecID == AV_CODEC_ID_H264) && !glob->begin.parser)
 			FFusionDebugPrint2("This is a parseable format, but we couldn't open a parser!\n");
 		
         // we do the same for the AVCodecContext since all context values are
@@ -843,7 +848,7 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 		
         // codec was opened, but didn't give us its pixfmt
 		// we have to decode the first frame to find out one
-		else if (glob->avContext->pix_fmt == PIX_FMT_NONE && p->bufferSize && p->data)
+		else if (glob->avContext->pix_fmt == AV_PIX_FMT_NONE && p->bufferSize && p->data)
 		{
             glob->avContext->pix_fmt = FindPixFmtFromVideo(glob->avCodec, glob->avContext, p->data, p->bufferSize);
 		}
@@ -1162,6 +1167,7 @@ static OSErr PrereqDecompress(FFusionGlobals glob, FrameData *prereq, AVCodecCon
 	unsigned char *dataPtr = (unsigned char *)prereq->buffer;
 	int dataSize = prereq->dataSize;
 	OSErr err;
+	asl_log(NULL, NULL, ASL_LEVEL_ERR, "%p prereq-decompressing frame #%ld.\n", glob, prereq->frameNumber);
 	FFusionDebugPrint("%p prereq-decompressing frame #%ld.\n", glob, prereq->frameNumber);
 	
 	if(preprereq)
@@ -1534,7 +1540,7 @@ OSErr FFusionDecompress(FFusionGlobals glob, AVCodecContext *context, UInt8 *dat
 	
 	asl_log(NULL, NULL, ASL_LEVEL_ERR, "%p Decompress %d bytes.\n", glob, length);
 	FFusionDebugPrint("%p Decompress %d bytes.\n", glob, length);
-	avcodec_get_frame_defaults(picture);
+	//avcodec_get_frame_defaults(picture);
 	
 	av_init_packet(&pkt);
 	pkt.data = dataPtr;

@@ -51,7 +51,7 @@
 #ifndef _MSC_VER
 #	include "libavutil/bswap.h"
 #	include "libavutil/intmath.h"
-#	include "libavutil/internal.h"
+//#	include "libavutil/internal.h"
 #endif
 #include "libavcodec/mpegvideo.h"
 #include "libavcodec/parser.h"
@@ -955,7 +955,7 @@ FFusionParserContext *ffusionParserInit(int codec_id)
 	FFusionParserContext *parserContext = NULL;
     int ret, i;
 
-    if(codec_id == CODEC_ID_NONE)
+    if(codec_id == AV_CODEC_ID_NONE)
         return NULL;
 
 	if (!ffusionFirstParser) initFFusionParsers();

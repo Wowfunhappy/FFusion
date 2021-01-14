@@ -173,7 +173,7 @@ void initialize_video_map(NCStream *map, Track targetTrack, Handle dataRef, OSTy
 
 	// 12 is invalid in mov
 	// FIXME: it might be better to set this based entirely on pix_fmt
-	if ((*imgHdl)->depth == 12 || (*imgHdl)->depth == 0) (*imgHdl)->depth = codec->pix_fmt == PIX_FMT_YUVA420P ? 32 : 24;
+	if ((*imgHdl)->depth == 12 || (*imgHdl)->depth == 0) (*imgHdl)->depth = codec->pix_fmt == AV_PIX_FMT_YUVA420P ? 32 : 24;
 
 	/* Create the strf image description extension (see AVI's BITMAPINFOHEADER) */
 	imgDescExt = create_strf_ext(codec);
@@ -330,13 +330,13 @@ bail:
 OSType map_video_codec_to_mov_tag(enum AVCodecID codec_id)
 {
 	switch(codec_id) {
-		case CODEC_ID_FLV1:
+		case AV_CODEC_ID_FLV1:
 			return 'FLV1';
-		case CODEC_ID_VP6F:
+		case AV_CODEC_ID_VP6F:
 			return 'VP6F';
-		case CODEC_ID_FLASHSV:
+		case AV_CODEC_ID_FLASHSV:
 			return 'FSV1';
-		case CODEC_ID_VP6A:
+		case AV_CODEC_ID_VP6A:
 			return 'VP6A';
 	}
 	return 0;
@@ -345,9 +345,9 @@ OSType map_video_codec_to_mov_tag(enum AVCodecID codec_id)
 OSType forced_map_video_codec_to_mov_tag(enum AVCodecID codec_id)
 {
 	switch (codec_id) {
-		case CODEC_ID_H264:
+		case AV_CODEC_ID_H264:
 			return 'H264';
-		case CODEC_ID_MPEG4:
+		case AV_CODEC_ID_MPEG4:
 			return 'MP4S';
 	}
 	return 0;
@@ -362,21 +362,21 @@ void map_avi_to_mov_tag(enum AVCodecID codec_id, AudioStreamBasicDescription *as
 		asbd->mFormatID = fourcc;
 
 	switch(codec_id) {
-		case CODEC_ID_AC3:
+		case AV_CODEC_ID_AC3:
 			map->vbr = 1;
 			break;
-		case CODEC_ID_PCM_S16LE:
+		case AV_CODEC_ID_PCM_S16LE:
 			asbd->mFormatFlags = kLinearPCMFormatFlagIsSignedInteger;
 			asbd->mBytesPerPacket = 2 * channels;
 			break;
-		case CODEC_ID_PCM_U8:
+		case AV_CODEC_ID_PCM_U8:
 			asbd->mFormatFlags = kLinearPCMFormatFlagIsBigEndian;
 			asbd->mBytesPerPacket = channels;
 			break;
-		case CODEC_ID_VORBIS:
+		case AV_CODEC_ID_VORBIS:
 			asbd->mFormatID = 'OggV';
 			break;
-		case CODEC_ID_DTS:
+		case AV_CODEC_ID_DTS:
 			map->vbr = 1;
 			break;
 	}

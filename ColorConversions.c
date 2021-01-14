@@ -611,33 +611,33 @@ static FASTCALL void ClearY422(UInt8 *baseAddr, long rowBytes, int width, int he
 	}
 }
 
-OSType ColorConversionDstForPixFmt(enum AVCodecID codecID, enum PixelFormat ffPixFmt)
+OSType ColorConversionDstForPixFmt(enum AVCodecID codecID, enum AVPixelFormat ffPixFmt)
 {
 	switch (ffPixFmt) {
-		case PIX_FMT_RGB555LE:
-		case PIX_FMT_RGB555BE:
+		case AV_PIX_FMT_RGB555LE:
+		case AV_PIX_FMT_RGB555BE:
 			return k16BE555PixelFormat;
-		case PIX_FMT_BGR24:
+		case AV_PIX_FMT_BGR24:
 			return k24RGBPixelFormat; //FIXME: try k24BGRPixelFormat
-		case PIX_FMT_RGB24:
+		case AV_PIX_FMT_RGB24:
 			return k24RGBPixelFormat;
-		case PIX_FMT_ARGB:
-		case PIX_FMT_BGRA:
+		case AV_PIX_FMT_ARGB:
+		case AV_PIX_FMT_BGRA:
 			return k32ARGBPixelFormat;
 		// RJVB
-		case PIX_FMT_RGBA:
+		case AV_PIX_FMT_RGBA:
 			return k32ARGBPixelFormat;
-		case PIX_FMT_YUV410P:
+		case AV_PIX_FMT_YUV410P:
 			return k2vuyPixelFormat;
-		case PIX_FMT_YUVJ420P:
-		case PIX_FMT_YUV420P:
+		case AV_PIX_FMT_YUVJ420P:
+		case AV_PIX_FMT_YUV420P:
 			return k2vuyPixelFormat; //disables "fast YUV" path
-		case PIX_FMT_YUV422P:
+		case AV_PIX_FMT_YUV422P:
 			return k2vuyPixelFormat;
-		case PIX_FMT_YUVA420P:
+		case AV_PIX_FMT_YUVA420P:
 			return k4444YpCbCrA8PixelFormat;
 		// RJVB
-		case PIX_FMT_GRAY8:
+		case AV_PIX_FMT_GRAY8:
 			// QT only seems to know indexed grayscale, so we use RGB with 3 identical colour values...
 			return k24RGBPixelFormat;
 		default:
@@ -645,12 +645,12 @@ OSType ColorConversionDstForPixFmt(enum AVCodecID codecID, enum PixelFormat ffPi
 	}
 }
 
-int ColorConversionFindFor( ColorConversionFuncs *funcs, enum AVCodecID codecID, enum PixelFormat ffPixFmt,
+int ColorConversionFindFor( ColorConversionFuncs *funcs, enum AVCodecID codecID, enum AVPixelFormat ffPixFmt,
 						   AVPicture *ffPicture, OSType qtPixFmt, UInt8 *baseAddr, long rowBytes, int width, int height )
 {
 	switch (ffPixFmt) {
-		case PIX_FMT_YUVJ420P:
-		case PIX_FMT_YUV420P:
+		case AV_PIX_FMT_YUVJ420P:
+		case AV_PIX_FMT_YUV420P:
 			funcs->clear = ClearY422;
 			
 #ifdef __ppc__
@@ -691,11 +691,11 @@ int ColorConversionFindFor( ColorConversionFuncs *funcs, enum AVCodecID codecID,
 			}
 #endif
 			break;
-		case PIX_FMT_BGR24:
+		case AV_PIX_FMT_BGR24:
 			funcs->clear = ClearRGB24;
 			funcs->convert = BGR24toRGB24;
 			break;
-		case PIX_FMT_ARGB:
+		case AV_PIX_FMT_ARGB:
 			funcs->clear = ClearRGB32;
 #ifdef __ppc__
 			funcs->convert = RGB32toRGB32Swap;
@@ -704,11 +704,11 @@ int ColorConversionFindFor( ColorConversionFuncs *funcs, enum AVCodecID codecID,
 #endif
 			break;
 			// RJVB
-		case PIX_FMT_RGBA:
+		case AV_PIX_FMT_RGBA:
 			funcs->clear = ClearRGB32;
 			funcs->convert = RGB32toARGB;
 			break;
-		case PIX_FMT_BGRA:
+		case AV_PIX_FMT_BGRA:
 			funcs->clear = ClearRGB32;
 #ifdef __ppc__
 			funcs->convert = RGB32toRGB32Copy;
@@ -716,31 +716,31 @@ int ColorConversionFindFor( ColorConversionFuncs *funcs, enum AVCodecID codecID,
 			funcs->convert = RGB32toRGB32Swap;
 #endif
 			break;
-		case PIX_FMT_RGB24:
+		case AV_PIX_FMT_RGB24:
 			funcs->clear = ClearRGB24;
 			funcs->convert = RGB24toRGB24;
 			break;
-		case PIX_FMT_GRAY8:
+		case AV_PIX_FMT_GRAY8:
 			funcs->clear = ClearGRAY8;
 			funcs->convert = GRAY8toRGB24;
 			break;
-		case PIX_FMT_RGB555LE:
+		case AV_PIX_FMT_RGB555LE:
 			funcs->clear = ClearRGB16;
 			funcs->convert = RGB16toRGB16Swap;
 			break;
-		case PIX_FMT_RGB555BE:
+		case AV_PIX_FMT_RGB555BE:
 			funcs->clear = ClearRGB16;
 			funcs->convert = RGB16toRGB16;
 			break;
-		case PIX_FMT_YUV410P:
+		case AV_PIX_FMT_YUV410P:
 			funcs->clear = ClearY422;
 			funcs->convert = Y410toY422;
 			break;
-		case PIX_FMT_YUV422P:
+		case AV_PIX_FMT_YUV422P:
 			funcs->clear = ClearY422;
 			funcs->convert = Y422toY422;
 			break;
-		case PIX_FMT_YUVA420P:
+		case AV_PIX_FMT_YUVA420P:
 			funcs->clear = ClearV408;
 			funcs->convert = YA420toV408;
 			break;

@@ -19,7 +19,7 @@
 
 int getCodecID(OSType componentType)
 {
-	enum AVCodecID codecID = CODEC_ID_NONE;
+	enum AVCodecID codecID = AV_CODEC_ID_NONE;
 	switch(componentType)
 	{
 
@@ -27,14 +27,14 @@ int getCodecID(OSType componentType)
   		case 'mpg4':
   		case 'DIV1':
   		case 'div1':
-			codecID = CODEC_ID_MSMPEG4V1;
+			codecID = AV_CODEC_ID_MSMPEG4V1;
 			break;
 
 		case 'MP42':
   		case 'mp42':
   		case 'DIV2':
   		case 'div2':
-			codecID = CODEC_ID_MSMPEG4V2;
+			codecID = AV_CODEC_ID_MSMPEG4V2;
 			break;
 
 		case 'MPG3':
@@ -54,7 +54,7 @@ int getCodecID(OSType componentType)
   		case 'col0':
   		case 'COL1':
   		case 'col1':
-			codecID = CODEC_ID_MSMPEG4V3;
+			codecID = AV_CODEC_ID_MSMPEG4V3;
 			break;
 
 		case 'DIVX':
@@ -86,7 +86,7 @@ int getCodecID(OSType componentType)
   		case 'SMP4':
 
 		case 'mp4v':
-			codecID = CODEC_ID_MPEG4;
+			codecID = AV_CODEC_ID_MPEG4;
 			break;
 
 		case 'H264':
@@ -97,7 +97,7 @@ int getCodecID(OSType componentType)
   		case 'VSSH':
   		case 'AVC1':
   		case 'avc1':
-			codecID = CODEC_ID_H264;
+			codecID = AV_CODEC_ID_H264;
 			break;
 			
 		case 'H265':
@@ -113,98 +113,98 @@ int getCodecID(OSType componentType)
 			break;
 
 		case 'FLV1':
-			codecID = CODEC_ID_FLV1;
+			codecID = AV_CODEC_ID_FLV1;
 			break;
 
 		case 'FSV1':
-			codecID = CODEC_ID_FLASHSV;
+			codecID = AV_CODEC_ID_FLASHSV;
 			break;
 
 		case 'VP60':
   		case 'VP61':
   		case 'VP62':
-			codecID = CODEC_ID_VP6;
+			codecID = AV_CODEC_ID_VP6;
 			break;
 
 		case 'VP6F':
   		case 'FLV4':
-			codecID = CODEC_ID_VP6F;
+			codecID = AV_CODEC_ID_VP6F;
 			break;
 
 		case 'I263':
   		case 'i263':
-			codecID = CODEC_ID_H263I;
+			codecID = AV_CODEC_ID_H263I;
 			break;
 
 		case 'VP30':
   		case 'VP31':
-			codecID = CODEC_ID_VP3;
+			codecID = AV_CODEC_ID_VP3;
 			break;
 
 		case 'HFYU':
-			codecID = CODEC_ID_HUFFYUV;
+			codecID = AV_CODEC_ID_HUFFYUV;
 			break;
 
 		case 'FFVH':
-			codecID = CODEC_ID_FFVHUFF;
+			codecID = AV_CODEC_ID_FFVHUFF;
 			break;
 
 		case 'MPEG':
   		case 'mpg1':
   		case 'mp1v':
-			codecID = CODEC_ID_MPEG1VIDEO;
+			codecID = AV_CODEC_ID_MPEG1VIDEO;
 			break;
 
 		case 'MPG2':
   		case 'mpg2':
   		case 'mp2v':
   		case 'm2v1':
-			codecID = CODEC_ID_MPEG2VIDEO;
+			codecID = AV_CODEC_ID_MPEG2VIDEO;
 			break;
 
 		case 'FPS1':
-			codecID = CODEC_ID_FRAPS;
+			codecID = AV_CODEC_ID_FRAPS;
 			break;
 
 		case 'SNOW':
-			codecID = CODEC_ID_SNOW;
+			codecID = AV_CODEC_ID_SNOW;
 			break;
 
 		case 'RJPG':
   		case 'NUV1':
-			codecID = CODEC_ID_NUV;
+			codecID = AV_CODEC_ID_NUV;
 			break;
 
 		case 'RT21':
-			codecID = CODEC_ID_INDEO2;
+			codecID = AV_CODEC_ID_INDEO2;
 			break;
 
 		case 'IV32':
   		case 'iv32':
   		case 'IV31':
   		case 'iv31':
-			codecID = CODEC_ID_INDEO3;
+			codecID = AV_CODEC_ID_INDEO3;
 			break;
 
 		case 'IV50':
   		case 'iv50':
-			codecID = CODEC_ID_INDEO5;
+			codecID = AV_CODEC_ID_INDEO5;
 			break;
 
 		case 'tscc':
-			codecID = CODEC_ID_TSCC;
+			codecID = AV_CODEC_ID_TSCC;
 			break;
 
 		case 'ZMBV':
-			codecID = CODEC_ID_ZMBV;
+			codecID = AV_CODEC_ID_ZMBV;
 			break;
 
 		case 'VP6A':
-			codecID = CODEC_ID_VP6A;
+			codecID = AV_CODEC_ID_VP6A;
 			break;
 
 		case 'VP80':
-			codecID = CODEC_ID_VP8;
+			codecID = AV_CODEC_ID_VP8;
 			break;
 			
 		case 'VP90':
@@ -212,65 +212,65 @@ int getCodecID(OSType componentType)
 			break;
 
 		case 'FFV1':
-			codecID = CODEC_ID_FFV1;
+			codecID = AV_CODEC_ID_FFV1;
 			break;
 
 		case 'PeTh':
-			codecID = CODEC_ID_THEORA;
+			codecID = AV_CODEC_ID_THEORA;
 			break;
 
 		// RJVB
 		case 'mjp2':
 		case '2pjm':
-			codecID = CODEC_ID_JPEG2000;
+			codecID = AV_CODEC_ID_JPEG2000;
 			break;
 
 		case kSubFormatVobSub:
-			codecID = CODEC_ID_DVD_SUBTITLE;
+			codecID = AV_CODEC_ID_DVD_SUBTITLE;
 			break;
 
 		case kCompressedAVC1:
 
 		case kCompressedMP4V:
-			codecID = CODEC_ID_NONE;
+			codecID = AV_CODEC_ID_NONE;
 			break;
 
 		case kAudioFormatWMA1MS:
-			codecID = CODEC_ID_WMAV1;
+			codecID = AV_CODEC_ID_WMAV1;
 			break;
 
 		case kAudioFormatWMA2MS:
-			codecID = CODEC_ID_WMAV2;
+			codecID = AV_CODEC_ID_WMAV2;
 			break;
 
 		case kAudioFormatFlashADPCM:
-			codecID = CODEC_ID_ADPCM_SWF;
+			codecID = AV_CODEC_ID_ADPCM_SWF;
 			break;
 
 		case kAudioFormatXiphVorbis:
-			codecID = CODEC_ID_VORBIS;
+			codecID = AV_CODEC_ID_VORBIS;
 			break;
 
 		case '.mp1':
-			codecID = CODEC_ID_MP1;
+			codecID = AV_CODEC_ID_MP1;
 			break;
 
 		case 0x6d730050:
 
 		case '.mp2':
-			codecID = CODEC_ID_MP2;
+			codecID = AV_CODEC_ID_MP2;
 			break;
 
 		case kAudioFormatTTA:
-			codecID = CODEC_ID_TTA;
+			codecID = AV_CODEC_ID_TTA;
 			break;
 
 		case kAudioFormatDTS:
-			codecID = CODEC_ID_DTS;
+			codecID = AV_CODEC_ID_DTS;
 			break;
 
 		case kAudioFormatNellymoser:
-			codecID = CODEC_ID_NELLYMOSER;
+			codecID = AV_CODEC_ID_NELLYMOSER;
 			break;
 
 		case kCompressedAC3:
@@ -282,7 +282,7 @@ int getCodecID(OSType componentType)
 		case kCompressedMP3:
 
 		case kCompressedDTS:
-			codecID = CODEC_ID_NONE;
+			codecID = AV_CODEC_ID_NONE;
 			break;
 		default:
 			break;

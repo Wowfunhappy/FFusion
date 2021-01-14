@@ -119,7 +119,7 @@ void FourCCprintf(const char *string, FourCharCode a)
 }
 
 void FFMpegCodecprintf(void* ptr, int level, const char* fmt, va_list vl)
-{
+{/*
     static int print_prefix=1;
 	int print_header = 1;
     AVClass* avc= ptr ? *(AVClass**)ptr : NULL;
@@ -129,7 +129,7 @@ void FFMpegCodecprintf(void* ptr, int level, const char* fmt, va_list vl)
 
 #ifdef _NSLOGGERCLIENT_H
 	if( print_prefix ){
-		NSCodecvprintf( __FILE__, __LINE__, __FUNCTION__, 1, avc->item_name(ptr), avc, level, fmt, vl );
+		//NSCodecvprintf( __FILE__, __LINE__, __FUNCTION__, 1, avc->item_name(ptr), avc, level, fmt, vl );
 	}
 	else{
 		NSCodecvprintf( __FILE__, __LINE__, __FUNCTION__, 1, NULL, NULL, level, fmt, vl );
@@ -152,4 +152,4 @@ void FFMpegCodecprintf(void* ptr, int level, const char* fmt, va_list vl)
 	Codecvprintf(stderr, fmt, vl, print_header);
 #endif
     print_prefix= strstr(fmt, "\n") != NULL;
-}
+*/}

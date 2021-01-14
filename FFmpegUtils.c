@@ -306,7 +306,7 @@ enum AVCodecID FFFourCCToCodecID(OSType formatID)
 			return kAudioCodecMap[i].codecID;
 	}
 #endif
-	return CODEC_ID_NONE;
+	return AV_CODEC_ID_NONE;
 }
 
 OSType FFCodecIDToFourCC(enum AVCodecID codecID)
@@ -317,5 +317,5 @@ OSType FFCodecIDToFourCC(enum AVCodecID codecID)
 			return kAudioCodecMap[i].mFormatID;
 	}
 #endif
-	return CODEC_ID_NONE;
+	return AV_CODEC_ID_NONE;
 }
