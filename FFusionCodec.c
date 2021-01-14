@@ -252,40 +252,36 @@ static void DumpFrameDropStats(FFusionGlobals glob)
 	}
 }
 
-static enum PixelFormat FindPixFmtFromVideo(AVCodec *codec, AVCodecContext *avctx, Ptr data, int bufferSize)
+static enum AVPixelFormat FindPixFmtFromVideo(AVCodec *codec, AVCodecContext *avctx, Ptr data, int bufferSize)
 {
-	AVCodecContext tmpContext;
-	AVFrame tmpFrame;
+    AVCodecContext *tmpContext;
+    AVFrame *tmpFrame;
 	int got_picture = 0;
-	enum PixelFormat pix_fmt;
+    enum AVPixelFormat pix_fmt;
+	
+	tmpContext = avcodec_alloc_context3(codec);
+	tmpFrame   = av_frame_alloc();
+	
+	avcodec_copy_context(tmpContext, avctx);
+	
+    if (avcodec_open2(tmpContext, codec, NULL)) {
+		pix_fmt = AV_PIX_FMT_NONE;
+		goto bail;
+	}
+	
 	AVPacket pkt;
-	
-	avcodec_get_context_defaults3(&tmpContext, AVMEDIA_TYPE_VIDEO);
-	avcodec_get_frame_defaults(&tmpFrame);
-	tmpContext.width = avctx->width;
-	tmpContext.height = avctx->height;
-	tmpContext.flags = avctx->flags;
-	tmpContext.bits_per_coded_sample = avctx->bits_per_coded_sample;
-	tmpContext.codec_tag = avctx->codec_tag;
-	tmpContext.codec_id  = avctx->codec_id;
-	tmpContext.extradata = avctx->extradata;
-	tmpContext.extradata_size = avctx->extradata_size;
-	
-	avcodec_open2(&tmpContext, codec, NULL);
 	av_init_packet(&pkt);
 	pkt.data = (UInt8*)data;
 	pkt.size = bufferSize;
-	avcodec_decode_video2(&tmpContext, &tmpFrame, &got_picture, &pkt);
-	pix_fmt = tmpContext.pix_fmt;
-	avcodec_close(&tmpContext);
-	if( got_picture ){
-		// 		ffCodecprintf( stderr, "Found picture number %d, fmt=%d", tmpFrame.display_picture_number, pix_fmt );
-	}
-	else{
-		ffCodecprintf( stderr, "Found no picture, fmt=%d", pix_fmt );
-	}
+	avcodec_decode_video2(tmpContext, tmpFrame, &got_picture, &pkt);
+    pix_fmt = tmpContext->pix_fmt;
+    avcodec_close(tmpContext);
 	
-	return pix_fmt;
+bail:
+	
+	av_frame_free(&tmpFrame);
+	
+    return pix_fmt;
 }
 
 static void SetupMultithreadedDecoding(AVCodecContext *s, enum AVCodecID codecID)
@@ -829,7 +825,6 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 #endif
 		
         // Finally we open the avcodec
-		
         if (avcodec_open2(glob->avContext, glob->avCodec, NULL))
         {
             Codecprintf(glob->fileLog, "Error opening avcodec!\n");
@@ -840,7 +835,10 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
         // codec was opened, but didn't give us its pixfmt
 		// we have to decode the first frame to find out one
 		else if (glob->avContext->pix_fmt == PIX_FMT_NONE && p->bufferSize && p->data)
+		{
             glob->avContext->pix_fmt = FindPixFmtFromVideo(glob->avCodec, glob->avContext, p->data, p->bufferSize);
+			//asl_log(NULL, NULL, ASL_LEVEL_ERR, "pix_fmt: %d", glob->avContext->pix_fmt);
+		}
     }
 	
     // Specify the minimum image band height supported by the component
@@ -1521,12 +1519,12 @@ static void releaseBuffer(AVCodecContext *s, AVFrame *pic)
 //-----------------------------------------------------------------
 OSErr FFusionDecompress(FFusionGlobals glob, AVCodecContext *context, UInt8 *dataPtr, int width, int height, AVFrame *picture, int length)
 {
-	asl_log(NULL, NULL, ASL_LEVEL_ERR, "Point 1");
 	OSErr err = noErr;
 	int got_picture = false;
 	int len = 0;
 	AVPacket pkt;
 	
+	asl_log(NULL, NULL, ASL_LEVEL_ERR, "%p Decompress %d bytes.\n", glob, length);
 	FFusionDebugPrint("%p Decompress %d bytes.\n", glob, length);
 	//avcodec_get_frame_defaults(picture);
 	
@@ -1535,19 +1533,19 @@ OSErr FFusionDecompress(FFusionGlobals glob, AVCodecContext *context, UInt8 *dat
 	pkt.size = length;
 	len = avcodec_decode_video2(context, picture, &got_picture, &pkt);
 	if( !got_picture ){
-		asl_log(NULL, NULL, ASL_LEVEL_ERR, "Point 2");
 		// RJVB 20131016
 		memset( picture, 0, sizeof(*picture) );
+		asl_log(NULL, NULL, ASL_LEVEL_ERR, "Found no picture, len=%d", len);
 		FFusionDebugPrint2( "Found no picture, len=%d", len );
 	}
 	
 	if (len < 0)
 	{
-		asl_log(NULL, NULL, ASL_LEVEL_ERR, "Point 3");
+		asl_log(NULL, NULL, ASL_LEVEL_ERR, "Error while decoding frame");
 		Codecprintf(glob->fileLog, "Error while decoding frame\n");
 	}
 	else{
-		asl_log(NULL, NULL, ASL_LEVEL_ERR, "Point 4");
+		asl_log(NULL, NULL, ASL_LEVEL_ERR, "Found picture number %d, len=%d", picture->display_picture_number, len);
 		FFusionDebugPrint2( "Found picture number %d, len=%d", picture->display_picture_number, len );
 	}
 	
