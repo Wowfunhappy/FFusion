@@ -60,6 +60,9 @@
 #include "CodecIDs.h"
 #include "FFmpegUtils.h"
 
+#include <libavcodec/avcodec.h>
+#include <libavformat/avformat.h>
+
 //---------------------------------------------------------------------------
 // Types
 //---------------------------------------------------------------------------
@@ -264,24 +267,28 @@ static enum AVPixelFormat FindPixFmtFromVideo(AVCodec *codec, AVCodecContext *av
 	
 	avcodec_copy_context(tmpContext, avctx);
 	
-    if (avcodec_open2(tmpContext, codec, NULL)) {
-		pix_fmt = AV_PIX_FMT_NONE;
-		goto bail;
-	}
+    avcodec_open2(tmpContext, codec, NULL);
 	
 	AVPacket pkt;
 	av_init_packet(&pkt);
 	pkt.data = (UInt8*)data;
 	pkt.size = bufferSize;
-	avcodec_decode_video2(tmpContext, tmpFrame, &got_picture, &pkt);
+	
+	/*while(av_read_frame(tmpContext, &pkt)>=0) {*/
+		avcodec_decode_video2(tmpContext, tmpFrame, &got_picture, &pkt);
+	//}
     pix_fmt = tmpContext->pix_fmt;
     avcodec_close(tmpContext);
+	if( got_picture ){
+		asl_log(NULL, NULL, ASL_LEVEL_ERR, "Found picture number %d, fmt=%d", tmpFrame->display_picture_number, pix_fmt );
+		// 		ffCodecprintf( stderr, "Found picture number %d, fmt=%d", tmpFrame.display_picture_number, pix_fmt );
+	}
+	else{
+		asl_log(NULL, NULL, ASL_LEVEL_ERR, "Found no picture, fmt=%d", pix_fmt );
+		ffCodecprintf( stderr, "Found no picture, fmt=%d", pix_fmt );
+	}
 	
-bail:
-	
-	av_frame_free(&tmpFrame);
-	
-    return pix_fmt;
+	return pix_fmt;
 }
 
 static void SetupMultithreadedDecoding(AVCodecContext *s, enum AVCodecID codecID)
@@ -685,7 +692,7 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 		}
 		
 		glob->avCodec = avcodec_find_decoder(codecID);
-		//		if(glob->packedType != PACKED_QUICKTIME_KNOWS_ORDER)
+				//		if(glob->packedType != PACKED_QUICKTIME_KNOWS_ORDER)
 		glob->begin.parser = ffusionParserInit(codecID);
 		
 		if ((codecID == CODEC_ID_MPEG4 || codecID == CODEC_ID_H264) && !glob->begin.parser)
@@ -825,8 +832,10 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 #endif
 		
         // Finally we open the avcodec
+		asl_log(NULL, NULL, ASL_LEVEL_ERR, "Time to open avcodec!");
         if (avcodec_open2(glob->avContext, glob->avCodec, NULL))
         {
+			asl_log(NULL, NULL, ASL_LEVEL_ERR, "Error opening avcodec!");
             Codecprintf(glob->fileLog, "Error opening avcodec!\n");
 			
 			err = paramErr;
@@ -837,7 +846,6 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 		else if (glob->avContext->pix_fmt == PIX_FMT_NONE && p->bufferSize && p->data)
 		{
             glob->avContext->pix_fmt = FindPixFmtFromVideo(glob->avCodec, glob->avContext, p->data, p->bufferSize);
-			//asl_log(NULL, NULL, ASL_LEVEL_ERR, "pix_fmt: %d", glob->avContext->pix_fmt);
 		}
     }
 	
@@ -1526,7 +1534,7 @@ OSErr FFusionDecompress(FFusionGlobals glob, AVCodecContext *context, UInt8 *dat
 	
 	asl_log(NULL, NULL, ASL_LEVEL_ERR, "%p Decompress %d bytes.\n", glob, length);
 	FFusionDebugPrint("%p Decompress %d bytes.\n", glob, length);
-	//avcodec_get_frame_defaults(picture);
+	avcodec_get_frame_defaults(picture);
 	
 	av_init_packet(&pkt);
 	pkt.data = dataPtr;

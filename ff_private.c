@@ -1,3 +1,5 @@
+#include <asl.h>
+
 /*****************************************************************************
 *
 *  Avi Import Component Private Functions
@@ -726,6 +728,7 @@ int determine_header_offset(ff_global_ptr storage) {
 		if(result < 0) goto bail;
 
 		result = av_read_frame(formatContext, &packet);
+		
 		if(result < 0) goto bail;
 		st = formatContext->streams[packet.stream_index];
 
