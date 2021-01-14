@@ -224,6 +224,11 @@ resource 'dlle' (kDivX1CodecInfoResID) {
 #define kCodecSubType 'avc1'
 #include "Resources/FFusionResourceInc.r"
 
+#define kCodecVersion kFFusionCodecVersion
+#define kCodecManufacturer kFFusionCodecManufacturer
+#define kCodecInfoResID kHEVCCodecInfoResID
+#define kCodecName "H.265"
+
 #define kCodecDescription "FFusion decompresses video stored in H.265 format."
 #define kCodecSubType 'H265'
 #include "Resources/FFusionResourceInc.r"
@@ -240,6 +245,9 @@ resource 'dlle' (kDivX1CodecInfoResID) {
 #define kCodecSubType 'HEVC'
 #include "Resources/FFusionResourceInc.r"
 #define kCodecSubType 'hevc'
+#include "Resources/FFusionResourceInc.r"
+#define kCodecSubType 'hvc1'
+#include "Resources/FFusionResourceInc.r"
 
 #define kCodecInfoResID kFLV1CodecInfoResID
 #define kCodecName "Sorenson H.263"
@@ -417,7 +425,7 @@ resource 'dlle' (kDivX1CodecInfoResID) {
 #define kCodecDescription "FFusion decompresses video stored in Google VP9 format."
 #define kCodecSubType 'VP90'
 #include "Resources/FFusionResourceInc.r"
-#define kCodecSubType 'VP09'
+#define kCodecSubType 'WebM'
 #include "Resources/FFusionResourceInc.r"
 
 #define kCodecInfoResID kFFv1CodecInfoResID
