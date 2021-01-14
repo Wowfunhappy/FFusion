@@ -99,6 +99,18 @@ int getCodecID(OSType componentType)
   		case 'avc1':
 			codecID = CODEC_ID_H264;
 			break;
+			
+		case 'H265':
+  		case 'h265':
+  		case 'X265':
+  		case 'x265':
+  		case 'HEV1':
+  		case 'hev1':
+  		case 'HEVC':
+  		case 'hevc':
+		case 'hvc1':
+			codecID = AV_CODEC_ID_HEVC;
+			break;
 
 		case 'FLV1':
 			codecID = CODEC_ID_FLV1;
