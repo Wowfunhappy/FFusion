@@ -339,11 +339,12 @@ static void vp56_mc(VP56Context *s, int b, int plane, uint8_t *src,
 
     if (x<0 || x+12>=s->plane_width[plane] ||
         y<0 || y+12>=s->plane_height[plane]) {
-        s->vdsp.emulated_edge_mc(s->edge_emu_buffer, stride,
-                            src + s->block_offset[b] + (dy-2)*stride + (dx-2),
-                            stride, 12, 12, x, y,
-                            s->plane_width[plane],
-                            s->plane_height[plane]);
+        s->vdsp.emulated_edge_mc(s->edge_emu_buffer,
+                                 src + s->block_offset[b] + (dy-2)*stride + (dx-2),
+                                 stride, stride,
+                                 12, 12, x, y,
+                                 s->plane_width[plane],
+                                 s->plane_height[plane]);
         src_block = s->edge_emu_buffer;
         src_offset = 2 + 2*stride;
     } else if (deblock_filtering) {
@@ -470,7 +471,7 @@ static int vp56_size_changed(VP56Context *s)
     s->mb_height = (avctx->coded_height+15) / 16;
 
     if (s->mb_width > 1000 || s->mb_height > 1000) {
-        avcodec_set_dimensions(avctx, 0, 0);
+        ff_set_dimensions(avctx, 0, 0);
         av_log(avctx, AV_LOG_ERROR, "picture too big\n");
         return -1;
     }
@@ -699,9 +700,9 @@ av_cold int ff_vp56_init_context(AVCodecContext *avctx, VP56Context *s,
     ff_vp3dsp_init(&s->vp3dsp, avctx->flags);
     ff_vp56dsp_init(&s->vp56dsp, avctx->codec->id);
     for (i = 0; i < 64; i++) {
-#define T(x) (x >> 3) | ((x & 7) << 3)
-        s->idct_scantable[i] = T(ff_zigzag_direct[i]);
-#undef T
+#define TRANSPOSE(x) (x >> 3) | ((x & 7) << 3)
+        s->idct_scantable[i] = TRANSPOSE(ff_zigzag_direct[i]);
+#undef TRANSPOSE
     }
 
     for (i = 0; i < FF_ARRAY_ELEMS(s->frames); i++) {

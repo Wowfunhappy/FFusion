@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		ABAFF7F325B20487005D96A4 /* VideoDecodeAcceleration.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABAFF7F225B20487005D96A4 /* VideoDecodeAcceleration.framework */; };
+		ABAFF7F525B2048C005D96A4 /* CoreVideo.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABAFF7F425B2048C005D96A4 /* CoreVideo.framework */; };
 		D617D1B916CE9B06000EC428 /* NSLogger-LICENSE.txt in Resources */ = {isa = PBXBuildFile; fileRef = D617D1B816CE9B06000EC428 /* NSLogger-LICENSE.txt */; };
 		D61D797016BD779600F6FB18 /* version_check.c in Sources */ = {isa = PBXBuildFile; fileRef = D61D796F16BD779600F6FB18 /* version_check.c */; };
 		D61D797216BD77B000F6FB18 /* libavutil.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 11D4EFA20A3CE8C10066D45F /* libavutil.a */; };
@@ -94,6 +96,8 @@
 		61D517710AE0402E00A671E1 /* CommonUtils.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CommonUtils.h; sourceTree = "<group>"; };
 		61D517720AE0402E00A671E1 /* CommonUtils.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = CommonUtils.c; sourceTree = "<group>"; };
 		83D1D6F40B4C85AB00E09EC9 /* Perian_icon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; name = Perian_icon.icns; path = Resources/Perian_icon.icns; sourceTree = "<group>"; };
+		ABAFF7F225B20487005D96A4 /* VideoDecodeAcceleration.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = VideoDecodeAcceleration.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.8.sdk/System/Library/Frameworks/VideoDecodeAcceleration.framework; sourceTree = DEVELOPER_DIR; };
+		ABAFF7F425B2048C005D96A4 /* CoreVideo.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreVideo.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.8.sdk/System/Library/Frameworks/CoreVideo.framework; sourceTree = DEVELOPER_DIR; };
 		D604CEC516DA3DC70066FD67 /* demux+code-bench.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = "demux+code-bench.c"; sourceTree = "<group>"; };
 		D617791E16B85DEF00FE3AC6 /* COPYING.GPLv2 */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = COPYING.GPLv2; sourceTree = "<group>"; };
 		D617791F16B85DEF00FE3AC6 /* COPYING.GPLv3 */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = COPYING.GPLv3; sourceTree = "<group>"; };
@@ -2278,6 +2282,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				ABAFF7F525B2048C005D96A4 /* CoreVideo.framework in Frameworks */,
+				ABAFF7F325B20487005D96A4 /* VideoDecodeAcceleration.framework in Frameworks */,
 				D67BC49E16B166FF00E26386 /* libz.dylib in Frameworks */,
 				D67BC49F16B166FF00E26386 /* QuickTime.framework in Frameworks */,
 				D67BC4A216B166FF00E26386 /* Foundation.framework in Frameworks */,
@@ -2298,6 +2304,8 @@
 		089C166AFE841209C02AAC07 /* ffmpeg DivX */ = {
 			isa = PBXGroup;
 			children = (
+				ABAFF7F425B2048C005D96A4 /* CoreVideo.framework */,
+				ABAFF7F225B20487005D96A4 /* VideoDecodeAcceleration.framework */,
 				D620108316C57CF400DC6EE5 /* FFmpeg-LICENSE.txt */,
 				D620108416C57CF400DC6EE5 /* LICENSE-libopenjpeg1.txt */,
 				08FB77ADFE841716C02AAC07 /* Source */,

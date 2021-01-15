@@ -89,6 +89,9 @@ try to unroll inner for(x=0 ... loop to avoid these damn if(x ... checks
 #include "postprocess_internal.h"
 #include "libavutil/avstring.h"
 
+#include "libavutil/ffversion.h"
+const char postproc_ffversion[] = "FFmpeg version " FFMPEG_VERSION;
+
 unsigned postproc_version(void)
 {
     av_assert0(LIBPOSTPROC_VERSION_MICRO >= 100);
@@ -719,6 +722,10 @@ pp_mode *pp_get_mode_by_name_and_quality(const char *name, int quality)
         if(filterToken == NULL) break;
         p+= strlen(filterToken) + 1; // p points to next filterToken
         filterName= strtok(filterToken, optionDelimiters);
+        if (filterName == NULL) {
+            ppMode->error++;
+            break;
+        }
         av_log(NULL, AV_LOG_DEBUG, "pp: %s::%s\n", filterToken, filterName);
 
         if(*filterName == '-'){

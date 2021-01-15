@@ -575,6 +575,8 @@ static int get_nb_samples(AVCodecContext *avctx, GetByteContext *gb,
     case AV_CODEC_ID_ADPCM_IMA_DK4:
         if (avctx->block_align > 0)
             buf_size = FFMIN(buf_size, avctx->block_align);
+        if (buf_size < 4 * ch)
+            return AVERROR_INVALIDDATA;
         nb_samples = 1 + (buf_size - 4 * ch) * 2 / ch;
         break;
     case AV_CODEC_ID_ADPCM_IMA_RAD:
@@ -588,13 +590,15 @@ static int get_nb_samples(AVCodecContext *avctx, GetByteContext *gb,
         int bsamples = ff_adpcm_ima_block_samples[avctx->bits_per_coded_sample - 2];
         if (avctx->block_align > 0)
             buf_size = FFMIN(buf_size, avctx->block_align);
+        if (buf_size < 4 * ch)
+            return AVERROR_INVALIDDATA;
         nb_samples = 1 + (buf_size - 4 * ch) / (bsize * ch) * bsamples;
         break;
     }
     case AV_CODEC_ID_ADPCM_MS:
         if (avctx->block_align > 0)
             buf_size = FFMIN(buf_size, avctx->block_align);
-        nb_samples = 2 + (buf_size - 7 * ch) * 2 / ch;
+        nb_samples = (buf_size - 6 * ch) * 2 / ch;
         break;
     case AV_CODEC_ID_ADPCM_SBPRO_2:
     case AV_CODEC_ID_ADPCM_SBPRO_3:
@@ -607,6 +611,8 @@ static int get_nb_samples(AVCodecContext *avctx, GetByteContext *gb,
         case AV_CODEC_ID_ADPCM_SBPRO_4: samples_per_byte = 2; break;
         }
         if (!s->status[0].step_index) {
+            if (buf_size < ch)
+                return AVERROR_INVALIDDATA;
             nb_samples++;
             buf_size -= ch;
         }
@@ -1318,7 +1324,7 @@ static int adpcm_decode_frame(AVCodecContext *avctx, void *data,
                                                        byte & 0x0F, 4, 0);
             }
         } else if (avctx->codec->id == AV_CODEC_ID_ADPCM_SBPRO_3) {
-            for (n = nb_samples / 3; n > 0; n--) {
+            for (n = (nb_samples<<st) / 3; n > 0; n--) {
                 int byte = bytestream2_get_byteu(&gb);
                 *samples++ = adpcm_sbpro_expand_nibble(&c->status[0],
                                                         byte >> 5        , 3, 0);
@@ -1524,6 +1530,11 @@ static int adpcm_decode_frame(AVCodecContext *avctx, void *data,
     }
 
     *got_frame_ptr = 1;
+
+    if (avpkt->size < bytestream2_tell(&gb)) {
+        av_log(avctx, AV_LOG_ERROR, "Overread of %d < %d\n", avpkt->size, bytestream2_tell(&gb));
+        return avpkt->size;
+    }
 
     return bytestream2_tell(&gb);
 }

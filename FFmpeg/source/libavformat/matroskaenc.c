@@ -19,7 +19,10 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <stdint.h>
+
 #include "avc.h"
+#include "hevc.h"
 #include "avformat.h"
 #include "avio_internal.h"
 #include "avlanguage.h"
@@ -530,6 +533,8 @@ static int mkv_write_codecprivate(AVFormatContext *s, AVIOContext *pb, AVCodecCo
             ret = put_wv_codecpriv(dyn_cp, codec);
         else if (codec->codec_id == AV_CODEC_ID_H264)
             ret = ff_isom_write_avcc(dyn_cp, codec->extradata, codec->extradata_size);
+        else if (codec->codec_id == AV_CODEC_ID_HEVC)
+            ret = ff_isom_write_hvcc(dyn_cp, codec->extradata, codec->extradata_size, 0);
         else if (codec->codec_id == AV_CODEC_ID_ALAC) {
             if (codec->extradata_size < 36) {
                 av_log(s, AV_LOG_ERROR,
@@ -559,6 +564,10 @@ static int mkv_write_codecprivate(AVFormatContext *s, AVIOContext *pb, AVCodecCo
                 avio_write(dyn_cp, codec->extradata, codec->extradata_size);
             }
         } else {
+            if (!ff_codec_get_tag(ff_codec_bmp_tags, codec->codec_id))
+                av_log(s, AV_LOG_WARNING, "codec %s is not supported by this format\n",
+                       avcodec_get_name(codec->codec_id));
+
             if (!codec->codec_tag)
                 codec->codec_tag = ff_codec_get_tag(ff_codec_bmp_tags, codec->codec_id);
             if (!codec->codec_tag) {
@@ -615,6 +624,8 @@ static int mkv_write_tracks(AVFormatContext *s)
         int bit_depth = av_get_bits_per_sample(codec->codec_id);
         int sample_rate = codec->sample_rate;
         int output_sample_rate = 0;
+        int display_width_div = 1;
+        int display_height_div = 1;
         AVDictionaryEntry *tag;
 
         if (codec->codec_type == AVMEDIA_TYPE_ATTACHMENT) {
@@ -746,6 +757,21 @@ static int mkv_write_tracks(AVFormatContext *s)
                         return AVERROR(EINVAL);
                     } else
                         put_ebml_uint(pb, MATROSKA_ID_VIDEOSTEREOMODE, st_mode);
+
+                    switch (st_mode) {
+                    case 1:
+                    case 8:
+                    case 9:
+                    case 11:
+                        display_width_div = 2;
+                        break;
+                    case 2:
+                    case 3:
+                    case 6:
+                    case 7:
+                        display_height_div = 2;
+                        break;
+                    }
                 }
 
                 if ((tag = av_dict_get(st->metadata, "alpha_mode", NULL, 0)) ||
@@ -760,8 +786,11 @@ static int mkv_write_tracks(AVFormatContext *s)
                         av_log(s, AV_LOG_ERROR, "Overflow in display width\n");
                         return AVERROR(EINVAL);
                     }
-                    put_ebml_uint(pb, MATROSKA_ID_VIDEODISPLAYWIDTH , d_width);
-                    put_ebml_uint(pb, MATROSKA_ID_VIDEODISPLAYHEIGHT, codec->height);
+                    put_ebml_uint(pb, MATROSKA_ID_VIDEODISPLAYWIDTH , d_width / display_width_div);
+                    put_ebml_uint(pb, MATROSKA_ID_VIDEODISPLAYHEIGHT, codec->height / display_height_div);
+                } else if (display_width_div != 1 || display_height_div != 1) {
+                    put_ebml_uint(pb, MATROSKA_ID_VIDEODISPLAYWIDTH , codec->width / display_width_div);
+                    put_ebml_uint(pb, MATROSKA_ID_VIDEODISPLAYHEIGHT, codec->height / display_height_div);
                 }
 
                 if (codec->codec_id == AV_CODEC_ID_RAWVIDEO) {
@@ -916,7 +945,9 @@ static int mkv_write_tag(AVFormatContext *s, AVDictionary *m, unsigned int eleme
     end_ebml_master(s->pb, targets);
 
     while ((t = av_dict_get(m, "", t, AV_DICT_IGNORE_SUFFIX)))
-        if (av_strcasecmp(t->key, "title") && av_strcasecmp(t->key, "stereo_mode"))
+        if (av_strcasecmp(t->key, "title") &&
+            av_strcasecmp(t->key, "stereo_mode") &&
+            av_strcasecmp(t->key, "encoding_tool"))
             mkv_write_simpletag(s->pb, t);
 
     end_ebml_master(s->pb, tag);
@@ -1131,7 +1162,10 @@ static int mkv_write_header(AVFormatContext *s)
             segment_uid[i] = av_lfg_get(&lfg);
 
         put_ebml_string(pb, MATROSKA_ID_MUXINGAPP , LIBAVFORMAT_IDENT);
-        put_ebml_string(pb, MATROSKA_ID_WRITINGAPP, LIBAVFORMAT_IDENT);
+        if ((tag = av_dict_get(s->metadata, "encoding_tool", NULL, 0)))
+            put_ebml_string(pb, MATROSKA_ID_WRITINGAPP, tag->value);
+        else
+            put_ebml_string(pb, MATROSKA_ID_WRITINGAPP, LIBAVFORMAT_IDENT);
         put_ebml_binary(pb, MATROSKA_ID_SEGMENTUID, segment_uid, 16);
     } else {
         const char *ident = "Lavf";
@@ -1347,6 +1381,10 @@ static void mkv_write_block(AVFormatContext *s, AVIOContext *pb,
     if (codec->codec_id == AV_CODEC_ID_H264 && codec->extradata_size > 0 &&
         (AV_RB24(codec->extradata) == 1 || AV_RB32(codec->extradata) == 1))
         ff_avc_parse_nal_units_buf(pkt->data, &data, &size);
+    else if (codec->codec_id == AV_CODEC_ID_HEVC && codec->extradata_size > 6 &&
+             (AV_RB24(codec->extradata) == 1 || AV_RB32(codec->extradata) == 1))
+        /* extradata is Annex B, assume the bitstream is too and convert it */
+        ff_hevc_annexb2mp4_buf(pkt->data, &data, &size, 0, NULL);
     else if (codec->codec_id == AV_CODEC_ID_WAVPACK) {
         int ret = mkv_strip_wavpack(pkt->data, &data, &size);
         if (ret < 0) {

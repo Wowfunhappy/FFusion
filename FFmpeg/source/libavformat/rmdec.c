@@ -86,11 +86,8 @@ static int rm_read_extradata(AVIOContext *pb, AVCodecContext *avctx, unsigned si
 {
     if (size >= 1<<24)
         return -1;
-    if (ff_alloc_extradata(avctx, size))
+    if (ff_get_extradata(avctx, pb, size) < 0)
         return AVERROR(ENOMEM);
-    avctx->extradata_size = avio_read(pb, avctx->extradata, size);
-    if (avctx->extradata_size != size)
-        return AVERROR(EIO);
     return 0;
 }
 
@@ -185,6 +182,7 @@ static int rm_read_audio_stream_info(AVFormatContext *s, AVIOContext *pb,
             avio_read(pb, buf, 4);
             buf[4] = 0;
         } else {
+            AV_WL32(buf, 0);
             get_str8(pb, buf, sizeof(buf)); /* desc */
             ast->deint_id = AV_RL32(buf);
             get_str8(pb, buf, sizeof(buf)); /* desc */
@@ -263,10 +261,16 @@ static int rm_read_audio_stream_info(AVFormatContext *s, AVIOContext *pb,
                 sub_packet_h <= 1 ||
                 ast->coded_framesize * sub_packet_h > (2 + (sub_packet_h & 1)) * ast->audio_framesize)
                 return AVERROR_INVALIDDATA;
+            if (ast->coded_framesize * sub_packet_h != 2*ast->audio_framesize) {
+                avpriv_request_sample(s, "mismatching interleaver parameters");
+                return AVERROR_INVALIDDATA;
+            }
             break;
         case DEINT_ID_GENR:
             if (ast->sub_packet_size <= 0 ||
                 ast->sub_packet_size > ast->audio_framesize)
+                return AVERROR_INVALIDDATA;
+            if (ast->audio_framesize % ast->sub_packet_size)
                 return AVERROR_INVALIDDATA;
             break;
         case DEINT_ID_SIPR:

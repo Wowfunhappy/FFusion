@@ -1540,7 +1540,7 @@ OSErr FFusionDecompress(FFusionGlobals glob, AVCodecContext *context, UInt8 *dat
 	
 	asl_log(NULL, NULL, ASL_LEVEL_ERR, "%p Decompress %d bytes.\n", glob, length);
 	FFusionDebugPrint("%p Decompress %d bytes.\n", glob, length);
-	//avcodec_get_frame_defaults(picture);
+	avcodec_get_frame_defaults(picture);
 	
 	av_init_packet(&pkt);
 	pkt.data = dataPtr;

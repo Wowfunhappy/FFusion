@@ -362,9 +362,11 @@ typedef struct SwsContext {
     int dstY;                     ///< Last destination vertical line output from last slice.
     int flags;                    ///< Flags passed by the user to select scaler algorithm, optimizations, subsampling, etc...
     void *yuvTable;             // pointer to the yuv->rgb table start so it can be freed()
+    // alignment ensures the offset can be added in a single
+    // instruction on e.g. ARM
+    DECLARE_ALIGNED(16, int, table_gV)[256 + 2*YUVRGB_TABLE_HEADROOM];
     uint8_t *table_rV[256 + 2*YUVRGB_TABLE_HEADROOM];
     uint8_t *table_gU[256 + 2*YUVRGB_TABLE_HEADROOM];
-    int table_gV[256 + 2*YUVRGB_TABLE_HEADROOM];
     uint8_t *table_bU[256 + 2*YUVRGB_TABLE_HEADROOM];
     DECLARE_ALIGNED(16, int32_t, input_rgb2yuv_table)[16+40*4]; // This table can contain both C and SIMD formatted values, teh C vales are always at the XY_IDX points
 #define RY_IDX 0
@@ -747,8 +749,24 @@ static av_always_inline int isRGB(enum AVPixelFormat pix_fmt)
         || (x) == AV_PIX_FMT_BGR24       \
     )
 
+#define isBayer(x) ( \
+           (x)==AV_PIX_FMT_BAYER_BGGR8    \
+        || (x)==AV_PIX_FMT_BAYER_BGGR16LE \
+        || (x)==AV_PIX_FMT_BAYER_BGGR16BE \
+        || (x)==AV_PIX_FMT_BAYER_RGGB8    \
+        || (x)==AV_PIX_FMT_BAYER_RGGB16LE \
+        || (x)==AV_PIX_FMT_BAYER_RGGB16BE \
+        || (x)==AV_PIX_FMT_BAYER_GBRG8    \
+        || (x)==AV_PIX_FMT_BAYER_GBRG16LE \
+        || (x)==AV_PIX_FMT_BAYER_GBRG16BE \
+        || (x)==AV_PIX_FMT_BAYER_GRBG8    \
+        || (x)==AV_PIX_FMT_BAYER_GRBG16LE \
+        || (x)==AV_PIX_FMT_BAYER_GRBG16BE \
+    )
+
 #define isAnyRGB(x) \
     (           \
+          isBayer(x)          ||    \
           isRGBinInt(x)       ||    \
           isBGRinInt(x)       ||    \
           isRGB(x)      \
@@ -833,6 +851,7 @@ extern const AVClass sws_context_class;
 void ff_get_unscaled_swscale(SwsContext *c);
 void ff_get_unscaled_swscale_bfin(SwsContext *c);
 void ff_get_unscaled_swscale_ppc(SwsContext *c);
+void ff_get_unscaled_swscale_arm(SwsContext *c);
 
 /**
  * Return function pointer to fastest main scaler path function depending

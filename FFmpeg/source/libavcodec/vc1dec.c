@@ -59,20 +59,6 @@ static const int offset_table2[9] = {  0,  1,  3,  7, 15, 31, 63, 127, 255 };
  * @{
  */
 
-/**
- * Imode types
- * @{
- */
-enum Imode {
-    IMODE_RAW,
-    IMODE_NORM2,
-    IMODE_DIFF2,
-    IMODE_NORM6,
-    IMODE_DIFF6,
-    IMODE_ROWSKIP,
-    IMODE_COLSKIP
-};
-/** @} */ //imode defines
 
 static void init_block_index(VC1Context *v)
 {
@@ -391,7 +377,7 @@ static void vc1_mc_1mv(VC1Context *v, int dir)
             srcV = s->current_picture.f.data[2];
             luty  = v->curr_luty;
             lutuv = v->curr_lutuv;
-            use_ic = v->curr_use_ic;
+            use_ic = *v->curr_use_ic;
         } else {
             srcY = s->last_picture.f.data[0];
             srcU = s->last_picture.f.data[1];
@@ -454,17 +440,21 @@ static void vc1_mc_1mv(VC1Context *v, int dir)
         uint8_t *uvbuf = s->edge_emu_buffer + 19 * s->linesize;
 
         srcY -= s->mspel * (1 + s->linesize);
-        s->vdsp.emulated_edge_mc(s->edge_emu_buffer, s->linesize,
-                                 srcY, s->linesize,
+        s->vdsp.emulated_edge_mc(s->edge_emu_buffer, srcY,
+                                 s->linesize, s->linesize,
                                  17 + s->mspel * 2, 17 + s->mspel * 2,
                                  src_x - s->mspel, src_y - s->mspel,
                                  s->h_edge_pos, v_edge_pos);
         srcY = s->edge_emu_buffer;
-        s->vdsp.emulated_edge_mc(uvbuf, s->uvlinesize, srcU, s->uvlinesize,
-                                 8 + 1, 8 + 1, uvsrc_x, uvsrc_y,
+        s->vdsp.emulated_edge_mc(uvbuf, srcU,
+                                 s->uvlinesize, s->uvlinesize,
+                                 8 + 1, 8 + 1,
+                                 uvsrc_x, uvsrc_y,
                                  s->h_edge_pos >> 1, v_edge_pos >> 1);
-        s->vdsp.emulated_edge_mc(uvbuf + 16, s->uvlinesize, srcV, s->uvlinesize,
-                                 8 + 1, 8 + 1, uvsrc_x, uvsrc_y,
+        s->vdsp.emulated_edge_mc(uvbuf + 16, srcV,
+                                 s->uvlinesize, s->uvlinesize,
+                                 8 + 1, 8 + 1,
+                                 uvsrc_x, uvsrc_y,
                                  s->h_edge_pos >> 1, v_edge_pos >> 1);
         srcU = uvbuf;
         srcV = uvbuf + 16;
@@ -581,7 +571,7 @@ static void vc1_mc_4mv_luma(VC1Context *v, int n, int dir, int avg)
         if (v->field_mode && (v->cur_field_type != v->ref_field_type[dir]) && v->second_field) {
             srcY = s->current_picture.f.data[0];
             luty = v->curr_luty;
-            use_ic = v->curr_use_ic;
+            use_ic = *v->curr_use_ic;
         } else {
             srcY = s->last_picture.f.data[0];
             luty = v->last_luty;
@@ -700,7 +690,8 @@ static void vc1_mc_4mv_luma(VC1Context *v, int n, int dir, int avg)
         || (unsigned)(src_y - (s->mspel << fieldmv)) > v_edge_pos - (my & 3) - ((8 + s->mspel * 2) << fieldmv)) {
         srcY -= s->mspel * (1 + (s->linesize << fieldmv));
         /* check emulate edge stride and offset */
-        s->vdsp.emulated_edge_mc(s->edge_emu_buffer, s->linesize, srcY, s->linesize,
+        s->vdsp.emulated_edge_mc(s->edge_emu_buffer, srcY,
+                                 s->linesize, s->linesize,
                                  9 + s->mspel * 2, (9 + s->mspel * 2) << fieldmv,
                                  src_x - s->mspel, src_y - (s->mspel << fieldmv),
                                  s->h_edge_pos, v_edge_pos);
@@ -882,7 +873,7 @@ static void vc1_mc_4mv_chroma(VC1Context *v, int dir)
             srcU = s->current_picture.f.data[1];
             srcV = s->current_picture.f.data[2];
             lutuv = v->curr_lutuv;
-            use_ic = v->curr_use_ic;
+            use_ic = *v->curr_use_ic;
         } else {
             srcU = s->last_picture.f.data[1];
             srcV = s->last_picture.f.data[2];
@@ -915,11 +906,13 @@ static void vc1_mc_4mv_chroma(VC1Context *v, int dir)
         || s->h_edge_pos < 18 || v_edge_pos < 18
         || (unsigned)uvsrc_x > (s->h_edge_pos >> 1) - 9
         || (unsigned)uvsrc_y > (v_edge_pos    >> 1) - 9) {
-        s->vdsp.emulated_edge_mc(s->edge_emu_buffer, s->uvlinesize, srcU,
-                                 s->uvlinesize, 8 + 1, 8 + 1, uvsrc_x, uvsrc_y,
+        s->vdsp.emulated_edge_mc(s->edge_emu_buffer, srcU,
+                                 s->uvlinesize, s->uvlinesize,
+                                 8 + 1, 8 + 1, uvsrc_x, uvsrc_y,
                                  s->h_edge_pos >> 1, v_edge_pos >> 1);
-        s->vdsp.emulated_edge_mc(s->edge_emu_buffer + 16, s->uvlinesize, srcV,
-                                 s->uvlinesize, 8 + 1, 8 + 1, uvsrc_x, uvsrc_y,
+        s->vdsp.emulated_edge_mc(s->edge_emu_buffer + 16, srcV,
+                                 s->uvlinesize, s->uvlinesize,
+                                 8 + 1, 8 + 1, uvsrc_x, uvsrc_y,
                                  s->h_edge_pos >> 1, v_edge_pos >> 1);
         srcU = s->edge_emu_buffer;
         srcV = s->edge_emu_buffer + 16;
@@ -1036,12 +1029,14 @@ static void vc1_mc_4mv_chroma4(VC1Context *v, int dir, int dir2, int avg)
             || s->h_edge_pos < 10 || v_edge_pos < (5 << fieldmv)
             || (unsigned)uvsrc_x > (s->h_edge_pos >> 1) - 5
             || (unsigned)uvsrc_y > v_edge_pos - (5 << fieldmv)) {
-            s->vdsp.emulated_edge_mc(s->edge_emu_buffer, s->uvlinesize, srcU,
-                                     s->uvlinesize, 5, (5 << fieldmv), uvsrc_x,
-                                     uvsrc_y, s->h_edge_pos >> 1, v_edge_pos);
-            s->vdsp.emulated_edge_mc(s->edge_emu_buffer + 16, s->uvlinesize, srcV,
-                                     s->uvlinesize, 5, (5 << fieldmv), uvsrc_x,
-                                     uvsrc_y, s->h_edge_pos >> 1, v_edge_pos);
+            s->vdsp.emulated_edge_mc(s->edge_emu_buffer, srcU,
+                                     s->uvlinesize, s->uvlinesize,
+                                     5, (5 << fieldmv), uvsrc_x, uvsrc_y,
+                                     s->h_edge_pos >> 1, v_edge_pos);
+            s->vdsp.emulated_edge_mc(s->edge_emu_buffer + 16, srcV,
+                                     s->uvlinesize, s->uvlinesize,
+                                     5, (5 << fieldmv), uvsrc_x, uvsrc_y,
+                                     s->h_edge_pos >> 1, v_edge_pos);
             srcU = s->edge_emu_buffer;
             srcV = s->edge_emu_buffer + 16;
 
@@ -1969,16 +1964,21 @@ static void vc1_interp_mc(VC1Context *v)
         uint8_t *uvbuf = s->edge_emu_buffer + 19 * s->linesize;
 
         srcY -= s->mspel * (1 + s->linesize);
-        s->vdsp.emulated_edge_mc(s->edge_emu_buffer, s->linesize, srcY, s->linesize,
+        s->vdsp.emulated_edge_mc(s->edge_emu_buffer, srcY,
+                                 s->linesize, s->linesize,
                                  17 + s->mspel * 2, 17 + s->mspel * 2,
                                  src_x - s->mspel, src_y - s->mspel,
                                  s->h_edge_pos, v_edge_pos);
         srcY = s->edge_emu_buffer;
-        s->vdsp.emulated_edge_mc(uvbuf, s->uvlinesize, srcU, s->uvlinesize,
-                                 8 + 1, 8 + 1, uvsrc_x, uvsrc_y,
+        s->vdsp.emulated_edge_mc(uvbuf, srcU,
+                                 s->uvlinesize, s->uvlinesize,
+                                 8 + 1, 8 + 1,
+                                 uvsrc_x, uvsrc_y,
                                  s->h_edge_pos >> 1, v_edge_pos >> 1);
-        s->vdsp.emulated_edge_mc(uvbuf + 16, s->uvlinesize, srcV, s->uvlinesize,
-                                 8 + 1, 8 + 1, uvsrc_x, uvsrc_y,
+        s->vdsp.emulated_edge_mc(uvbuf + 16, srcV,
+                                 s->uvlinesize, s->uvlinesize,
+                                 8 + 1, 8 + 1,
+                                 uvsrc_x, uvsrc_y,
                                  s->h_edge_pos >> 1, v_edge_pos >> 1);
         srcU = uvbuf;
         srcV = uvbuf + 16;
@@ -2114,6 +2114,8 @@ static inline void vc1_pred_b_mv(VC1Context *v, int dmv_x[2], int dmv_y[2],
     int r_x, r_y;
     const uint8_t *is_intra = v->mb_type[0];
 
+    av_assert0(!v->field_mode);
+
     r_x = v->range_x;
     r_y = v->range_y;
     /* scale MV difference to be quad-pel */
@@ -2126,13 +2128,15 @@ static inline void vc1_pred_b_mv(VC1Context *v, int dmv_x[2], int dmv_y[2],
     xy = s->block_index[0];
 
     if (s->mb_intra) {
-        s->current_picture.motion_val[0][xy + v->blocks_off][0] =
-        s->current_picture.motion_val[0][xy + v->blocks_off][1] =
-        s->current_picture.motion_val[1][xy + v->blocks_off][0] =
-        s->current_picture.motion_val[1][xy + v->blocks_off][1] = 0;
+        s->current_picture.motion_val[0][xy][0] =
+        s->current_picture.motion_val[0][xy][1] =
+        s->current_picture.motion_val[1][xy][0] =
+        s->current_picture.motion_val[1][xy][1] = 0;
         return;
     }
-    if (!v->field_mode) {
+        if (direct && s->next_picture_ptr->field_picture)
+            av_log(s->avctx, AV_LOG_WARNING, "Mixed frame/field direct mode not supported\n");
+
         s->mv[0][0][0] = scale_mv(s->next_picture.motion_val[1][xy][0], v->bfraction, 0, s->quarter_sample);
         s->mv[0][0][1] = scale_mv(s->next_picture.motion_val[1][xy][1], v->bfraction, 0, s->quarter_sample);
         s->mv[1][0][0] = scale_mv(s->next_picture.motion_val[1][xy][0], v->bfraction, 1, s->quarter_sample);
@@ -2143,12 +2147,11 @@ static inline void vc1_pred_b_mv(VC1Context *v, int dmv_x[2], int dmv_y[2],
         s->mv[0][0][1] = av_clip(s->mv[0][0][1], -60 - (s->mb_y << 6), (s->mb_height << 6) - 4 - (s->mb_y << 6));
         s->mv[1][0][0] = av_clip(s->mv[1][0][0], -60 - (s->mb_x << 6), (s->mb_width  << 6) - 4 - (s->mb_x << 6));
         s->mv[1][0][1] = av_clip(s->mv[1][0][1], -60 - (s->mb_y << 6), (s->mb_height << 6) - 4 - (s->mb_y << 6));
-    }
     if (direct) {
-        s->current_picture.motion_val[0][xy + v->blocks_off][0] = s->mv[0][0][0];
-        s->current_picture.motion_val[0][xy + v->blocks_off][1] = s->mv[0][0][1];
-        s->current_picture.motion_val[1][xy + v->blocks_off][0] = s->mv[1][0][0];
-        s->current_picture.motion_val[1][xy + v->blocks_off][1] = s->mv[1][0][1];
+        s->current_picture.motion_val[0][xy][0] = s->mv[0][0][0];
+        s->current_picture.motion_val[0][xy][1] = s->mv[0][0][1];
+        s->current_picture.motion_val[1][xy][0] = s->mv[1][0][0];
+        s->current_picture.motion_val[1][xy][1] = s->mv[1][0][1];
         return;
     }
 
@@ -4454,6 +4457,8 @@ static int vc1_decode_b_mb_intfr(VC1Context *v)
         direct = v->direct_mb_plane[mb_pos];
 
     if (direct) {
+        if (s->next_picture_ptr->field_picture)
+            av_log(s->avctx, AV_LOG_WARNING, "Mixed frame/field direct mode not supported\n");
         s->mv[0][0][0] = s->current_picture.motion_val[0][s->block_index[0]][0] = scale_mv(s->next_picture.motion_val[1][s->block_index[0]][0], v->bfraction, 0, s->quarter_sample);
         s->mv[0][0][1] = s->current_picture.motion_val[0][s->block_index[0]][1] = scale_mv(s->next_picture.motion_val[1][s->block_index[0]][1], v->bfraction, 0, s->quarter_sample);
         s->mv[1][0][0] = s->current_picture.motion_val[1][s->block_index[0]][0] = scale_mv(s->next_picture.motion_val[1][s->block_index[0]][0], v->bfraction, 1, s->quarter_sample);
@@ -5279,7 +5284,7 @@ static void vc1_sprite_parse_transform(GetBitContext* gb, int c[7])
         c[6] = 1 << 16;
 }
 
-static void vc1_parse_sprites(VC1Context *v, GetBitContext* gb, SpriteData* sd)
+static int vc1_parse_sprites(VC1Context *v, GetBitContext* gb, SpriteData* sd)
 {
     AVCodecContext *avctx = v->s.avctx;
     int sprite, i;
@@ -5323,7 +5328,7 @@ static void vc1_parse_sprites(VC1Context *v, GetBitContext* gb, SpriteData* sd)
         sd->effect_pcount2 = get_bits(gb, 16);
         if (sd->effect_pcount2 > 10) {
             av_log(avctx, AV_LOG_ERROR, "Too many effect parameters\n");
-            return;
+            return AVERROR_INVALIDDATA;
         } else if (sd->effect_pcount2) {
             i = -1;
             av_log(avctx, AV_LOG_DEBUG, "Effect params 2: ");
@@ -5340,10 +5345,14 @@ static void vc1_parse_sprites(VC1Context *v, GetBitContext* gb, SpriteData* sd)
         av_log(avctx, AV_LOG_DEBUG, "Effect flag set\n");
 
     if (get_bits_count(gb) >= gb->size_in_bits +
-       (avctx->codec_id == AV_CODEC_ID_WMV3IMAGE ? 64 : 0))
+       (avctx->codec_id == AV_CODEC_ID_WMV3IMAGE ? 64 : 0)) {
         av_log(avctx, AV_LOG_ERROR, "Buffer overrun\n");
+        return AVERROR_INVALIDDATA;
+    }
     if (get_bits_count(gb) < gb->size_in_bits - 8)
         av_log(avctx, AV_LOG_WARNING, "Buffer not fully read\n");
+
+    return 0;
 }
 
 static void vc1_draw_sprites(VC1Context *v, SpriteData* sd)
@@ -5355,7 +5364,7 @@ static void vc1_draw_sprites(VC1Context *v, SpriteData* sd)
     int ysub[2];
     MpegEncContext *s = &v->s;
 
-    for (i = 0; i < 2; i++) {
+    for (i = 0; i <= v->two_sprites; i++) {
         xoff[i] = av_clip(sd->coefs[i][2], 0, v->sprite_width-1 << 16);
         xadv[i] = sd->coefs[i][0];
         if (xadv[i] != 1<<16 || (v->sprite_width << 16) - (v->output_width << 16) - xoff[i])
@@ -5433,7 +5442,7 @@ static void vc1_draw_sprites(VC1Context *v, SpriteData* sd)
         }
 
         if (!plane) {
-            for (i = 0; i < 2; i++) {
+            for (i = 0; i <= v->two_sprites; i++) {
                 xoff[i] >>= 1;
                 yoff[i] >>= 1;
             }
@@ -5450,7 +5459,11 @@ static int vc1_decode_sprites(VC1Context *v, GetBitContext* gb)
     AVCodecContext *avctx = s->avctx;
     SpriteData sd;
 
-    vc1_parse_sprites(v, gb, &sd);
+    memset(&sd, 0, sizeof(sd));
+
+    ret = vc1_parse_sprites(v, gb, &sd);
+    if (ret < 0)
+        return ret;
 
     if (!s->current_picture.f.data[0]) {
         av_log(avctx, AV_LOG_ERROR, "Got no sprites\n");
@@ -5495,14 +5508,15 @@ av_cold int ff_vc1_decode_init_alloc_tables(VC1Context *v)
 {
     MpegEncContext *s = &v->s;
     int i;
+    int mb_height = FFALIGN(s->mb_height, 2);
 
     /* Allocate mb bitplanes */
-    v->mv_type_mb_plane = av_malloc (s->mb_stride * s->mb_height);
-    v->direct_mb_plane  = av_malloc (s->mb_stride * s->mb_height);
-    v->forward_mb_plane = av_malloc (s->mb_stride * s->mb_height);
-    v->fieldtx_plane    = av_mallocz(s->mb_stride * s->mb_height);
-    v->acpred_plane     = av_malloc (s->mb_stride * s->mb_height);
-    v->over_flags_plane = av_malloc (s->mb_stride * s->mb_height);
+    v->mv_type_mb_plane = av_malloc (s->mb_stride * mb_height);
+    v->direct_mb_plane  = av_malloc (s->mb_stride * mb_height);
+    v->forward_mb_plane = av_malloc (s->mb_stride * mb_height);
+    v->fieldtx_plane    = av_mallocz(s->mb_stride * mb_height);
+    v->acpred_plane     = av_malloc (s->mb_stride * mb_height);
+    v->over_flags_plane = av_malloc (s->mb_stride * mb_height);
 
     v->n_allocated_blks = s->mb_width + 2;
     v->block            = av_malloc(sizeof(*v->block) * v->n_allocated_blks);
@@ -5512,24 +5526,24 @@ av_cold int ff_vc1_decode_init_alloc_tables(VC1Context *v)
     v->ttblk            = v->ttblk_base + s->mb_stride;
     v->is_intra_base    = av_mallocz(sizeof(v->is_intra_base[0]) * 2 * s->mb_stride);
     v->is_intra         = v->is_intra_base + s->mb_stride;
-    v->luma_mv_base     = av_malloc(sizeof(v->luma_mv_base[0]) * 2 * s->mb_stride);
+    v->luma_mv_base     = av_mallocz(sizeof(v->luma_mv_base[0]) * 2 * s->mb_stride);
     v->luma_mv          = v->luma_mv_base + s->mb_stride;
 
     /* allocate block type info in that way so it could be used with s->block_index[] */
-    v->mb_type_base = av_malloc(s->b8_stride * (s->mb_height * 2 + 1) + s->mb_stride * (s->mb_height + 1) * 2);
+    v->mb_type_base = av_malloc(s->b8_stride * (mb_height * 2 + 1) + s->mb_stride * (mb_height + 1) * 2);
     v->mb_type[0]   = v->mb_type_base + s->b8_stride + 1;
-    v->mb_type[1]   = v->mb_type_base + s->b8_stride * (s->mb_height * 2 + 1) + s->mb_stride + 1;
-    v->mb_type[2]   = v->mb_type[1] + s->mb_stride * (s->mb_height + 1);
+    v->mb_type[1]   = v->mb_type_base + s->b8_stride * (mb_height * 2 + 1) + s->mb_stride + 1;
+    v->mb_type[2]   = v->mb_type[1] + s->mb_stride * (mb_height + 1);
 
     /* allocate memory to store block level MV info */
-    v->blk_mv_type_base = av_mallocz(     s->b8_stride * (s->mb_height * 2 + 1) + s->mb_stride * (s->mb_height + 1) * 2);
+    v->blk_mv_type_base = av_mallocz(     s->b8_stride * (mb_height * 2 + 1) + s->mb_stride * (mb_height + 1) * 2);
     v->blk_mv_type      = v->blk_mv_type_base + s->b8_stride + 1;
-    v->mv_f_base        = av_mallocz(2 * (s->b8_stride * (s->mb_height * 2 + 1) + s->mb_stride * (s->mb_height + 1) * 2));
+    v->mv_f_base        = av_mallocz(2 * (s->b8_stride * (mb_height * 2 + 1) + s->mb_stride * (mb_height + 1) * 2));
     v->mv_f[0]          = v->mv_f_base + s->b8_stride + 1;
-    v->mv_f[1]          = v->mv_f[0] + (s->b8_stride * (s->mb_height * 2 + 1) + s->mb_stride * (s->mb_height + 1) * 2);
-    v->mv_f_next_base   = av_mallocz(2 * (s->b8_stride * (s->mb_height * 2 + 1) + s->mb_stride * (s->mb_height + 1) * 2));
+    v->mv_f[1]          = v->mv_f[0] + (s->b8_stride * (mb_height * 2 + 1) + s->mb_stride * (mb_height + 1) * 2);
+    v->mv_f_next_base   = av_mallocz(2 * (s->b8_stride * (mb_height * 2 + 1) + s->mb_stride * (mb_height + 1) * 2));
     v->mv_f_next[0]     = v->mv_f_next_base + s->b8_stride + 1;
-    v->mv_f_next[1]     = v->mv_f_next[0] + (s->b8_stride * (s->mb_height * 2 + 1) + s->mb_stride * (s->mb_height + 1) * 2);
+    v->mv_f_next[1]     = v->mv_f_next[0] + (s->b8_stride * (mb_height * 2 + 1) + s->mb_stride * (mb_height + 1) * 2);
 
     /* Init coded blocks info */
     if (v->profile == PROFILE_ADVANCED) {
@@ -5602,10 +5616,8 @@ static av_cold int vc1_decode_init(AVCodecContext *avctx)
         avctx->pix_fmt = avctx->get_format(avctx, avctx->codec->pix_fmts);
     else
         avctx->pix_fmt = AV_PIX_FMT_GRAY8;
-    avctx->hwaccel = ff_find_hwaccel(avctx->codec->id, avctx->pix_fmt);
+    avctx->hwaccel = ff_find_hwaccel(avctx);
     v->s.avctx = avctx;
-    avctx->flags |= CODEC_FLAG_EMU_EDGE;
-    v->s.flags   |= CODEC_FLAG_EMU_EDGE;
 
     if ((ret = ff_vc1_init_common(v)) < 0)
         return ret;
@@ -5854,7 +5866,7 @@ static int vc1_decode_frame(AVCodecContext *avctx, void *data,
                                   buf_size3 << 3);
                     /* assuming that the field marker is at the exact middle,
                        hope it's correct */
-                    slices[n_slices].mby_start = s->mb_height >> 1;
+                    slices[n_slices].mby_start = s->mb_height + 1 >> 1;
                     n_slices1 = n_slices - 1; // index of the last slice of the first field
                     n_slices++;
                     break;
@@ -5905,7 +5917,7 @@ static int vc1_decode_frame(AVCodecContext *avctx, void *data,
                 buf_size3 = vc1_unescape_buffer(divider + 4, buf + buf_size - divider - 4, slices[n_slices].buf);
                 init_get_bits(&slices[n_slices].gb, slices[n_slices].buf,
                               buf_size3 << 3);
-                slices[n_slices].mby_start = s->mb_height >> 1;
+                slices[n_slices].mby_start = s->mb_height + 1 >> 1;
                 n_slices1 = n_slices - 1;
                 n_slices++;
             }
@@ -5959,15 +5971,6 @@ static int vc1_decode_frame(AVCodecContext *avctx, void *data,
         }
     }
 
-    /* We need to set current_picture_ptr before reading the header,
-     * otherwise we cannot store anything in there. */
-    if (s->current_picture_ptr == NULL || s->current_picture_ptr->f.data[0]) {
-        int i = ff_find_unused_picture(s, 0);
-        if (i < 0)
-            goto err;
-        s->current_picture_ptr = &s->picture[i];
-    }
-
     // do parse frame header
     v->pic_header_flag = 0;
     v->first_pic_header_flag = 1;
@@ -5994,18 +5997,6 @@ static int vc1_decode_frame(AVCodecContext *avctx, void *data,
     if ((s->mb_height >> v->field_mode) == 0) {
         av_log(v->s.avctx, AV_LOG_ERROR, "image too short\n");
         goto err;
-    }
-
-    // process pulldown flags
-    s->current_picture_ptr->f.repeat_pict = 0;
-    // Pulldown flags are only valid when 'broadcast' has been set.
-    // So ticks_per_frame will be 2
-    if (v->rff) {
-        // repeat field
-        s->current_picture_ptr->f.repeat_pict = 1;
-    } else if (v->rptfrm) {
-        // repeat frames
-        s->current_picture_ptr->f.repeat_pict = v->rptfrm * 2;
     }
 
     // for skipping the frame
@@ -6036,6 +6027,18 @@ static int vc1_decode_frame(AVCodecContext *avctx, void *data,
     v->s.current_picture_ptr->field_picture = v->field_mode;
     v->s.current_picture_ptr->f.interlaced_frame = (v->fcm != PROGRESSIVE);
     v->s.current_picture_ptr->f.top_field_first  = v->tff;
+
+    // process pulldown flags
+    s->current_picture_ptr->f.repeat_pict = 0;
+    // Pulldown flags are only valid when 'broadcast' has been set.
+    // So ticks_per_frame will be 2
+    if (v->rff) {
+        // repeat field
+        s->current_picture_ptr->f.repeat_pict = 1;
+    } else if (v->rptfrm) {
+        // repeat frames
+        s->current_picture_ptr->f.repeat_pict = v->rptfrm * 2;
+    }
 
     s->me.qpel_put = s->dsp.put_qpel_pixels_tab;
     s->me.qpel_avg = s->dsp.avg_qpel_pixels_tab;
@@ -6112,6 +6115,7 @@ static int vc1_decode_frame(AVCodecContext *avctx, void *data,
                     continue;
                 }
                 v->second_field = 1;
+                av_assert0((s->mb_height & 1) == 0);
                 v->blocks_off   = s->b8_stride * (s->mb_height&~1);
                 v->mb_off       = s->mb_stride * s->mb_height >> 1;
             } else {
@@ -6204,12 +6208,11 @@ image:
             if ((ret = av_frame_ref(pict, &s->current_picture_ptr->f)) < 0)
                 goto err;
             ff_print_debug_info(s, s->current_picture_ptr, pict);
+            *got_frame = 1;
         } else if (s->last_picture_ptr != NULL) {
             if ((ret = av_frame_ref(pict, &s->last_picture_ptr->f)) < 0)
                 goto err;
             ff_print_debug_info(s, s->last_picture_ptr, pict);
-        }
-        if (s->last_picture_ptr || s->low_delay) {
             *got_frame = 1;
         }
     }

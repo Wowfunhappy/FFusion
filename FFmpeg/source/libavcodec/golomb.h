@@ -214,6 +214,18 @@ static inline int get_se_golomb(GetBitContext *gb)
     }
 }
 
+static inline int get_se_golomb_long(GetBitContext *gb)
+{
+    unsigned int buf = get_ue_golomb_long(gb);
+
+    if (buf & 1)
+        buf = (buf + 1) >> 1;
+    else
+        buf = -(buf >> 1);
+
+    return buf;
+}
+
 static inline int svq3_get_se_golomb(GetBitContext *gb)
 {
     unsigned int buf;
@@ -334,8 +346,16 @@ static inline int get_ur_golomb_jpegls(GetBitContext *gb, int k, int limit,
 
         if (i < limit - 1) {
             if (k) {
-                buf = SHOW_UBITS(re, gb, k);
-                LAST_SKIP_BITS(re, gb, k);
+                if (k > MIN_CACHE_BITS - 1) {
+                    buf = SHOW_UBITS(re, gb, 16) << (k-16);
+                    LAST_SKIP_BITS(re, gb, 16);
+                    UPDATE_CACHE(re, gb);
+                    buf |= SHOW_UBITS(re, gb, k-16);
+                    LAST_SKIP_BITS(re, gb, k-16);
+                } else {
+                    buf = SHOW_UBITS(re, gb, k);
+                    LAST_SKIP_BITS(re, gb, k);
+                }
             } else {
                 buf = 0;
             }

@@ -69,6 +69,9 @@ static int film_probe(AVProbeData *p)
     if (AV_RB32(&p->buf[0]) != FILM_TAG)
         return 0;
 
+    if (AV_RB32(&p->buf[16]) != FDSC_TAG)
+        return 0;
+
     return AVPROBE_SCORE_MAX;
 }
 
@@ -263,18 +266,10 @@ static int film_read_packet(AVFormatContext *s,
     /* position the stream (will probably be there anyway) */
     avio_seek(pb, sample->sample_offset, SEEK_SET);
 
-    /* do a special song and dance when loading FILM Cinepak chunks */
-    if ((sample->stream == film->video_stream_index) &&
-        (film->video_type == AV_CODEC_ID_CINEPAK)) {
-        pkt->pos= avio_tell(pb);
-        if (av_new_packet(pkt, sample->sample_size))
-            return AVERROR(ENOMEM);
-        avio_read(pb, pkt->data, sample->sample_size);
-    } else {
-        ret= av_get_packet(pb, pkt, sample->sample_size);
-        if (ret != sample->sample_size)
-            ret = AVERROR(EIO);
-    }
+
+    ret= av_get_packet(pb, pkt, sample->sample_size);
+    if (ret != sample->sample_size)
+        ret = AVERROR(EIO);
 
     pkt->stream_index = sample->stream;
     pkt->pts = sample->pts;

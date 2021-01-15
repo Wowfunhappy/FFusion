@@ -30,6 +30,8 @@
 #define AVCODEC_MJPEGDEC_H
 
 #include "libavutil/log.h"
+#include "libavutil/pixdesc.h"
+#include "libavutil/stereo3d.h"
 
 #include "avcodec.h"
 #include "get_bits.h"
@@ -67,6 +69,7 @@ typedef struct MJpegDecodeContext {
     int bits;           /* bits per component */
     int colr;
     int xfrm;
+    int adobe_transform;
 
     int maxval;
     int near;         ///< near lossless bound (si 0 for lossless)
@@ -120,6 +123,10 @@ typedef struct MJpegDecodeContext {
 
     int extern_huff;
     AVDictionary *exif_metadata;
+
+    AVStereo3D *stereo3d; ///!< stereoscopic information (cached, since it is read before frame allocation)
+
+    const AVPixFmtDescriptor *pix_desc;
 } MJpegDecodeContext;
 
 int ff_mjpeg_decode_init(AVCodecContext *avctx);

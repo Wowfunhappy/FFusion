@@ -1,7 +1,50 @@
 Entries are sorted chronologically from oldest to youngest within each release,
 releases are sorted from youngest to oldest.
 
-version <next>
+version 2.2.7
+- snow: fix null pointer dereference
+- iff: fix out of array access
+- svq1dec: fix input data corruption
+- proresenc_ks: check buffer size
+
+
+version 2.2.6
+- fix infinite loop in dvbsub parser
+- fix some interlaced MPEG-2 videos
+- fix decoding issues in dv (Ticket2340, 2341)
+- fix v4l2 and v4l2enc crashes
+- fix theoretical librtmp crash
+- fix theoretical eamad crash
+- support dimension change in g2meet
+
+
+version 2.2:
+- HNM version 4 demuxer and video decoder
+- Live HDS muxer
+- setsar/setdar filters now support variables in ratio expressions
+- elbg filter
+- string validation in ffprobe
+- support for decoding through VDPAU in ffmpeg (the -hwaccel option)
+- complete Voxware MetaSound decoder
+- remove mp3_header_compress bitstream filter
+- Windows resource files for shared libraries
+- aeval filter
+- stereoscopic 3d metadata handling
+- WebP encoding via libwebp
+- ATRAC3+ decoder
+- VP8 in Ogg demuxing
+- side & metadata support in NUT
+- framepack filter
+- XYZ12 rawvideo support in NUT
+- Exif metadata support in WebP decoder
+- OpenGL device
+- Use metadata_header_padding to control padding in ID3 tags (currently used in
+  MP3, AIFF, and OMA files), FLAC header, and the AVI "junk" block.
+- Mirillis FIC video decoder
+- Support DNx444
+- libx265 encoder
+- dejudder filter
+- Autodetect VDA like all other hardware accelerations
 
 
 version 2.1:
@@ -46,7 +89,8 @@ version 2.1:
 - ReplayGain scanner
 - Enhanced Low Delay AAC (ER AAC ELD) decoding (no LD SBR support)
 - Linux framebuffer output device
-- HEVC decoder, raw HEVC demuxer, HEVC demuxing in TS, Matroska and MP4
+- HEVC decoder
+- raw HEVC, HEVC in MOV/MP4, HEVC in Matroska, HEVC in MPEG-TS demuxing
 - mergeplanes filter
 
 
@@ -62,7 +106,7 @@ version 2.0:
 - 10% faster aac encoding on x86 and MIPS
 - sine audio filter source
 - WebP demuxing and decoding support
-- new ffmpeg options -filter_script and -filter_complex_script, which allow a
+- ffmpeg options -filter_script and -filter_complex_script, which allow a
   filtergraph description to be read from a file
 - OpenCL support
 - audio phaser filter
@@ -70,7 +114,7 @@ version 2.0:
 - libquvi demuxer
 - uniform options syntax across all filters
 - telecine filter
-- new interlace filter
+- interlace filter
 - smptehdbars source
 - inverse telecine filters (fieldmatch and decimate)
 - colorbalance filter

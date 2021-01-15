@@ -312,7 +312,8 @@ static int decode_element(AVCodecContext *avctx, AVFrame *frame, int ch_index,
         int rice_history_mult[2];
 
         if (!alac->rice_limit) {
-            avpriv_request_sample(alac->avctx, "Compression with rice limit 0");
+            avpriv_request_sample(alac->avctx,
+                                  "Compression with rice limit 0");
             return AVERROR(ENOSYS);
         }
 
@@ -497,6 +498,8 @@ static int alac_decode_frame(AVCodecContext *avctx, void *data,
 
     if (alac->channels == ch)
         *got_frame_ptr = 1;
+    else
+        av_log(avctx, AV_LOG_WARNING, "Failed to decode all channels\n");
 
     return avpkt->size;
 }

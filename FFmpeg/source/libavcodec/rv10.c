@@ -28,6 +28,7 @@
 #include "libavutil/imgutils.h"
 #include "avcodec.h"
 #include "error_resilience.h"
+#include "internal.h"
 #include "mpegvideo.h"
 #include "mpeg4video.h"
 #include "h263.h"
@@ -299,7 +300,7 @@ static int rv20_decode_picture_header(RVDecContext *rv)
 {
     MpegEncContext *s = &rv->m;
     int seq, mb_pos, i, ret;
-    int rpr_bits;
+    int rpr_max;
 
     i = get_bits(&s->gb, 2);
     switch(i) {
@@ -340,10 +341,10 @@ static int rv20_decode_picture_header(RVDecContext *rv)
     else
         seq = get_bits(&s->gb, 13) << 2;
 
-    rpr_bits = s->avctx->extradata[1] & 7;
-    if (rpr_bits) {
+    rpr_max = s->avctx->extradata[1] & 7;
+    if (rpr_max) {
         int f, new_w, new_h;
-        rpr_bits = FFMIN((rpr_bits >> 1) + 1, 3);
+        int rpr_bits = av_log2(rpr_max) + 1;
 
         f = get_bits(&s->gb, rpr_bits);
 
@@ -374,7 +375,11 @@ static int rv20_decode_picture_header(RVDecContext *rv)
                 s->avctx->sample_aspect_ratio = av_mul_q(old_aspect, (AVRational){2, 1});
             if (new_w * s->height == 2 * new_h * s->width)
                 s->avctx->sample_aspect_ratio = av_mul_q(old_aspect, (AVRational){1, 2});
-            avcodec_set_dimensions(s->avctx, new_w, new_h);
+
+            ret = ff_set_dimensions(s->avctx, new_w, new_h);
+            if (ret < 0)
+                return ret;
+
             s->width  = new_w;
             s->height = new_h;
             if ((ret = ff_MPV_common_init(s)) < 0)
@@ -382,7 +387,7 @@ static int rv20_decode_picture_header(RVDecContext *rv)
         }
 
         if (s->avctx->debug & FF_DEBUG_PICT_INFO) {
-            av_log(s->avctx, AV_LOG_DEBUG, "F %d/%d\n", f, rpr_bits);
+            av_log(s->avctx, AV_LOG_DEBUG, "F %d/%d/%d\n", f, rpr_bits, rpr_max);
         }
     }
     if (av_image_check_size(s->width, s->height, 0, s->avctx) < 0)
@@ -497,6 +502,7 @@ static av_cold int rv10_decode_init(AVCodecContext *avctx)
     if ((ret = ff_MPV_common_init(s)) < 0)
         return ret;
 
+    ff_h263dsp_init(&s->h263dsp);
     ff_h263_decode_init_vlc();
 
     /* init rv vlc */
@@ -724,7 +730,10 @@ static int rv10_decode_frame(AVCodecContext *avctx,
             offset + FFMAX(size, size2) > buf_size)
             return AVERROR_INVALIDDATA;
 
-        if (rv10_decode_packet(avctx, buf + offset, size, size2) > 8 * size)
+        if ((ret = rv10_decode_packet(avctx, buf + offset, size, size2)) < 0)
+            return ret;
+
+        if (ret > 8 * size)
             i++;
     }
 

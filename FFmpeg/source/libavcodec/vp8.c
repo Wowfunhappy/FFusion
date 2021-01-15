@@ -113,16 +113,15 @@ static void vp8_decode_flush(AVCodecContext *avctx)
 static int update_dimensions(VP8Context *s, int width, int height)
 {
     AVCodecContext *avctx = s->avctx;
-    int i;
+    int i, ret;
 
     if (width  != s->avctx->width || ((width+15)/16 != s->mb_width || (height+15)/16 != s->mb_height) && s->macroblocks_base ||
         height != s->avctx->height) {
-        if (av_image_check_size(width, height, 0, s->avctx))
-            return AVERROR_INVALIDDATA;
-
         vp8_decode_flush_impl(s->avctx, 1);
 
-        avcodec_set_dimensions(s->avctx, width, height);
+        ret = ff_set_dimensions(s->avctx, width, height);
+        if (ret < 0)
+            return ret;
     }
 
     s->mb_width  = (s->avctx->coded_width +15) / 16;
@@ -440,8 +439,10 @@ static int decode_frame_header(VP8Context *s, const uint8_t *buf, int buf_size)
 
 static av_always_inline void clamp_mv(VP8Context *s, VP56mv *dst, const VP56mv *src)
 {
-    dst->x = av_clip(src->x, s->mv_min.x, s->mv_max.x);
-    dst->y = av_clip(src->y, s->mv_min.y, s->mv_max.y);
+    dst->x = av_clip(src->x, av_clip(s->mv_min.x, INT16_MIN, INT16_MAX),
+                             av_clip(s->mv_max.x, INT16_MIN, INT16_MAX));
+    dst->y = av_clip(src->y, av_clip(s->mv_min.y, INT16_MIN, INT16_MAX),
+                             av_clip(s->mv_max.y, INT16_MIN, INT16_MAX));
 }
 
 /**
@@ -665,7 +666,7 @@ void decode_intra4x4_modes(VP8Context *s, VP56RangeCoder *c, VP8Macroblock *mb,
 {
     uint8_t *intra4x4 = mb->intra4x4_pred_mode_mb;
 
-    if (layout == 1) {
+    if (layout) {
         VP8Macroblock *mb_top = mb - s->mb_width - 1;
         memcpy(mb->intra4x4_pred_mode_top, mb_top->intra4x4_pred_mode_top, 4);
     }
@@ -673,7 +674,7 @@ void decode_intra4x4_modes(VP8Context *s, VP56RangeCoder *c, VP8Macroblock *mb,
         int x, y;
         uint8_t* top;
         uint8_t* const left = s->intra4x4_pred_mode_left;
-        if (layout == 1)
+        if (layout)
             top = mb->intra4x4_pred_mode_top;
         else
             top = s->intra4x4_pred_mode_top + 4 * mb_x;
@@ -715,7 +716,7 @@ void decode_mb_mode(VP8Context *s, VP8Macroblock *mb, int mb_x, int mb_y,
             decode_intra4x4_modes(s, c, mb, mb_x, 1, layout);
         } else {
             const uint32_t modes = vp8_pred4x4_mode[mb->mode] * 0x01010101u;
-            if (s->mb_layout == 1)
+            if (s->mb_layout)
                 AV_WN32A(mb->intra4x4_pred_mode_top, modes);
             else
                 AV_WN32A(s->intra4x4_pred_mode_top + 4 * mb_x, modes);
@@ -961,16 +962,6 @@ int check_tm_pred8x8_mode(int mode, int mb_x, int mb_y)
 }
 
 static av_always_inline
-int check_intra_pred8x8_mode(int mode, int mb_x, int mb_y)
-{
-    if (mode == DC_PRED8x8) {
-        return check_dc_pred8x8_mode(mode, mb_x, mb_y);
-    } else {
-        return mode;
-    }
-}
-
-static av_always_inline
 int check_intra_pred8x8_mode_emuedge(int mode, int mb_x, int mb_y)
 {
     switch (mode) {
@@ -1034,23 +1025,18 @@ static av_always_inline
 void intra_predict(VP8Context *s, VP8ThreadData *td, uint8_t *dst[3],
                    VP8Macroblock *mb, int mb_x, int mb_y)
 {
-    AVCodecContext *avctx = s->avctx;
     int x, y, mode, nnz;
     uint32_t tr;
 
     // for the first row, we need to run xchg_mb_border to init the top edge to 127
     // otherwise, skip it if we aren't going to deblock
-    if (!(avctx->flags & CODEC_FLAG_EMU_EDGE && !mb_y) && (s->deblock_filter || !mb_y) && td->thread_nr == 0)
+    if (mb_y && (s->deblock_filter || !mb_y) && td->thread_nr == 0)
         xchg_mb_border(s->top_border[mb_x+1], dst[0], dst[1], dst[2],
                        s->linesize, s->uvlinesize, mb_x, mb_y, s->mb_width,
                        s->filter.simple, 1);
 
     if (mb->mode < MODE_I4x4) {
-        if (avctx->flags & CODEC_FLAG_EMU_EDGE) { // tested
-            mode = check_intra_pred8x8_mode_emuedge(mb->mode, mb_x, mb_y);
-        } else {
-            mode = check_intra_pred8x8_mode(mb->mode, mb_x, mb_y);
-        }
+        mode = check_intra_pred8x8_mode_emuedge(mb->mode, mb_x, mb_y);
         s->hpc.pred16x16[mode](dst[0], s->linesize);
     } else {
         uint8_t *ptr = dst[0];
@@ -1063,7 +1049,7 @@ void intra_predict(VP8Context *s, VP8ThreadData *td, uint8_t *dst[3],
 
         // if we're on the right edge of the frame, said edge is extended
         // from the top macroblock
-        if (!(!mb_y && avctx->flags & CODEC_FLAG_EMU_EDGE) &&
+        if (mb_y &&
             mb_x == s->mb_width-1) {
             tr = tr_right[-1]*0x01010101u;
             tr_right = (uint8_t *)&tr;
@@ -1079,41 +1065,37 @@ void intra_predict(VP8Context *s, VP8ThreadData *td, uint8_t *dst[3],
                 uint8_t *dst = ptr+4*x;
                 DECLARE_ALIGNED(4, uint8_t, copy_dst)[5*8];
 
-                if ((y == 0 || x == 3) && mb_y == 0 && avctx->flags & CODEC_FLAG_EMU_EDGE) {
+                if ((y == 0 || x == 3) && mb_y == 0) {
                     topright = tr_top;
                 } else if (x == 3)
                     topright = tr_right;
 
-                if (avctx->flags & CODEC_FLAG_EMU_EDGE) { // mb_x+x or mb_y+y is a hack but works
-                    mode = check_intra_pred4x4_mode_emuedge(intra4x4[x], mb_x + x, mb_y + y, &copy);
-                    if (copy) {
-                        dst = copy_dst + 12;
-                        linesize = 8;
-                        if (!(mb_y + y)) {
-                            copy_dst[3] = 127U;
-                            AV_WN32A(copy_dst+4, 127U * 0x01010101U);
-                        } else {
-                            AV_COPY32(copy_dst+4, ptr+4*x-s->linesize);
-                            if (!(mb_x + x)) {
-                                copy_dst[3] = 129U;
-                            } else {
-                                copy_dst[3] = ptr[4*x-s->linesize-1];
-                            }
-                        }
+                mode = check_intra_pred4x4_mode_emuedge(intra4x4[x], mb_x + x, mb_y + y, &copy);
+                if (copy) {
+                    dst = copy_dst + 12;
+                    linesize = 8;
+                    if (!(mb_y + y)) {
+                        copy_dst[3] = 127U;
+                        AV_WN32A(copy_dst+4, 127U * 0x01010101U);
+                    } else {
+                        AV_COPY32(copy_dst+4, ptr+4*x-s->linesize);
                         if (!(mb_x + x)) {
-                            copy_dst[11] =
-                            copy_dst[19] =
-                            copy_dst[27] =
-                            copy_dst[35] = 129U;
+                            copy_dst[3] = 129U;
                         } else {
-                            copy_dst[11] = ptr[4*x              -1];
-                            copy_dst[19] = ptr[4*x+s->linesize  -1];
-                            copy_dst[27] = ptr[4*x+s->linesize*2-1];
-                            copy_dst[35] = ptr[4*x+s->linesize*3-1];
+                            copy_dst[3] = ptr[4*x-s->linesize-1];
                         }
                     }
-                } else {
-                    mode = intra4x4[x];
+                    if (!(mb_x + x)) {
+                        copy_dst[11] =
+                        copy_dst[19] =
+                        copy_dst[27] =
+                        copy_dst[35] = 129U;
+                    } else {
+                        copy_dst[11] = ptr[4*x              -1];
+                        copy_dst[19] = ptr[4*x+s->linesize  -1];
+                        copy_dst[27] = ptr[4*x+s->linesize*2-1];
+                        copy_dst[35] = ptr[4*x+s->linesize*3-1];
+                    }
                 }
                 s->hpc.pred4x4[mode](dst, topright, linesize);
                 if (copy) {
@@ -1138,15 +1120,11 @@ void intra_predict(VP8Context *s, VP8ThreadData *td, uint8_t *dst[3],
         }
     }
 
-    if (avctx->flags & CODEC_FLAG_EMU_EDGE) {
-        mode = check_intra_pred8x8_mode_emuedge(mb->chroma_pred_mode, mb_x, mb_y);
-    } else {
-        mode = check_intra_pred8x8_mode(mb->chroma_pred_mode, mb_x, mb_y);
-    }
+    mode = check_intra_pred8x8_mode_emuedge(mb->chroma_pred_mode, mb_x, mb_y);
     s->hpc.pred8x8[mode](dst[1], s->uvlinesize);
     s->hpc.pred8x8[mode](dst[2], s->uvlinesize);
 
-    if (!(avctx->flags & CODEC_FLAG_EMU_EDGE && !mb_y) && (s->deblock_filter || !mb_y) && td->thread_nr == 0)
+    if (mb_y && (s->deblock_filter || !mb_y) && td->thread_nr == 0)
         xchg_mb_border(s->top_border[mb_x+1], dst[0], dst[1], dst[2],
                        s->linesize, s->uvlinesize, mb_x, mb_y, s->mb_width,
                        s->filter.simple, 0);
@@ -1186,6 +1164,7 @@ void vp8_mc_luma(VP8Context *s, VP8ThreadData *td, uint8_t *dst,
 
     if (AV_RN32A(mv)) {
         int src_linesize = linesize;
+
         int mx = (mv->x << 1)&7, mx_idx = subpel_idx[0][mx];
         int my = (mv->y << 1)&7, my_idx = subpel_idx[0][my];
 
@@ -1197,13 +1176,14 @@ void vp8_mc_luma(VP8Context *s, VP8ThreadData *td, uint8_t *dst,
         src += y_off * linesize + x_off;
         if (x_off < mx_idx || x_off >= width  - block_w - subpel_idx[2][mx] ||
             y_off < my_idx || y_off >= height - block_h - subpel_idx[2][my]) {
-            s->vdsp.emulated_edge_mc(td->edge_emu_buffer, 32,
-                                     src - my_idx * linesize - mx_idx, linesize,
+            s->vdsp.emulated_edge_mc(td->edge_emu_buffer,
+                                     src - my_idx * linesize - mx_idx,
+                                     EDGE_EMU_LINESIZE, linesize,
                                      block_w + subpel_idx[1][mx],
                                      block_h + subpel_idx[1][my],
                                      x_off - mx_idx, y_off - my_idx, width, height);
-            src = td->edge_emu_buffer + mx_idx + 32 * my_idx;
-            src_linesize = 32;
+            src = td->edge_emu_buffer + mx_idx + EDGE_EMU_LINESIZE * my_idx;
+            src_linesize = EDGE_EMU_LINESIZE;
         }
         mc_func[my_idx][mx_idx](dst, linesize, src, src_linesize, block_h, mx, my);
     } else {
@@ -1250,21 +1230,23 @@ void vp8_mc_chroma(VP8Context *s, VP8ThreadData *td, uint8_t *dst1, uint8_t *dst
         ff_thread_await_progress(ref, (3 + y_off + block_h + subpel_idx[2][my]) >> 3, 0);
         if (x_off < mx_idx || x_off >= width  - block_w - subpel_idx[2][mx] ||
             y_off < my_idx || y_off >= height - block_h - subpel_idx[2][my]) {
-            s->vdsp.emulated_edge_mc(td->edge_emu_buffer, 32,
-                                     src1 - my_idx * linesize - mx_idx, linesize,
+            s->vdsp.emulated_edge_mc(td->edge_emu_buffer,
+                                     src1 - my_idx * linesize - mx_idx,
+                                     EDGE_EMU_LINESIZE, linesize,
                                      block_w + subpel_idx[1][mx],
                                      block_h + subpel_idx[1][my],
                                      x_off - mx_idx, y_off - my_idx, width, height);
-            src1 = td->edge_emu_buffer + mx_idx + 32 * my_idx;
-            mc_func[my_idx][mx_idx](dst1, linesize, src1, 32, block_h, mx, my);
+            src1 = td->edge_emu_buffer + mx_idx + EDGE_EMU_LINESIZE * my_idx;
+            mc_func[my_idx][mx_idx](dst1, linesize, src1, EDGE_EMU_LINESIZE, block_h, mx, my);
 
-            s->vdsp.emulated_edge_mc(td->edge_emu_buffer, 32,
-                                     src2 - my_idx * linesize - mx_idx, linesize,
+            s->vdsp.emulated_edge_mc(td->edge_emu_buffer,
+                                     src2 - my_idx * linesize - mx_idx,
+                                     EDGE_EMU_LINESIZE, linesize,
                                      block_w + subpel_idx[1][mx],
                                      block_h + subpel_idx[1][my],
                                      x_off - mx_idx, y_off - my_idx, width, height);
-            src2 = td->edge_emu_buffer + mx_idx + 32 * my_idx;
-            mc_func[my_idx][mx_idx](dst2, linesize, src2, 32, block_h, mx, my);
+            src2 = td->edge_emu_buffer + mx_idx + EDGE_EMU_LINESIZE * my_idx;
+            mc_func[my_idx][mx_idx](dst2, linesize, src2, EDGE_EMU_LINESIZE, block_h, mx, my);
         } else {
             mc_func[my_idx][mx_idx](dst1, linesize, src1, linesize, block_h, mx, my);
             mc_func[my_idx][mx_idx](dst2, linesize, src2, linesize, block_h, mx, my);
@@ -1669,7 +1651,7 @@ static void vp8_decode_mb_row_no_filter(AVCodecContext *avctx, void *tdata,
     VP8Context *s = avctx->priv_data;
     VP8ThreadData *prev_td, *next_td, *td = &s->thread_data[threadnr];
     int mb_y = td->thread_mb_pos>>16;
-    int i, y, mb_x, mb_xy = mb_y*s->mb_width;
+    int mb_x, mb_xy = mb_y*s->mb_width;
     int num_jobs = s->num_jobs;
     VP8Frame *curframe = s->curframe, *prev_frame = s->prev_frame;
     VP56RangeCoder *c = &s->coeff_partition[mb_y & (s->num_coeff_partitions-1)];
@@ -1697,15 +1679,6 @@ static void vp8_decode_mb_row_no_filter(AVCodecContext *avctx, void *tdata,
     }
 
     memset(td->left_nnz, 0, sizeof(td->left_nnz));
-    // left edge of 129 for intra prediction
-    if (!(avctx->flags & CODEC_FLAG_EMU_EDGE)) {
-        for (i = 0; i < 3; i++)
-            for (y = 0; y < 16>>!!i; y++)
-                dst[i][y*curframe->tf.f->linesize[i]-1] = 129;
-        if (mb_y == 1) {
-            s->top_border[0][15] = s->top_border[0][23] = s->top_border[0][31] = 129;
-        }
-    }
 
     s->mv_min.x = -MARGIN;
     s->mv_max.x = ((s->mb_width  - 1) << 6) + MARGIN;
@@ -1957,12 +1930,6 @@ int ff_vp8_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     if (!s->mb_layout && s->keyframe)
         memset(s->intra4x4_pred_mode_top, DC_PRED, s->mb_width*4);
 
-    // top edge of 127 for intra prediction
-    if (!(avctx->flags & CODEC_FLAG_EMU_EDGE)) {
-        s->top_border[0][15] = s->top_border[0][23] = 127;
-        s->top_border[0][31] = 127;
-        memset(s->top_border[1], 127, s->mb_width*sizeof(*s->top_border));
-    }
     memset(s->ref_count, 0, sizeof(s->ref_count));
 
 
@@ -2045,7 +2012,7 @@ av_cold int ff_vp8_decode_init(AVCodecContext *avctx)
 
     ff_videodsp_init(&s->vdsp, 8);
     ff_h264_pred_init(&s->hpc, AV_CODEC_ID_VP8, 8, 1);
-    ff_vp8dsp_init(&s->vp8dsp);
+    ff_vp8dsp_init(&s->vp8dsp, 0);
 
     if ((ret = vp8_init_frames(s)) < 0) {
         ff_vp8_decode_free(avctx);
@@ -2106,52 +2073,6 @@ static int vp8_decode_update_thread_context(AVCodecContext *dst, const AVCodecCo
     return 0;
 }
 
-static unsigned apply_padding(unsigned size) { return size + (size & 1); }
-
-static int webp_decode_frame(AVCodecContext *avctx, void *data, int *data_size,
-                             AVPacket *avpkt)
-{
-    const uint8_t *buf = avpkt->data;
-    int buf_size       = avpkt->size;
-    AVPacket pkt       = *avpkt;
-
-    if (buf_size >= 16
-        && AV_RL32(buf   ) == AV_RL32("RIFF")
-        && AV_RL32(buf+ 8) == AV_RL32("WEBP")) {
-        unsigned riff_size = apply_padding(AV_RL32(buf+4)) + 8;
-        buf += 12;   // Skip over main header
-        buf_size -= 12;
-        if (buf_size < 8 || riff_size < 8) {
-            av_log(avctx, AV_LOG_ERROR, "Incomplete header.\n");
-            return AVERROR_INVALIDDATA;
-        }
-        if (AV_RL32(buf) == AV_RL32("VP8L")) {
-            av_log(avctx, AV_LOG_ERROR, "Unsupported WebP lossless format.\n");
-            return AVERROR_PATCHWELCOME;
-        }
-        if (AV_RL32(buf) == AV_RL32("VP8X") && AV_RL32(buf+4) < (unsigned)buf_size) {
-            unsigned size = apply_padding(AV_RL32(buf+4) + 8);
-            buf      += size;
-            buf_size -= size;
-        }
-        if (buf_size >= 8
-            && AV_RL32(buf) == AV_RL32("ALPH") && AV_RL32(buf+4) < (unsigned)buf_size) {
-            unsigned size = apply_padding(AV_RL32(buf+4) + 8);
-            buf      += size;
-            buf_size -= size;
-            av_log(avctx, AV_LOG_WARNING, "Skipping alpha plane\n");
-        }
-        if (buf_size >= 8 && AV_RL32(buf) == AV_RL32("VP8 ")) {
-            buf      += 8;
-            buf_size -= 8;
-        }
-    }
-    pkt.data = buf;
-    pkt.size = buf_size;
-
-    return ff_vp8_decode_frame(avctx, data, data_size, &pkt);
-}
-
 AVCodec ff_vp8_decoder = {
     .name                  = "vp8",
     .long_name             = NULL_IF_CONFIG_SMALL("On2 VP8"),
@@ -2167,17 +2088,3 @@ AVCodec ff_vp8_decoder = {
     .update_thread_context = ONLY_IF_THREADS_ENABLED(vp8_decode_update_thread_context),
 };
 
-// AVCodec ff_webp_decoder = {
-//     .name                  = "webp",
-//     .long_name             = NULL_IF_CONFIG_SMALL("WebP"),
-//     .type                  = AVMEDIA_TYPE_VIDEO,
-//     .id                    = AV_CODEC_ID_WEBP,
-//     .priv_data_size        = sizeof(VP8Context),
-//     .init                  = vp8_decode_init,
-//     .close                 = vp8_decode_free,
-//     .decode                = webp_decode_frame,
-//     .capabilities          = CODEC_CAP_DR1 | CODEC_CAP_FRAME_THREADS | CODEC_CAP_SLICE_THREADS,
-//     .flush                 = vp8_decode_flush,
-//     .init_thread_copy      = ONLY_IF_THREADS_ENABLED(vp8_decode_init_thread_copy),
-//     .update_thread_context = ONLY_IF_THREADS_ENABLED(vp8_decode_update_thread_context),
-// };

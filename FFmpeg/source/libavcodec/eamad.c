@@ -29,6 +29,7 @@
  */
 
 #include "avcodec.h"
+#include "bytestream.h"
 #include "get_bits.h"
 #include "aandcttab.h"
 #include "eaidct.h"
@@ -144,6 +145,11 @@ static inline int decode_block_intra(MadContext *s, int16_t * block)
                 break;
             } else if (level != 0) {
                 i += run;
+                if (i > 63) {
+                    av_log(s->avctx, AV_LOG_ERROR,
+                           "ac-tex damaged at %d %d\n", s->mb_x, s->mb_y);
+                    return -1;
+                }
                 j = scantable[i];
                 level = (level*quant_matrix[j]) >> 4;
                 level = (level-1)|1;
@@ -158,6 +164,11 @@ static inline int decode_block_intra(MadContext *s, int16_t * block)
                 run = SHOW_UBITS(re, &s->gb, 6)+1; LAST_SKIP_BITS(re, &s->gb, 6);
 
                 i += run;
+                if (i > 63) {
+                    av_log(s->avctx, AV_LOG_ERROR,
+                           "ac-tex damaged at %d %d\n", s->mb_x, s->mb_y);
+                    return -1;
+                }
                 j = scantable[i];
                 if (level < 0) {
                     level = -level;
@@ -168,10 +179,6 @@ static inline int decode_block_intra(MadContext *s, int16_t * block)
                     level = (level*quant_matrix[j]) >> 4;
                     level = (level-1)|1;
                 }
-            }
-            if (i > 63) {
-                av_log(s->avctx, AV_LOG_ERROR, "ac-tex damaged at %d %d\n", s->mb_x, s->mb_y);
-                return -1;
             }
 
             block[j] = level;
@@ -237,30 +244,32 @@ static int decode_frame(AVCodecContext *avctx,
 {
     const uint8_t *buf = avpkt->data;
     int buf_size       = avpkt->size;
-    const uint8_t *buf_end = buf+buf_size;
     MadContext *s     = avctx->priv_data;
     AVFrame *frame    = data;
+    GetByteContext gb;
     int width, height;
     int chunk_type;
     int inter, ret;
 
-    if (buf_size < 26) {
-        av_log(avctx, AV_LOG_ERROR, "Input buffer too small\n");
-        *got_frame = 0;
-        return AVERROR_INVALIDDATA;
-    }
+    bytestream2_init(&gb, buf, buf_size);
 
-    chunk_type = AV_RL32(&buf[0]);
+    chunk_type = bytestream2_get_le32(&gb);
     inter = (chunk_type == MADm_TAG || chunk_type == MADe_TAG);
-    buf += 8;
+    bytestream2_skip(&gb, 10);
 
     av_reduce(&avctx->time_base.num, &avctx->time_base.den,
-              AV_RL16(&buf[6]), 1000, 1<<30);
+              bytestream2_get_le16(&gb), 1000, 1<<30);
 
-    width  = AV_RL16(&buf[8]);
-    height = AV_RL16(&buf[10]);
-    calc_quant_matrix(s, buf[13]);
-    buf += 16;
+    width  = bytestream2_get_le16(&gb);
+    height = bytestream2_get_le16(&gb);
+    bytestream2_skip(&gb, 1);
+    calc_quant_matrix(s, bytestream2_get_byte(&gb));
+    bytestream2_skip(&gb, 2);
+
+    if (bytestream2_get_bytes_left(&gb) < 2) {
+        av_log(avctx, AV_LOG_ERROR, "Input data too small\n");
+        return AVERROR_INVALIDDATA;
+    }
 
     if (width < 16 || height < 16) {
         av_log(avctx, AV_LOG_ERROR, "Dimensions too small\n");
@@ -269,11 +278,10 @@ static int decode_frame(AVCodecContext *avctx,
 
     if (avctx->width != width || avctx->height != height) {
         av_frame_unref(s->last_frame);
-        if((width * height)/2048*7 > buf_end-buf)
+        if((width * height)/2048*7 > bytestream2_get_bytes_left(&gb))
             return AVERROR_INVALIDDATA;
-        if ((ret = av_image_check_size(width, height, 0, avctx)) < 0)
+        if ((ret = ff_set_dimensions(avctx, width, height)) < 0)
             return ret;
-        avcodec_set_dimensions(avctx, width, height);
     }
 
     if ((ret = ff_get_buffer(avctx, frame, AV_GET_BUFFER_FLAG_REF)) < 0)
@@ -293,12 +301,13 @@ static int decode_frame(AVCodecContext *avctx,
     }
 
     av_fast_padded_malloc(&s->bitstream_buf, &s->bitstream_buf_size,
-                          buf_end - buf);
+                          bytestream2_get_bytes_left(&gb));
     if (!s->bitstream_buf)
         return AVERROR(ENOMEM);
-    s->dsp.bswap16_buf(s->bitstream_buf, (const uint16_t*)buf, (buf_end-buf)/2);
-    memset((uint8_t*)s->bitstream_buf + (buf_end-buf), 0, FF_INPUT_BUFFER_PADDING_SIZE);
-    init_get_bits(&s->gb, s->bitstream_buf, 8*(buf_end-buf));
+    s->dsp.bswap16_buf(s->bitstream_buf, (const uint16_t *)(buf + bytestream2_tell(&gb)),
+                         bytestream2_get_bytes_left(&gb) / 2);
+    memset((uint8_t*)s->bitstream_buf + bytestream2_get_bytes_left(&gb), 0, FF_INPUT_BUFFER_PADDING_SIZE);
+    init_get_bits(&s->gb, s->bitstream_buf, 8*(bytestream2_get_bytes_left(&gb)));
 
     for (s->mb_y=0; s->mb_y < (avctx->height+15)/16; s->mb_y++)
         for (s->mb_x=0; s->mb_x < (avctx->width +15)/16; s->mb_x++)

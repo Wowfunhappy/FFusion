@@ -74,6 +74,7 @@
  * N                    SinuSoidal Coding (Transient, Sinusoid, Noise)
  * Y                    Parametric Stereo
  * N                    Direct Stream Transfer
+ * Y                    Enhanced AAC Low Delay (ER AAC ELD)
  *
  * Note: - HE AAC v1 comprises LC AAC with Spectral Band Replication.
  *       - HE AAC v2 comprises LC AAC with Spectral Band Replication and
@@ -104,6 +105,7 @@
 #include <assert.h>
 #include <errno.h>
 #include <math.h>
+#include <stdint.h>
 #include <string.h>
 
 #if ARCH_ARM
@@ -535,6 +537,25 @@ static int set_default_channel_config(AVCodecContext *avctx,
     *tags = tags_per_config[channel_config];
     memcpy(layout_map, aac_channel_layout_map[channel_config - 1],
            *tags * sizeof(*layout_map));
+
+    /*
+     * AAC specification has 7.1(wide) as a default layout for 8-channel streams.
+     * However, at least Nero AAC encoder encodes 7.1 streams using the default
+     * channel config 7, mapping the side channels of the original audio stream
+     * to the second AAC_CHANNEL_FRONT pair in the AAC stream. Similarly, e.g. FAAD
+     * decodes the second AAC_CHANNEL_FRONT pair as side channels, therefore decoding
+     * the incorrect streams as if they were correct (and as the encoder intended).
+     *
+     * As actual intended 7.1(wide) streams are very rare, default to assuming a
+     * 7.1 layout was intended.
+     */
+    if (channel_config == 7 && avctx->strict_std_compliance < FF_COMPLIANCE_STRICT) {
+        av_log(avctx, AV_LOG_INFO, "Assuming an incorrectly encoded 7.1 channel layout"
+               " instead of a spec-compliant 7.1(wide) layout, use -strict %d to decode"
+               " according to the specification instead.\n", FF_COMPLIANCE_STRICT);
+        layout_map[2][2] = AAC_CHANNEL_SIDE;
+    }
+
     return 0;
 }
 
@@ -1115,7 +1136,6 @@ static av_cold int aac_decode_init(AVCodecContext *avctx)
     ff_mdct_init(&ac->mdct_ltp,   11, 0, -2.0 * 32768.0);
     // window initialization
     ff_kbd_window_init(ff_aac_kbd_long_1024, 4.0, 1024);
-    ff_kbd_window_init(ff_aac_kbd_long_512,  4.0, 512);
     ff_kbd_window_init(ff_aac_kbd_short_128, 6.0, 128);
     ff_init_ff_sine_windows(10);
     ff_init_ff_sine_windows( 9);
@@ -1228,13 +1248,14 @@ static int decode_ics_info(AACContext *ac, IndividualChannelStream *ics,
         if (aot == AOT_ER_AAC_LD || aot == AOT_ER_AAC_ELD) {
             ics->swb_offset        =     ff_swb_offset_512[ac->oc[1].m4ac.sampling_index];
             ics->num_swb           =    ff_aac_num_swb_512[ac->oc[1].m4ac.sampling_index];
+            ics->tns_max_bands     =  ff_tns_max_bands_512[ac->oc[1].m4ac.sampling_index];
             if (!ics->num_swb || !ics->swb_offset)
                 return AVERROR_BUG;
         } else {
             ics->swb_offset        =    ff_swb_offset_1024[ac->oc[1].m4ac.sampling_index];
             ics->num_swb           =   ff_aac_num_swb_1024[ac->oc[1].m4ac.sampling_index];
+            ics->tns_max_bands     = ff_tns_max_bands_1024[ac->oc[1].m4ac.sampling_index];
         }
-        ics->tns_max_bands         = ff_tns_max_bands_1024[ac->oc[1].m4ac.sampling_index];
         if (aot != AOT_ER_AAC_ELD) {
             ics->predictor_present     = get_bits1(gb);
             ics->predictor_reset_group = 0;
@@ -2265,10 +2286,12 @@ static int decode_extension_payload(AACContext *ac, GetBitContext *gb, int cnt,
         } else if (ac->oc[1].m4ac.ps == -1 && ac->oc[1].status < OC_LOCKED && ac->avctx->channels == 1) {
             ac->oc[1].m4ac.sbr = 1;
             ac->oc[1].m4ac.ps = 1;
+            ac->avctx->profile = FF_PROFILE_AAC_HE_V2;
             output_configure(ac, ac->oc[1].layout_map, ac->oc[1].layout_map_tags,
                              ac->oc[1].status, 1);
         } else {
             ac->oc[1].m4ac.sbr = 1;
+            ac->avctx->profile = FF_PROFILE_AAC_HE;
         }
         res = ff_decode_sbr_extension(ac, &che->sbr, gb, crc_flag, cnt, elem_type);
         break;
@@ -2508,14 +2531,20 @@ static void imdct_and_windowing_ld(AACContext *ac, SingleChannelElement *sce)
     float *in    = sce->coeffs;
     float *out   = sce->ret;
     float *saved = sce->saved;
-    const float *lwindow_prev = ics->use_kb_window[1] ? ff_aac_kbd_long_512 : ff_sine_512;
     float *buf  = ac->buf_mdct;
 
     // imdct
     ac->mdct.imdct_half(&ac->mdct_ld, buf, in);
 
     // window overlapping
-    ac->fdsp.vector_fmul_window(out, saved, buf, lwindow_prev, 256);
+    if (ics->use_kb_window[1]) {
+        // AAC LD uses a low overlap sine window instead of a KBD window
+        memcpy(out, saved, 192 * sizeof(float));
+        ac->fdsp.vector_fmul_window(out + 192, saved + 192, buf, ff_sine_128, 64);
+        memcpy(                     out + 320, buf + 64, 192 * sizeof(float));
+    } else {
+        ac->fdsp.vector_fmul_window(out, saved, buf, ff_sine_512, 256);
+    }
 
     // buffer update
     memcpy(saved, buf + 256, 256 * sizeof(float));
@@ -2536,7 +2565,7 @@ static void imdct_and_windowing_eld(AACContext *ac, SingleChannelElement *sce)
     // Inverse transform, mapped to the conventional IMDCT by
     // Chivukula, R.K.; Reznik, Y.A.; Devarajan, V.,
     // "Efficient algorithms for MPEG-4 AAC-ELD, AAC-LD and AAC-LC filterbanks,"
-    // Audio, Language and Image Processing, 2008. ICALIP 2008. International Conference on
+    // International Conference on Audio, Language and Image Processing, ICALIP 2008.
     // URL: http://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=4590245&isnumber=4589950
     for (i = 0; i < n2; i+=2) {
         float temp;
@@ -2803,6 +2832,10 @@ static int aac_decode_er_frame(AVCodecContext *avctx, void *data,
     if ((err = frame_configure_elements(avctx)) < 0)
         return err;
 
+    // The FF_PROFILE_AAC_* defines are all object_type - 1
+    // This may lead to an undefined profile being signaled
+    ac->avctx->profile = ac->oc[1].m4ac.object_type - 1;
+
     ac->tags_mapped = 0;
 
     if (chan_config < 0 || chan_config >= 8) {
@@ -2839,6 +2872,7 @@ static int aac_decode_er_frame(AVCodecContext *avctx, void *data,
     spectral_to_sample(ac);
 
     ac->frame->nb_samples = samples;
+    ac->frame->sample_rate = avctx->sample_rate;
     *got_frame_ptr = 1;
 
     skip_bits_long(gb, get_bits_left(gb));
@@ -2871,6 +2905,10 @@ static int aac_decode_frame_int(AVCodecContext *avctx, void *data,
 
     if ((err = frame_configure_elements(avctx)) < 0)
         goto fail;
+
+    // The FF_PROFILE_AAC_* defines are all object_type - 1
+    // This may lead to an undefined profile being signaled
+    ac->avctx->profile = ac->oc[1].m4ac.object_type - 1;
 
     ac->tags_mapped = 0;
     // parse
@@ -2969,22 +3007,6 @@ static int aac_decode_frame_int(AVCodecContext *avctx, void *data,
 
     multiplier = (ac->oc[1].m4ac.sbr == 1) ? ac->oc[1].m4ac.ext_sample_rate > ac->oc[1].m4ac.sample_rate : 0;
     samples <<= multiplier;
-    /* for dual-mono audio (SCE + SCE) */
-    is_dmono = ac->dmono_mode && sce_count == 2 &&
-               ac->oc[1].channel_layout == (AV_CH_FRONT_LEFT | AV_CH_FRONT_RIGHT);
-
-    if (samples)
-        ac->frame->nb_samples = samples;
-    else
-        av_frame_unref(ac->frame);
-    *got_frame_ptr = !!samples;
-
-    if (is_dmono) {
-        if (ac->dmono_mode == 1)
-            ((AVFrame *)data)->data[1] =((AVFrame *)data)->data[0];
-        else if (ac->dmono_mode == 2)
-            ((AVFrame *)data)->data[0] =((AVFrame *)data)->data[1];
-    }
 
     if (ac->oc[1].status && audio_found) {
         avctx->sample_rate = ac->oc[1].m4ac.sample_rate << multiplier;
@@ -2998,6 +3020,31 @@ static int aac_decode_frame_int(AVCodecContext *avctx, void *data,
         if (side && side_size>=4)
             AV_WL32(side, 2*AV_RL32(side));
     }
+
+    if (!ac->frame->data[0] && samples) {
+        av_log(avctx, AV_LOG_ERROR, "no frame data found\n");
+        err = AVERROR_INVALIDDATA;
+        goto fail;
+    }
+
+    *got_frame_ptr = !!samples;
+    if (samples) {
+        ac->frame->nb_samples = samples;
+        ac->frame->sample_rate = avctx->sample_rate;
+    } else
+        av_frame_unref(ac->frame);
+    *got_frame_ptr = !!samples;
+
+    /* for dual-mono audio (SCE + SCE) */
+    is_dmono = ac->dmono_mode && sce_count == 2 &&
+               ac->oc[1].channel_layout == (AV_CH_FRONT_LEFT | AV_CH_FRONT_RIGHT);
+    if (is_dmono) {
+        if (ac->dmono_mode == 1)
+            ((AVFrame *)data)->data[1] =((AVFrame *)data)->data[0];
+        else if (ac->dmono_mode == 2)
+            ((AVFrame *)data)->data[0] =((AVFrame *)data)->data[1];
+    }
+
     return 0;
 fail:
     pop_output_configuration(ac);

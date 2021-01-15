@@ -298,7 +298,7 @@ FFmpeg has a @url{http://ffmpeg.org/ffmpeg-protocols.html#concat,
 @code{concat}} protocol designed specifically for that, with examples in the
 documentation.
 
-A few multimedia containers (MPEG-1, MPEG-2 PS, DV) allow to concatenate
+A few multimedia containers (MPEG-1, MPEG-2 PS, DV) allow one to concatenate
 video by merely concatenating the files containing them.
 
 Hence you may concatenate your multimedia files by first transcoding them to
@@ -367,26 +367,6 @@ ffmpeg -f u16le -acodec pcm_s16le -ac 2 -ar 44100 -i all.a \
        -y output.flv
 rm temp[12].[av] all.[av]
 @end example
-
-@section -profile option fails when encoding H.264 video with AAC audio
-
-@command{ffmpeg} prints an error like
-
-@example
-Undefined constant or missing '(' in 'baseline'
-Unable to parse option value "baseline"
-Error setting option profile to value baseline.
-@end example
-
-Short answer: write @option{-profile:v} instead of @option{-profile}.
-
-Long answer: this happens because the @option{-profile} option can apply to both
-video and audio.  Specifically the AAC encoder also defines some profiles, none
-of which are named @var{baseline}.
-
-The solution is to apply the @option{-profile} option to the video stream only
-by using @url{http://ffmpeg.org/ffmpeg.html#Stream-specifiers-1, Stream specifiers}.
-Appending @code{:v} to it will do exactly that.
 
 @section Using @option{-f lavfi}, audio becomes mono for no apparent reason.
 

@@ -45,6 +45,8 @@
 #include "flacdata.h"
 #include "flacdsp.h"
 #include "thread.h"
+#include "unary.h"
+
 
 typedef struct FLACContext {
     FLACSTREAMINFO
@@ -219,6 +221,12 @@ static int decode_residuals(FLACContext *s, int32_t *decoded, int pred_order)
     rice_order = get_bits(&s->gb, 4);
 
     samples= s->blocksize >> rice_order;
+    if (samples << rice_order != s->blocksize) {
+        av_log(s->avctx, AV_LOG_ERROR, "invalid rice order: %i blocksize %i\n",
+               rice_order, s->blocksize);
+        return AVERROR_INVALIDDATA;
+    }
+
     if (pred_order > samples) {
         av_log(s->avctx, AV_LOG_ERROR, "invalid predictor order: %i > %i\n",
                pred_order, samples);
@@ -357,7 +365,6 @@ static inline int decode_subframe(FLACContext *s, int channel)
 
     if (get_bits1(&s->gb)) {
         int left = get_bits_left(&s->gb);
-        wasted = 1;
         if ( left < 0 ||
             (left < bps && !show_bits_long(&s->gb, left)) ||
                            !show_bits_long(&s->gb, bps)) {
@@ -366,8 +373,7 @@ static inline int decode_subframe(FLACContext *s, int channel)
                    bps, left);
             return AVERROR_INVALIDDATA;
         }
-        while (!get_bits1(&s->gb))
-            wasted++;
+        wasted = 1 + get_unary(&s->gb, 1, get_bits_left(&s->gb));
         bps -= wasted;
     }
     if (bps > 32) {
