@@ -19,6 +19,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <inttypes.h>
+
 #include "libavutil/attributes.h"
 #include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
@@ -67,6 +69,7 @@ typedef struct {
     unsigned int packet_frag_offset;
     unsigned int packet_frag_size;
     int64_t packet_frag_timestamp;
+    int ts_is_pts;
     int packet_multi_size;
     int packet_time_delta;
     int packet_time_start;
@@ -420,7 +423,7 @@ static int asf_read_stream_properties(AVFormatContext *s, int64_t size)
 
     st->codec->codec_type = type;
     if (type == AVMEDIA_TYPE_AUDIO) {
-        int ret = ff_get_wav_header(pb, st->codec, type_specific_size);
+        int ret = ff_get_wav_header(s, pb, st->codec, type_specific_size);
         if (ret < 0)
             return ret;
         if (is_dvr_ms_audio) {
@@ -499,6 +502,8 @@ static int asf_read_stream_properties(AVFormatContext *s, int64_t size)
             st->codec->extradata_size = 0;
         }
         if (st->codec->codec_id == AV_CODEC_ID_H264)
+            st->need_parsing = AVSTREAM_PARSE_FULL_ONCE;
+        if (st->codec->codec_id == AV_CODEC_ID_MPEG4)
             st->need_parsing = AVSTREAM_PARSE_FULL_ONCE;
     }
     pos2 = avio_tell(pb);
@@ -689,12 +694,14 @@ static int asf_read_marker(AVFormatContext *s, int64_t size)
     count = avio_rl32(pb);    // markers count
     avio_rl16(pb);            // reserved 2 bytes
     name_len = avio_rl16(pb); // name length
-    for (i = 0; i < name_len; i++)
-        avio_r8(pb); // skip the name
+    avio_skip(pb, name_len);
 
     for (i = 0; i < count; i++) {
         int64_t pres_time;
         int name_len;
+
+        if (avio_feof(pb))
+            return AVERROR_INVALIDDATA;
 
         avio_rl64(pb);             // offset, 8 bytes
         pres_time = avio_rl64(pb); // presentation time
@@ -780,7 +787,7 @@ static int asf_read_header(AVFormatContext *s)
             continue;
         } else if (!ff_guidcmp(&g, &ff_asf_marker_header)) {
             asf_read_marker(s, gsize);
-        } else if (url_feof(pb)) {
+        } else if (avio_feof(pb)) {
             return AVERROR_EOF;
         } else {
             if (!s->keylen) {
@@ -817,7 +824,7 @@ static int asf_read_header(AVFormatContext *s)
     avio_rl64(pb);
     avio_r8(pb);
     avio_r8(pb);
-    if (url_feof(pb))
+    if (avio_feof(pb))
         return AVERROR_EOF;
     asf->data_offset      = avio_tell(pb);
     asf->packet_size_left = 0;
@@ -917,20 +924,20 @@ static int asf_get_packet(AVFormatContext *s, AVIOContext *pb)
          * the stream. */
         if (pb->error == AVERROR(EAGAIN))
             return AVERROR(EAGAIN);
-        if (!url_feof(pb))
+        if (!avio_feof(pb))
             av_log(s, AV_LOG_ERROR,
                    "ff asf bad header %x  at:%"PRId64"\n", c, avio_tell(pb));
     }
     if ((c & 0x8f) == 0x82) {
         if (d || e) {
-            if (!url_feof(pb))
+            if (!avio_feof(pb))
                 av_log(s, AV_LOG_ERROR, "ff asf bad non zero\n");
             return AVERROR_INVALIDDATA;
         }
         c      = avio_r8(pb);
         d      = avio_r8(pb);
         rsize += 3;
-    } else if(!url_feof(pb)) {
+    } else if(!avio_feof(pb)) {
         avio_seek(pb, -1, SEEK_CUR); // FIXME
     }
 
@@ -944,13 +951,13 @@ static int asf_get_packet(AVFormatContext *s, AVIOContext *pb)
     // the following checks prevent overflows and infinite loops
     if (!packet_length || packet_length >= (1U << 29)) {
         av_log(s, AV_LOG_ERROR,
-               "invalid packet_length %d at:%"PRId64"\n",
+               "invalid packet_length %"PRIu32" at:%"PRId64"\n",
                packet_length, avio_tell(pb));
         return AVERROR_INVALIDDATA;
     }
     if (padsize >= packet_length) {
         av_log(s, AV_LOG_ERROR,
-               "invalid padsize %d at:%"PRId64"\n", padsize, avio_tell(pb));
+               "invalid padsize %"PRIu32" at:%"PRId64"\n", padsize, avio_tell(pb));
         return AVERROR_INVALIDDATA;
     }
 
@@ -969,7 +976,7 @@ static int asf_get_packet(AVFormatContext *s, AVIOContext *pb)
     if (rsize > packet_length - padsize) {
         asf->packet_size_left = 0;
         av_log(s, AV_LOG_ERROR,
-               "invalid packet header length %d for pktlen %d-%d at %"PRId64"\n",
+               "invalid packet header length %d for pktlen %"PRIu32"-%"PRIu32" at %"PRId64"\n",
                rsize, packet_length, padsize, avio_tell(pb));
         return AVERROR_INVALIDDATA;
     }
@@ -1049,6 +1056,7 @@ static int asf_read_frame_header(AVFormatContext *s, AVIOContext *pb)
                 ts1 = avio_rl64(pb);
                 if (ts0!= -1) asf->packet_frag_timestamp = ts0/10000;
                 else          asf->packet_frag_timestamp = AV_NOPTS_VALUE;
+                asf->ts_is_pts = 1;
                 break;
             case 0x5B:
             case 0xB7:
@@ -1120,10 +1128,10 @@ static int asf_parse_packet(AVFormatContext *s, AVIOContext *pb, AVPacket *pkt)
     ASFStream *asf_st = 0;
     for (;;) {
         int ret;
-        if (url_feof(pb))
+        if (avio_feof(pb))
             return AVERROR_EOF;
-
-        if (asf->packet_size_left < FRAME_HEADER_SIZE) {
+        if (asf->packet_size_left < FRAME_HEADER_SIZE ||
+            asf->packet_segments < 1 && asf->packet_time_start == 0) {
             int ret = asf->packet_size_left + asf->packet_padsize;
 
             assert(ret >= 0);
@@ -1189,6 +1197,8 @@ static int asf_parse_packet(AVFormatContext *s, AVIOContext *pb, AVPacket *pkt)
         if (asf_st->pkt.size != asf_st->packet_obj_size ||
             // FIXME is this condition sufficient?
             asf_st->frag_offset + asf->packet_frag_size > asf_st->pkt.size) {
+            int ret;
+
             if (asf_st->pkt.data) {
                 av_log(s, AV_LOG_INFO,
                        "freeing incomplete packet size %d, new %d\n",
@@ -1197,9 +1207,13 @@ static int asf_parse_packet(AVFormatContext *s, AVIOContext *pb, AVPacket *pkt)
                 av_free_packet(&asf_st->pkt);
             }
             /* new packet */
-            av_new_packet(&asf_st->pkt, asf_st->packet_obj_size);
+            if ((ret = av_new_packet(&asf_st->pkt, asf_st->packet_obj_size)) < 0)
+                return ret;
             asf_st->seq              = asf->packet_seq;
-            asf_st->pkt.dts          = asf->packet_frag_timestamp - asf->hdr.preroll;
+            if (asf->ts_is_pts) {
+                asf_st->pkt.pts          = asf->packet_frag_timestamp - asf->hdr.preroll;
+            } else
+                asf_st->pkt.dts          = asf->packet_frag_timestamp - asf->hdr.preroll;
             asf_st->pkt.stream_index = asf->stream_index;
             asf_st->pkt.pos          = asf_st->packet_pos = asf->packet_pos;
             asf_st->pkt_clean        = 0;
@@ -1472,7 +1486,7 @@ static int asf_build_simple_index(AVFormatContext *s, int stream_index)
     ff_asf_guid g;
     ASFContext *asf     = s->priv_data;
     int64_t current_pos = avio_tell(s->pb);
-    int64_t ret;
+    int ret = 0;
 
     if((ret = avio_seek(s->pb, asf->data_object_offset + asf->data_object_size, SEEK_SET)) < 0) {
         return ret;
@@ -1485,7 +1499,7 @@ static int asf_build_simple_index(AVFormatContext *s, int stream_index)
      * skip them until the simple index object is reached */
     while (ff_guidcmp(&g, &ff_asf_simple_index_header)) {
         int64_t gsize = avio_rl64(s->pb);
-        if (gsize < 24 || url_feof(s->pb)) {
+        if (gsize < 24 || avio_feof(s->pb)) {
             goto end;
         }
         avio_skip(s->pb, gsize - 24);
@@ -1512,6 +1526,11 @@ static int asf_build_simple_index(AVFormatContext *s, int stream_index)
             int64_t pos       = s->data_offset + s->packet_size * (int64_t)pktnum;
             int64_t index_pts = FFMAX(av_rescale(itime, i, 10000) - asf->hdr.preroll, 0);
 
+            if (avio_feof(s->pb)) {
+                ret = AVERROR_INVALIDDATA;
+                goto end;
+            }
+
             if (pos != last_pos) {
                 av_log(s, AV_LOG_DEBUG, "pktnum:%d, pktct:%d  pts: %"PRId64"\n",
                        pktnum, pktct, index_pts);
@@ -1523,7 +1542,7 @@ static int asf_build_simple_index(AVFormatContext *s, int stream_index)
         asf->index_read = ict > 1;
     }
 end:
-//     if (url_feof(s->pb)) {
+//     if (avio_feof(s->pb)) {
 //         ret = 0;
 //     }
     avio_seek(s->pb, current_pos, SEEK_SET);
@@ -1542,7 +1561,7 @@ static int asf_read_seek(AVFormatContext *s, int stream_index,
 
     /* Try using the protocol's read_seek if available */
     if (s->pb) {
-        int64_t ret = avio_seek_time(s->pb, stream_index, pts, flags);
+        int ret = avio_seek_time(s->pb, stream_index, pts, flags);
         if (ret >= 0)
             asf_reset_header(s);
         if (ret != AVERROR(ENOSYS))

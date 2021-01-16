@@ -331,7 +331,7 @@ static int ogg_read_page(AVFormatContext *s, int *sid)
 
         c = avio_r8(bc);
 
-        if (url_feof(bc))
+        if (avio_feof(bc))
             return AVERROR_EOF;
 
         sync[sp++ & 3] = c;
@@ -619,6 +619,8 @@ static int ogg_get_length(AVFormatContext *s)
         int64_t pts;
         if (i < 0) continue;
         pts = ogg_calc_pts(s, i, NULL);
+        if (s->streams[i]->duration == AV_NOPTS_VALUE)
+            continue;
         if (pts != AV_NOPTS_VALUE && s->streams[i]->start_time == AV_NOPTS_VALUE && !ogg->streams[i].got_start) {
             s->streams[i]->duration -= pts;
             ogg->streams[i].got_start= 1;
@@ -647,6 +649,9 @@ static int ogg_read_close(AVFormatContext *s)
         av_freep(&ogg->streams[i].private);
         av_freep(&ogg->streams[i].new_metadata);
     }
+
+    ogg->nstreams = 0;
+
     av_freep(&ogg->streams);
     return 0;
 }
@@ -674,13 +679,16 @@ static int ogg_read_header(AVFormatContext *s)
         if (ogg->streams[i].header < 0) {
             av_log(s, AV_LOG_ERROR, "Header parsing failed for stream %d\n", i);
             ogg->streams[i].codec = NULL;
+            av_freep(&ogg->streams[i].private);
         } else if (os->codec && os->nb_header < os->codec->nb_header) {
             av_log(s, AV_LOG_WARNING,
                    "Headers mismatch for stream %d: "
                    "expected %d received %d.\n",
                    i, os->codec->nb_header, os->nb_header);
-            if (s->error_recognition & AV_EF_EXPLODE)
+            if (s->error_recognition & AV_EF_EXPLODE) {
+                ogg_read_close(s);
                 return AVERROR_INVALIDDATA;
+            }
         }
         if (os->start_granule != OGG_NOGRANULE_VALUE)
             os->lastpts = s->streams[i]->start_time =
@@ -793,10 +801,8 @@ retry:
         uint8_t *side_data = av_packet_new_side_data(pkt,
                                                      AV_PKT_DATA_SKIP_SAMPLES,
                                                      10);
-        if(side_data == NULL) {
-            av_free_packet(pkt);
-            return AVERROR(ENOMEM);
-        }
+        if(!side_data)
+            goto fail;
         AV_WL32(side_data + 4, os->end_trimming);
         os->end_trimming = 0;
     }
@@ -805,12 +811,18 @@ retry:
         uint8_t *side_data = av_packet_new_side_data(pkt,
                                                      AV_PKT_DATA_METADATA_UPDATE,
                                                      os->new_metadata_size);
+        if(!side_data)
+            goto fail;
+
         memcpy(side_data, os->new_metadata, os->new_metadata_size);
         av_freep(&os->new_metadata);
         os->new_metadata_size = 0;
     }
 
     return psize;
+fail:
+    av_free_packet(pkt);
+    return AVERROR(ENOMEM);
 }
 
 static int64_t ogg_read_timestamp(AVFormatContext *s, int stream_index,
@@ -829,7 +841,7 @@ static int64_t ogg_read_timestamp(AVFormatContext *s, int stream_index,
            && !ogg_packet(s, &i, &pstart, &psize, pos_arg)) {
         if (i == stream_index) {
             struct ogg_stream *os = ogg->streams + stream_index;
-            // Dont trust the last timestamps of a ogm video
+            // Do not trust the last timestamps of a ogm video
             if (    (os->flags & OGG_FLAG_EOS)
                 && !(os->flags & OGG_FLAG_BOS)
                 && os->codec == &ff_ogm_video_codec)

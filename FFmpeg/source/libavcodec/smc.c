@@ -1,6 +1,6 @@
 /*
  * Quicktime Graphics (SMC) Video Decoder
- * Copyright (C) 2003 the ffmpeg project
+ * Copyright (c) 2003 The FFmpeg Project
  *
  * This file is part of FFmpeg.
  *
@@ -130,6 +130,10 @@ static void smc_decode_stream(SmcContext *s)
         if (row_ptr >= image_size) {
             av_log(s->avctx, AV_LOG_INFO, "SMC decoder just went out of bounds (row ptr = %d, height = %d)\n",
                 row_ptr, image_size);
+            return;
+        }
+        if (bytestream2_get_bytes_left(&s->gb) < 1) {
+            av_log(s->avctx, AV_LOG_ERROR, "input too small\n");
             return;
         }
 

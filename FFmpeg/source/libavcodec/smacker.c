@@ -271,7 +271,7 @@ static int smacker_decode_header_tree(SmackVContext *smk, GetBitContext *gb, int
     huff.length = ((size + 3) >> 2) + 4;
     huff.maxlength = 0;
     huff.current = 0;
-    huff.values = av_mallocz(huff.length * sizeof(int));
+    huff.values = av_mallocz_array(huff.length, sizeof(int));
     if (!huff.values) {
         err = AVERROR(ENOMEM);
         goto error;
@@ -438,7 +438,6 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     bw = avctx->width >> 2;
     bh = avctx->height >> 2;
     blocks = bw * bh;
-    out = smk->pic->data[0];
     stride = smk->pic->linesize[0];
     while(blk < blocks) {
         int type, run, mode;
@@ -499,7 +498,6 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
                     out += stride;
                     out[0] = out[1] = pix & 0xFF;
                     out[2] = out[3] = pix >> 8;
-                    out += stride;
                     break;
                 case 2:
                     for(i = 0; i < 2; i++) {
@@ -669,6 +667,10 @@ static int smka_decode_frame(AVCodecContext *avctx, void *data,
 
     /* get output buffer */
     frame->nb_samples = unp_size / (avctx->channels * (bits + 1));
+    if (unp_size % (avctx->channels * (bits + 1))) {
+        av_log(avctx, AV_LOG_ERROR, "unp_size %d is odd\n", unp_size);
+        return AVERROR(EINVAL);
+    }
     if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
     samples  = (int16_t *)frame->data[0];

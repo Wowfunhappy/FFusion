@@ -86,6 +86,8 @@
  * subframe in order to reconstruct the output samples.
  */
 
+#include <inttypes.h>
+
 #include "libavutil/float_dsp.h"
 #include "libavutil/intfloat.h"
 #include "libavutil/intreadwrite.h"
@@ -175,7 +177,7 @@ typedef struct WMAProDecodeCtx {
     PutBitContext    pb;                            ///< context for filling the frame_data buffer
     FFTContext       mdct_ctx[WMAPRO_BLOCK_SIZES];  ///< MDCT context per block size
     DECLARE_ALIGNED(32, float, tmp)[WMAPRO_BLOCK_MAX_SIZE]; ///< IMDCT output buffer
-    float*           windows[WMAPRO_BLOCK_SIZES];   ///< windows for the different block sizes
+    const float*     windows[WMAPRO_BLOCK_SIZES];   ///< windows for the different block sizes
 
     /* frame size dependent frame information (set during initialization) */
     uint32_t         decode_flags;                  ///< used compression features
@@ -237,7 +239,7 @@ typedef struct WMAProDecodeCtx {
 static av_cold void dump_context(WMAProDecodeCtx *s)
 {
 #define PRINT(a, b)     av_log(s->avctx, AV_LOG_DEBUG, " %s = %d\n", a, b);
-#define PRINT_HEX(a, b) av_log(s->avctx, AV_LOG_DEBUG, " %s = %x\n", a, b);
+#define PRINT_HEX(a, b) av_log(s->avctx, AV_LOG_DEBUG, " %s = %"PRIx32"\n", a, b);
 
     PRINT("ed sample bit depth", s->bits_per_sample);
     PRINT_HEX("ed decode flags", s->decode_flags);
@@ -294,6 +296,12 @@ static av_cold int decode_init(AVCodecContext *avctx)
         s->decode_flags    = AV_RL16(edata_ptr+14);
         channel_mask       = AV_RL32(edata_ptr+2);
         s->bits_per_sample = AV_RL16(edata_ptr);
+
+        if (s->bits_per_sample > 32 || s->bits_per_sample < 1) {
+            avpriv_request_sample(avctx, "bits per sample is %d", s->bits_per_sample);
+            return AVERROR_PATCHWELCOME;
+        }
+
         /** dump the extradata */
         for (i = 0; i < avctx->extradata_size; i++)
             av_dlog(avctx, "[%x] ", avctx->extradata[i]);
@@ -336,7 +344,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
     s->dynamic_range_compression = (s->decode_flags & 0x80);
 
     if (s->max_num_subframes > MAX_SUBFRAMES) {
-        av_log(avctx, AV_LOG_ERROR, "invalid number of subframes %i\n",
+        av_log(avctx, AV_LOG_ERROR, "invalid number of subframes %"PRId8"\n",
                s->max_num_subframes);
         return AVERROR_INVALIDDATA;
     }
@@ -471,7 +479,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
     /** calculate subwoofer cutoff values */
     for (i = 0; i < num_possible_block_sizes; i++) {
         int block_size = s->samples_per_frame >> i;
-        int cutoff = (440*block_size + 3 * (s->avctx->sample_rate >> 1) - 1)
+        int cutoff = (440*block_size + 3LL * (s->avctx->sample_rate >> 1) - 1)
                      / s->avctx->sample_rate;
         s->subwoofer_cutoffs[i] = av_clip(cutoff, 4, block_size);
     }
@@ -1056,7 +1064,7 @@ static void wmapro_window(WMAProDecodeCtx *s)
     int i;
     for (i = 0; i < s->channels_for_cur_subframe; i++) {
         int c = s->channel_indexes_for_cur_subframe[i];
-        float* window;
+        const float* window;
         int winlen = s->channel[c].prev_block_len;
         float* start = s->channel[c].coeffs - (winlen >> 1);
 
@@ -1424,7 +1432,8 @@ static int decode_frame(WMAProDecodeCtx *s, AVFrame *frame, int *got_frame_ptr)
         if (len != (get_bits_count(gb) - s->frame_offset) + 2) {
             /** FIXME: not sure if this is always an error */
             av_log(s->avctx, AV_LOG_ERROR,
-                   "frame[%i] would have to skip %i bits\n", s->frame_num,
+                   "frame[%"PRIu32"] would have to skip %i bits\n",
+                   s->frame_num,
                    len - (get_bits_count(gb) - s->frame_offset) - 1);
             s->packet_loss = 1;
             return 0;
@@ -1556,7 +1565,8 @@ static int decode_packet(AVCodecContext *avctx, void *data,
         if (!s->packet_loss &&
             ((s->packet_sequence_number + 1) & 0xF) != packet_sequence_number) {
             s->packet_loss = 1;
-            av_log(avctx, AV_LOG_ERROR, "Packet loss detected! seq %x vs %x\n",
+            av_log(avctx, AV_LOG_ERROR,
+                   "Packet loss detected! seq %"PRIx8" vs %x\n",
                    s->packet_sequence_number, packet_sequence_number);
         }
         s->packet_sequence_number = packet_sequence_number;
@@ -1613,6 +1623,11 @@ static int decode_packet(AVCodecContext *avctx, void *data,
             s->packet_done = !decode_frame(s, data, got_frame_ptr);
         } else
             s->packet_done = 1;
+    }
+
+    if (remaining_bits(s, gb) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Overread %d\n", -remaining_bits(s, gb));
+        s->packet_loss = 1;
     }
 
     if (s->packet_done && !s->packet_loss &&

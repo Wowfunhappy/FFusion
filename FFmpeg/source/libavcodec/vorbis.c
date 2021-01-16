@@ -71,9 +71,9 @@ int ff_vorbis_len2vlc(uint8_t *bits, uint32_t *codes, unsigned num)
 
     codes[p] = 0;
     if (bits[p] > 32)
-        return 1;
+        return AVERROR_INVALIDDATA;
     for (i = 0; i < bits[p]; ++i)
-        exit_at_level[i+1] = 1 << i;
+        exit_at_level[i+1] = 1u << i;
 
 #ifdef DEBUG
     av_log(NULL, AV_LOG_INFO, " %u. of %u code len %d code %d - ", p, num, bits[p], codes[p]);
@@ -92,7 +92,7 @@ int ff_vorbis_len2vlc(uint8_t *bits, uint32_t *codes, unsigned num)
 
     for (; p < num; ++p) {
         if (bits[p] > 32)
-             return 1;
+             return AVERROR_INVALIDDATA;
         if (bits[p] == 0)
              continue;
         // find corresponding exit(node which the tree can grow further from)
@@ -100,12 +100,12 @@ int ff_vorbis_len2vlc(uint8_t *bits, uint32_t *codes, unsigned num)
             if (exit_at_level[i])
                 break;
         if (!i) // overspecified tree
-             return 1;
+             return AVERROR_INVALIDDATA;
         code = exit_at_level[i];
         exit_at_level[i] = 0;
         // construct code (append 0s to end) and introduce new exits
         for (j = i + 1 ;j <= bits[p]; ++j)
-            exit_at_level[j] = code + (1 << (j - 1));
+            exit_at_level[j] = code + (1u << (j - 1));
         codes[p] = code;
 
 #ifdef DEBUG
@@ -121,7 +121,7 @@ int ff_vorbis_len2vlc(uint8_t *bits, uint32_t *codes, unsigned num)
     //no exits should be left (underspecified tree - ie. unused valid vlcs - not allowed by SPEC)
     for (p = 1; p < 33; p++)
         if (exit_at_level[p])
-            return 1;
+            return AVERROR_INVALIDDATA;
 
     return 0;
 }

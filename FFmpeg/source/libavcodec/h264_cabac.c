@@ -29,6 +29,7 @@
 #define UNCHECKED_BITSTREAM_READER 1
 
 #include "libavutil/attributes.h"
+#include "libavutil/avassert.h"
 #include "libavutil/timer.h"
 #include "config.h"
 #include "cabac.h"
@@ -39,7 +40,7 @@
 #include "h264data.h"
 #include "h264_mvpred.h"
 #include "golomb.h"
-#include "libavutil/avassert.h"
+#include "mpegutils.h"
 
 #if ARCH_X86
 #include "x86/h264_i386.h"
@@ -1603,7 +1604,7 @@ decode_cabac_residual_internal(H264Context *h, int16_t *block,
 
     int index[64];
 
-    int av_unused last;
+    int last;
     int coeff_count = 0;
     int node_ctx = 0;
 
@@ -1620,7 +1621,7 @@ decode_cabac_residual_internal(H264Context *h, int16_t *block,
     cc.range     = h->cabac.range;
     cc.low       = h->cabac.low;
     cc.bytestream= h->cabac.bytestream;
-#if !UNCHECKED_BITSTREAM_READER
+#if !UNCHECKED_BITSTREAM_READER || ARCH_AARCH64
     cc.bytestream_end = h->cabac.bytestream_end;
 #endif
 #else
@@ -1720,7 +1721,7 @@ decode_cabac_residual_internal(H264Context *h, int16_t *block,
                 while( j-- ) { \
                     coeff_abs += coeff_abs + get_cabac_bypass( CC ); \
                 } \
-                coeff_abs+= 14; \
+                coeff_abs+= 14U; \
             } \
 \
             if( is_dc ) { \
@@ -1998,6 +1999,7 @@ decode_intra_mb:
         const int mb_size = ff_h264_mb_sizes[h->sps.chroma_format_idc] *
                             h->sps.bit_depth_luma >> 3;
         const uint8_t *ptr;
+        int ret;
 
         // We assume these blocks are very rare so we do not optimize it.
         // FIXME The two following lines get the bitstream position in the cabac
@@ -2014,7 +2016,9 @@ decode_intra_mb:
         h->intra_pcm_ptr = ptr;
         ptr += mb_size;
 
-        ff_init_cabac_decoder(&h->cabac, ptr, h->cabac.bytestream_end - ptr);
+        ret = ff_init_cabac_decoder(&h->cabac, ptr, h->cabac.bytestream_end - ptr);
+        if (ret < 0)
+            return ret;
 
         // All blocks are present
         h->cbp_table[mb_xy] = 0xf7ef;
@@ -2193,7 +2197,7 @@ decode_intra_mb:
                         }
                     }else
                         ref=0;
-                        fill_rectangle(&h->ref_cache[list][ scan8[0] ], 4, 4, 8, ref, 1);
+                    fill_rectangle(&h->ref_cache[list][ scan8[0] ], 4, 4, 8, ref, 1);
                 }
             }
             for(list=0; list<h->list_count; list++){
@@ -2307,21 +2311,40 @@ decode_intra_mb:
     if (CHROMA444(h) && IS_8x8DCT(mb_type)){
         int i;
         uint8_t *nnz_cache = h->non_zero_count_cache;
-        for (i = 0; i < 2; i++){
-            if (h->left_type[LEFT(i)] && !IS_8x8DCT(h->left_type[LEFT(i)])){
-                nnz_cache[3+8* 1 + 2*8*i]=
-                nnz_cache[3+8* 2 + 2*8*i]=
-                nnz_cache[3+8* 6 + 2*8*i]=
-                nnz_cache[3+8* 7 + 2*8*i]=
-                nnz_cache[3+8*11 + 2*8*i]=
-                nnz_cache[3+8*12 + 2*8*i]= IS_INTRA(mb_type) ? 64 : 0;
+        if (h->x264_build < 151U) {
+            for (i = 0; i < 2; i++){
+                if (h->left_type[LEFT(i)] && !IS_8x8DCT(h->left_type[LEFT(i)])) {
+                    nnz_cache[3+8* 1 + 2*8*i]=
+                    nnz_cache[3+8* 2 + 2*8*i]=
+                    nnz_cache[3+8* 6 + 2*8*i]=
+                    nnz_cache[3+8* 7 + 2*8*i]=
+                    nnz_cache[3+8*11 + 2*8*i]=
+                    nnz_cache[3+8*12 + 2*8*i]= IS_INTRA(mb_type) ? 64 : 0;
+                }
             }
-        }
-        if (h->top_type && !IS_8x8DCT(h->top_type)){
-            uint32_t top_empty = CABAC(h) && !IS_INTRA(mb_type) ? 0 : 0x40404040;
-            AV_WN32A(&nnz_cache[4+8* 0], top_empty);
-            AV_WN32A(&nnz_cache[4+8* 5], top_empty);
-            AV_WN32A(&nnz_cache[4+8*10], top_empty);
+            if (h->top_type && !IS_8x8DCT(h->top_type)){
+                uint32_t top_empty = !IS_INTRA(mb_type) ? 0 : 0x40404040;
+                AV_WN32A(&nnz_cache[4+8* 0], top_empty);
+                AV_WN32A(&nnz_cache[4+8* 5], top_empty);
+                AV_WN32A(&nnz_cache[4+8*10], top_empty);
+            }
+        } else {
+            for (i = 0; i < 2; i++){
+                if (h->left_type[LEFT(i)] && !IS_8x8DCT(h->left_type[LEFT(i)])) {
+                    nnz_cache[3+8* 1 + 2*8*i]=
+                    nnz_cache[3+8* 2 + 2*8*i]=
+                    nnz_cache[3+8* 6 + 2*8*i]=
+                    nnz_cache[3+8* 7 + 2*8*i]=
+                    nnz_cache[3+8*11 + 2*8*i]=
+                    nnz_cache[3+8*12 + 2*8*i]= !IS_INTRA_PCM(h->left_type[LEFT(i)]) ? 0 : 64;
+                }
+            }
+            if (h->top_type && !IS_8x8DCT(h->top_type)){
+                uint32_t top_empty = !IS_INTRA_PCM(h->top_type) ? 0 : 0x40404040;
+                AV_WN32A(&nnz_cache[4+8* 0], top_empty);
+                AV_WN32A(&nnz_cache[4+8* 5], top_empty);
+                AV_WN32A(&nnz_cache[4+8*10], top_empty);
+            }
         }
     }
     h->cur_pic.mb_type[mb_xy] = mb_type;

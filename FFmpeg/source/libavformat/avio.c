@@ -32,7 +32,7 @@
 
 static URLProtocol *first_protocol = NULL;
 
-URLProtocol *ffurl_protocol_next(URLProtocol *prev)
+URLProtocol *ffurl_protocol_next(const URLProtocol *prev)
 {
     return prev ? prev->next : first_protocol;
 }
@@ -98,7 +98,7 @@ int ffurl_register_protocol(URLProtocol *protocol)
 {
     URLProtocol **p;
     p = &first_protocol;
-    while (*p != NULL)
+    while (*p)
         p = &(*p)->next;
     *p             = protocol;
     protocol->next = NULL;
@@ -155,9 +155,16 @@ static int url_alloc_for_protocol(URLContext **puc, struct URLProtocol *up,
                 char sep= *++p;
                 char *key, *val;
                 p++;
+
+                if (strcmp(up->name, "subfile"))
+                    ret = AVERROR(EINVAL);
+
                 while(ret >= 0 && (key= strchr(p, sep)) && p<key && (val = strchr(key+1, sep))){
                     *val= *key= 0;
-                    ret= av_opt_set(uc->priv_data, p, key+1, 0);
+                    if (strcmp(p, "start") && strcmp(p, "end")) {
+                        ret = AVERROR_OPTION_NOT_FOUND;
+                    } else
+                        ret= av_opt_set(uc->priv_data, p, key+1, 0);
                     if (ret == AVERROR_OPTION_NOT_FOUND)
                         av_log(uc, AV_LOG_ERROR, "Key '%s' not found.\n", p);
                     *val= *key= sep;
@@ -222,7 +229,7 @@ static struct URLProtocol *url_find_protocol(const char *filename)
     size_t proto_len = strspn(filename, URL_SCHEME_CHARS);
 
     if (filename[proto_len] != ':' &&
-        (filename[proto_len] != ',' || !strchr(filename + proto_len + 1, ':')) ||
+        (strncmp(filename, "subfile,", 8) || !strchr(filename + proto_len + 1, ':')) ||
         is_dos_path(filename))
         strcpy(proto_str, "file");
     else
@@ -261,7 +268,7 @@ int ffurl_alloc(URLContext **puc, const char *filename, int flags,
        return url_alloc_for_protocol(puc, p, filename, flags, int_cb);
 
     *puc = NULL;
-    if (av_strstart("https:", filename, NULL))
+    if (av_strstart(filename, "https:", NULL))
         av_log(NULL, AV_LOG_WARNING, "https protocol not found, recompile with openssl or gnutls enabled.\n");
     return AVERROR_PROTOCOL_NOT_FOUND;
 }
@@ -270,10 +277,12 @@ int ffurl_open(URLContext **puc, const char *filename, int flags,
                const AVIOInterruptCB *int_cb, AVDictionary **options)
 {
     int ret = ffurl_alloc(puc, filename, flags, int_cb);
-    if (ret)
+    if (ret < 0)
         return ret;
     if (options && (*puc)->prot->priv_data_class &&
         (ret = av_opt_set_dict((*puc)->priv_data, options)) < 0)
+        goto fail;
+    if ((ret = av_opt_set_dict(*puc, options)) < 0)
         goto fail;
     ret = ffurl_connect(*puc, options);
     if (!ret)
@@ -310,8 +319,8 @@ static inline int retry_transfer_wrapper(URLContext *h, uint8_t *buf,
             } else {
                 if (h->rw_timeout) {
                     if (!wait_since)
-                        wait_since = av_gettime();
-                    else if (av_gettime() > wait_since + h->rw_timeout)
+                        wait_since = av_gettime_relative();
+                    else if (av_gettime_relative() > wait_since + h->rw_timeout)
                         return AVERROR(EIO);
                 }
                 av_usleep(1000);
@@ -399,7 +408,7 @@ int avio_check(const char *url, int flags)
 {
     URLContext *h;
     int ret = ffurl_alloc(&h, url, flags, NULL);
-    if (ret)
+    if (ret < 0)
         return ret;
 
     if (h->prot->url_check) {

@@ -32,6 +32,7 @@
 #include "h264data.h"
 #include "golomb.h"
 #include "internal.h"
+#include "mpegutils.h"
 
 
 static int h264_find_frame_end(H264Context *h, const uint8_t *buf,
@@ -65,7 +66,7 @@ static int h264_find_frame_end(H264Context *h, const uint8_t *buf,
         }
 
         if (state == 7) {
-            i += h->h264dsp.h264_find_start_code_candidate(buf + i, next_avc - i);
+            i += h->h264dsp.startcode_find_candidate(buf + i, next_avc - i);
             if (i < next_avc)
                 state = 2;
         } else if (state <= 2) {
@@ -98,7 +99,6 @@ static int h264_find_frame_end(H264Context *h, const uint8_t *buf,
                 init_get_bits(&gb, h->parse_history, 8*h->parse_history_count);
                 h->parse_history_count=0;
                 mb= get_ue_golomb_long(&gb);
-                last_mb= h->parse_last_mb;
                 h->parse_last_mb= mb;
                 if (pc->frame_start_found) {
                     if (mb <= last_mb)
@@ -263,7 +263,7 @@ static inline int parse_nal_units(AVCodecParserContext *s,
         }
         ptr = ff_h264_decode_nal(h, buf + buf_index, &dst_length,
                                  &consumed, src_length);
-        if (ptr == NULL || dst_length < 0)
+        if (!ptr || dst_length < 0)
             break;
 
         buf_index += consumed;
@@ -271,7 +271,7 @@ static inline int parse_nal_units(AVCodecParserContext *s,
         init_get_bits(&h->gb, ptr, 8 * dst_length);
         switch (h->nal_unit_type) {
         case NAL_SPS:
-            ff_h264_decode_seq_parameter_set(h);
+            ff_h264_decode_seq_parameter_set(h, 0);
             break;
         case NAL_PPS:
             ff_h264_decode_picture_parameter_set(h, h->gb.size_in_bits);

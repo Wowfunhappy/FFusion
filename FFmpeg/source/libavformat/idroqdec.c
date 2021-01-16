@@ -1,6 +1,6 @@
 /*
  * id RoQ (.roq) File Demuxer
- * Copyright (c) 2003 The ffmpeg Project
+ * Copyright (c) 2003 The FFmpeg Project
  *
  * This file is part of FFmpeg.
  *
@@ -106,7 +106,7 @@ static int roq_read_packet(AVFormatContext *s,
 
     while (!packet_read) {
 
-        if (url_feof(s->pb))
+        if (avio_feof(s->pb))
             return AVERROR(EIO);
 
         /* get the next chunk preamble */
@@ -156,6 +156,9 @@ static int roq_read_packet(AVFormatContext *s,
                 return AVERROR(EIO);
             chunk_size = AV_RL32(&preamble[2]) + RoQ_CHUNK_PREAMBLE_SIZE * 2 +
                 codebook_size;
+
+            if (chunk_size > INT_MAX)
+                return AVERROR_INVALIDDATA;
 
             /* rewind */
             avio_seek(pb, codebook_offset, SEEK_SET);

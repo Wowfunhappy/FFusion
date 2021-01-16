@@ -77,7 +77,7 @@ typedef struct Mpeg4DecContext {
     int rvlc;
     /// could this stream contain resync markers
     int resync_marker;
-    /// time distance of first I -> B, used for interlaced b frames
+    /// time distance of first I -> B, used for interlaced B-frames
     int t_frame;
 
     int new_pred;
@@ -85,7 +85,7 @@ typedef struct Mpeg4DecContext {
     int scalability;
     int use_intra_dc_vlc;
 
-    /// QP above whch the ac VLC should be used for intra dc
+    /// QP above which the ac VLC should be used for intra dc
     int intra_dc_threshold;
 
     /* bug workarounds */
@@ -94,9 +94,11 @@ typedef struct Mpeg4DecContext {
     int xvid_build;
     int lavc_build;
 
-    /// flag for having shown the warning about divxs invalid b frames
+    /// flag for having shown the warning about invalid Divx B-frames
     int showed_packed_warning;
-
+    /** does the stream contain the low_delay flag,
+     *  used to work around buggy encoders. */
+    int vol_control_parameters;
     int cplx_estimation_trash_i;
     int cplx_estimation_trash_p;
     int cplx_estimation_trash_b;
@@ -135,7 +137,7 @@ void ff_mpeg4_encode_mb(MpegEncContext *s,
 void ff_mpeg4_pred_ac(MpegEncContext *s, int16_t *block, int n,
                       int dir);
 void ff_set_mpeg4_time(MpegEncContext *s);
-void ff_mpeg4_encode_picture_header(MpegEncContext *s, int picture_number);
+int ff_mpeg4_encode_picture_header(MpegEncContext *s, int picture_number);
 
 int ff_mpeg4_decode_picture_header(Mpeg4DecContext *ctx, GetBitContext *gb);
 void ff_mpeg4_encode_video_packet_header(MpegEncContext *s);

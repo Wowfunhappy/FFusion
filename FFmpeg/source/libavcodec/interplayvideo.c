@@ -1,6 +1,6 @@
 /*
  * Interplay MVE Video Decoder
- * Copyright (C) 2003 the ffmpeg project
+ * Copyright (c) 2003 The FFmpeg Project
  *
  * This file is part of FFmpeg.
  *
@@ -38,6 +38,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "libavutil/intreadwrite.h"
 #include "avcodec.h"
 #include "bytestream.h"
 #include "hpeldsp.h"
@@ -79,7 +80,7 @@ static int copy_from(IpvideoContext *s, AVFrame *src, AVFrame *dst, int delta_x,
             motion_offset, s->upper_motion_limit_offset);
         return AVERROR_INVALIDDATA;
     }
-    if (src->data[0] == NULL) {
+    if (!src->data[0]) {
         av_log(s->avctx, AV_LOG_ERROR, "Invalid decode type, corrupted header?\n");
         return AVERROR(EINVAL);
     }
@@ -949,7 +950,7 @@ static void ipvideo_decode_opcodes(IpvideoContext *s, AVFrame *frame)
         }
     }
     if (bytestream2_get_bytes_left(&s->stream_ptr) > 1) {
-        av_log(s->avctx, AV_LOG_ERROR,
+        av_log(s->avctx, AV_LOG_DEBUG,
                "decode finished with %d bytes left over\n",
                bytestream2_get_bytes_left(&s->stream_ptr));
     }
@@ -987,31 +988,38 @@ static int ipvideo_decode_frame(AVCodecContext *avctx,
     AVFrame *frame = data;
     int ret;
 
-    /* decoding map contains 4 bits of information per 8x8 block */
-    s->decoding_map_size = avctx->width * avctx->height / (8 * 8 * 2);
-
-    /* compressed buffer needs to be large enough to at least hold an entire
-     * decoding map */
-    if (buf_size < s->decoding_map_size)
-        return buf_size;
-
     if (av_packet_get_side_data(avpkt, AV_PKT_DATA_PARAM_CHANGE, NULL)) {
         av_frame_unref(s->last_frame);
         av_frame_unref(s->second_last_frame);
     }
 
-    s->decoding_map = buf;
-    bytestream2_init(&s->stream_ptr, buf + s->decoding_map_size,
+    if (buf_size < 2)
+        return AVERROR_INVALIDDATA;
+
+    /* decoding map contains 4 bits of information per 8x8 block */
+    s->decoding_map_size = AV_RL16(avpkt->data);
+
+    /* compressed buffer needs to be large enough to at least hold an entire
+     * decoding map */
+    if (buf_size < s->decoding_map_size + 2)
+        return buf_size;
+
+
+    s->decoding_map = buf + 2;
+    bytestream2_init(&s->stream_ptr, buf + 2 + s->decoding_map_size,
                      buf_size - s->decoding_map_size);
 
     if ((ret = ff_get_buffer(avctx, frame, AV_GET_BUFFER_FLAG_REF)) < 0)
         return ret;
 
     if (!s->is_16bpp) {
-        const uint8_t *pal = av_packet_get_side_data(avpkt, AV_PKT_DATA_PALETTE, NULL);
-        if (pal) {
+        int size;
+        const uint8_t *pal = av_packet_get_side_data(avpkt, AV_PKT_DATA_PALETTE, &size);
+        if (pal && size == AVPALETTE_SIZE) {
             frame->palette_has_changed = 1;
             memcpy(s->pal, pal, AVPALETTE_SIZE);
+        } else if (pal) {
+            av_log(avctx, AV_LOG_ERROR, "Palette size %d is wrong\n", size);
         }
     }
 

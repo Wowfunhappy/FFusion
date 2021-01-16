@@ -94,7 +94,7 @@ static av_cold int mp3lame_encode_init(AVCodecContext *avctx)
     s->avctx = avctx;
 
     /* initialize LAME and get defaults */
-    if ((s->gfp = lame_init()) == NULL)
+    if (!(s->gfp = lame_init()))
         return AVERROR(ENOMEM);
 
 
@@ -209,6 +209,8 @@ static int mp3lame_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
         default:
             return AVERROR_BUG;
         }
+    } else if (!s->afq.frame_alloc) {
+        lame_result = 0;
     } else {
         lame_result = lame_encode_flush(s->gfp, s->buffer + s->buffer_index,
                                         s->buffer_size - s->buffer_index);

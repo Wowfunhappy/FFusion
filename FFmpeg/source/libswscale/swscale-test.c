@@ -37,9 +37,11 @@
  * Should be removed when a cleaner pixel format system exists. */
 #define isGray(x)                      \
     ((x) == AV_PIX_FMT_GRAY8       ||     \
-     (x) == AV_PIX_FMT_Y400A       ||     \
+     (x) == AV_PIX_FMT_YA8         ||     \
      (x) == AV_PIX_FMT_GRAY16BE    ||     \
-     (x) == AV_PIX_FMT_GRAY16LE)
+     (x) == AV_PIX_FMT_GRAY16LE    ||     \
+     (x) == AV_PIX_FMT_YA16BE      ||     \
+     (x) == AV_PIX_FMT_YA16LE)
 #define hasChroma(x)                   \
     (!(isGray(x)                ||     \
        (x) == AV_PIX_FMT_MONOBLACK ||     \
@@ -296,10 +298,10 @@ static int fileTest(uint8_t *ref[4], int refStride[4], int w, int h, FILE *fp,
         struct Results r;
         enum AVPixelFormat srcFormat;
         char srcStr[12];
-        int srcW, srcH;
+        int srcW = 0, srcH = 0;
         enum AVPixelFormat dstFormat;
         char dstStr[12];
-        int dstW, dstH;
+        int dstW = 0, dstH = 0;
         int flags;
         int ret;
 
@@ -397,7 +399,7 @@ bad_option:
     for (y = 0; y < H; y++)
         for (x = 0; x < W * 4; x++)
             rgb_data[ x + y * 4 * W] = av_lfg_get(&rand);
-    sws_scale(sws, rgb_src, rgb_stride, 0, H, src, stride);
+    sws_scale(sws, rgb_src, rgb_stride, 0, H / 12, src, stride);
     sws_freeContext(sws);
     av_free(rgb_data);
 

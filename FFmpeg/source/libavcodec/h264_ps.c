@@ -25,6 +25,8 @@
  * @author Michael Niedermayer <michaelni@gmx.at>
  */
 
+#include <inttypes.h>
+
 #include "libavutil/imgutils.h"
 #include "internal.h"
 #include "avcodec.h"
@@ -213,7 +215,7 @@ static inline int decode_vui_parameters(H264Context *h, SPS *sps)
         sps->time_scale        = get_bits_long(&h->gb, 32);
         if (!sps->num_units_in_tick || !sps->time_scale) {
             av_log(h->avctx, AV_LOG_ERROR,
-                   "time_scale/num_units_in_tick invalid or unsupported (%d/%d)\n",
+                   "time_scale/num_units_in_tick invalid or unsupported (%"PRIu32"/%"PRIu32")\n",
                    sps->time_scale, sps->num_units_in_tick);
             return AVERROR_INVALIDDATA;
         }
@@ -257,12 +259,6 @@ static inline int decode_vui_parameters(H264Context *h, SPS *sps)
             sps->num_reorder_frames = 16;
             return AVERROR_INVALIDDATA;
         }
-    }
-
-    if (get_bits_left(&h->gb) < 0) {
-        av_log(h->avctx, AV_LOG_ERROR,
-               "Overread VUI by %d bits\n", -get_bits_left(&h->gb));
-        return AVERROR_INVALIDDATA;
     }
 
     return 0;
@@ -321,7 +317,7 @@ static void decode_scaling_matrices(H264Context *h, SPS *sps,
     }
 }
 
-int ff_h264_decode_seq_parameter_set(H264Context *h)
+int ff_h264_decode_seq_parameter_set(H264Context *h, int ignore_truncation)
 {
     int profile_idc, level_idc, constraint_set_flags = 0;
     unsigned int sps_id;
@@ -335,7 +331,7 @@ int ff_h264_decode_seq_parameter_set(H264Context *h)
     constraint_set_flags |= get_bits1(&h->gb) << 3;   // constraint_set3_flag
     constraint_set_flags |= get_bits1(&h->gb) << 4;   // constraint_set4_flag
     constraint_set_flags |= get_bits1(&h->gb) << 5;   // constraint_set5_flag
-    get_bits(&h->gb, 2); // reserved
+    skip_bits(&h->gb, 2);                             // reserved_zero_2bits
     level_idc = get_bits(&h->gb, 8);
     sps_id    = get_ue_golomb_31(&h->gb);
 
@@ -359,11 +355,17 @@ int ff_h264_decode_seq_parameter_set(H264Context *h)
     sps->scaling_matrix_present = 0;
     sps->colorspace = 2; //AVCOL_SPC_UNSPECIFIED
 
-    if (sps->profile_idc == 100 || sps->profile_idc == 110 ||
-        sps->profile_idc == 122 || sps->profile_idc == 244 ||
-        sps->profile_idc ==  44 || sps->profile_idc ==  83 ||
-        sps->profile_idc ==  86 || sps->profile_idc == 118 ||
-        sps->profile_idc == 128 || sps->profile_idc == 144) {
+    if (sps->profile_idc == 100 ||  // High profile
+        sps->profile_idc == 110 ||  // High10 profile
+        sps->profile_idc == 122 ||  // High422 profile
+        sps->profile_idc == 244 ||  // High444 Predictive profile
+        sps->profile_idc ==  44 ||  // Cavlc444 profile
+        sps->profile_idc ==  83 ||  // Scalable Constrained High profile (SVC)
+        sps->profile_idc ==  86 ||  // Scalable High Intra profile (SVC)
+        sps->profile_idc == 118 ||  // Stereo High profile (MVC)
+        sps->profile_idc == 128 ||  // Multiview High profile (MVC)
+        sps->profile_idc == 138 ||  // Multiview Depth High profile (MVCD)
+        sps->profile_idc == 144) {  // old High444 profile
         sps->chroma_format_idc = get_ue_golomb_31(&h->gb);
         if (sps->chroma_format_idc > 3U) {
             avpriv_request_sample(h->avctx, "chroma_format_idc %u",
@@ -426,7 +428,7 @@ int ff_h264_decode_seq_parameter_set(H264Context *h)
         if ((unsigned)sps->poc_cycle_length >=
             FF_ARRAY_ELEMS(sps->offset_for_ref_frame)) {
             av_log(h->avctx, AV_LOG_ERROR,
-                   "poc_cycle_length overflow %u\n", sps->poc_cycle_length);
+                   "poc_cycle_length overflow %d\n", sps->poc_cycle_length);
             goto fail;
         }
 
@@ -440,7 +442,7 @@ int ff_h264_decode_seq_parameter_set(H264Context *h)
     sps->ref_frame_count = get_ue_golomb_31(&h->gb);
     if (h->avctx->codec_tag == MKTAG('S', 'M', 'V', '2'))
         sps->ref_frame_count = FFMAX(2, sps->ref_frame_count);
-    if (sps->ref_frame_count > MAX_PICTURE_COUNT - 2 ||
+    if (sps->ref_frame_count > H264_MAX_PICTURE_COUNT - 2 ||
         sps->ref_frame_count > 16U) {
         av_log(h->avctx, AV_LOG_ERROR,
                "too many reference frames %d\n", sps->ref_frame_count);
@@ -472,16 +474,16 @@ int ff_h264_decode_seq_parameter_set(H264Context *h)
 #endif
     sps->crop = get_bits1(&h->gb);
     if (sps->crop) {
-        int crop_left   = get_ue_golomb(&h->gb);
-        int crop_right  = get_ue_golomb(&h->gb);
-        int crop_top    = get_ue_golomb(&h->gb);
-        int crop_bottom = get_ue_golomb(&h->gb);
+        unsigned int crop_left   = get_ue_golomb(&h->gb);
+        unsigned int crop_right  = get_ue_golomb(&h->gb);
+        unsigned int crop_top    = get_ue_golomb(&h->gb);
+        unsigned int crop_bottom = get_ue_golomb(&h->gb);
         int width  = 16 * sps->mb_width;
         int height = 16 * sps->mb_height * (2 - sps->frame_mbs_only_flag);
 
         if (h->avctx->flags2 & CODEC_FLAG2_IGNORE_CROP) {
             av_log(h->avctx, AV_LOG_DEBUG, "discarding sps cropping, original "
-                                           "values are l:%u r:%u t:%u b:%u\n",
+                                           "values are l:%d r:%d t:%d b:%d\n",
                    crop_left, crop_right, crop_top, crop_bottom);
 
             sps->crop_left   =
@@ -535,13 +537,20 @@ int ff_h264_decode_seq_parameter_set(H264Context *h)
             goto fail;
     }
 
+    if (get_bits_left(&h->gb) < 0) {
+        av_log(h->avctx, ignore_truncation ? AV_LOG_WARNING : AV_LOG_ERROR,
+               "Overread %s by %d bits\n", sps->vui_parameters_present_flag ? "VUI" : "SPS", -get_bits_left(&h->gb));
+        if (!ignore_truncation)
+            goto fail;
+    }
+
     if (!sps->sar.den)
         sps->sar.den = 1;
 
     if (h->avctx->debug & FF_DEBUG_PICT_INFO) {
         static const char csp[4][5] = { "Gray", "420", "422", "444" };
         av_log(h->avctx, AV_LOG_DEBUG,
-               "sps:%u profile:%d/%d poc:%d ref:%d %dx%d %s %s crop:%d/%d/%d/%d %s %s %d/%d b%d reo:%d\n",
+               "sps:%u profile:%d/%d poc:%d ref:%d %dx%d %s %s crop:%u/%u/%u/%u %s %s %"PRId32"/%"PRId32" b%d reo:%d\n",
                sps_id, sps->profile_idc, sps->level_idc,
                sps->poc_type,
                sps->ref_frame_count,
@@ -612,7 +621,7 @@ int ff_h264_decode_picture_parameter_set(H264Context *h, int bit_length)
         return AVERROR(ENOMEM);
     pps->sps_id = get_ue_golomb_31(&h->gb);
     if ((unsigned)pps->sps_id >= MAX_SPS_COUNT ||
-        h->sps_buffers[pps->sps_id] == NULL) {
+        !h->sps_buffers[pps->sps_id]) {
         av_log(h->avctx, AV_LOG_ERROR, "sps_id %u out of range\n", pps->sps_id);
         goto fail;
     }
@@ -710,7 +719,7 @@ int ff_h264_decode_picture_parameter_set(H264Context *h, int bit_length)
 
     if (h->avctx->debug & FF_DEBUG_PICT_INFO) {
         av_log(h->avctx, AV_LOG_DEBUG,
-               "pps:%u sps:%u %s slice_groups:%d ref:%d/%d %s qp:%d/%d/%d/%d %s %s %s %s\n",
+               "pps:%u sps:%u %s slice_groups:%d ref:%u/%u %s qp:%d/%d/%d/%d %s %s %s %s\n",
                pps_id, pps->sps_id,
                pps->cabac ? "CABAC" : "CAVLC",
                pps->slice_group_count,

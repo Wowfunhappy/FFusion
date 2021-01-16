@@ -39,7 +39,7 @@ static int get_swf_tag(AVIOContext *pb, int *len_ptr)
 {
     int tag, len;
 
-    if (url_feof(pb))
+    if (avio_feof(pb))
         return AVERROR_EOF;
 
     tag = avio_rl16(pb);
@@ -90,10 +90,10 @@ retry:
     z->avail_out = buf_size;
 
     ret = inflate(z, Z_NO_FLUSH);
-    if (ret < 0)
-        return AVERROR(EINVAL);
     if (ret == Z_STREAM_END)
         return AVERROR_EOF;
+    if (ret != Z_OK)
+        return AVERROR(EINVAL);
 
     if (buf_size - z->avail_out == 0)
         goto retry;

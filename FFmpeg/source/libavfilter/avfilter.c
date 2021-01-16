@@ -230,6 +230,11 @@ int avfilter_config_links(AVFilterContext *filter)
         AVFilterLink *inlink;
 
         if (!link) continue;
+        if (!link->src || !link->dst) {
+            av_log(filter, AV_LOG_ERROR,
+                   "Not all input and output are properly linked (%d).\n", i);
+            return AVERROR(EINVAL);
+        }
 
         inlink = link->src->nb_inputs ? link->src->inputs[0] : NULL;
         link->current_pts = AV_NOPTS_VALUE;
@@ -298,7 +303,7 @@ int avfilter_config_links(AVFilterContext *filter)
 
             if ((config_link = link->dstpad->config_props))
                 if ((ret = config_link(link)) < 0) {
-                    av_log(link->src, AV_LOG_ERROR,
+                    av_log(link->dst, AV_LOG_ERROR,
                            "Failed to configure input pad on %s\n",
                            link->dst->name);
                     return ret;
@@ -630,22 +635,22 @@ AVFilterContext *ff_filter_alloc(const AVFilter *filter, const char *inst_name)
 
     ret->nb_inputs = avfilter_pad_count(filter->inputs);
     if (ret->nb_inputs ) {
-        ret->input_pads   = av_malloc(sizeof(AVFilterPad) * ret->nb_inputs);
+        ret->input_pads   = av_malloc_array(ret->nb_inputs, sizeof(AVFilterPad));
         if (!ret->input_pads)
             goto err;
         memcpy(ret->input_pads, filter->inputs, sizeof(AVFilterPad) * ret->nb_inputs);
-        ret->inputs       = av_mallocz(sizeof(AVFilterLink*) * ret->nb_inputs);
+        ret->inputs       = av_mallocz_array(ret->nb_inputs, sizeof(AVFilterLink*));
         if (!ret->inputs)
             goto err;
     }
 
     ret->nb_outputs = avfilter_pad_count(filter->outputs);
     if (ret->nb_outputs) {
-        ret->output_pads  = av_malloc(sizeof(AVFilterPad) * ret->nb_outputs);
+        ret->output_pads  = av_malloc_array(ret->nb_outputs, sizeof(AVFilterPad));
         if (!ret->output_pads)
             goto err;
         memcpy(ret->output_pads, filter->outputs, sizeof(AVFilterPad) * ret->nb_outputs);
-        ret->outputs      = av_mallocz(sizeof(AVFilterLink*) * ret->nb_outputs);
+        ret->outputs      = av_mallocz_array(ret->nb_outputs, sizeof(AVFilterLink*));
         if (!ret->outputs)
             goto err;
     }

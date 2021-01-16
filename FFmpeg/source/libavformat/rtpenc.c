@@ -49,6 +49,7 @@ static const AVClass rtp_muxer_class = {
 static int is_supported(enum AVCodecID id)
 {
     switch(id) {
+    case AV_CODEC_ID_H261:
     case AV_CODEC_ID_H263:
     case AV_CODEC_ID_H263P:
     case AV_CODEC_ID_H264:
@@ -119,7 +120,7 @@ static int rtp_write_header(AVFormatContext *s1)
         s->ssrc = av_get_random_seed();
     s->first_packet = 1;
     s->first_rtcp_ntp_time = ff_ntp_time();
-    if (s1->start_time_realtime)
+    if (s1->start_time_realtime != 0  &&  s1->start_time_realtime != AV_NOPTS_VALUE)
         /* Round the NTP time to whole milliseconds. */
         s->first_rtcp_ntp_time = (s1->start_time_realtime / 1000) * 1000 +
                                  NTP_OFFSET_US;
@@ -127,7 +128,7 @@ static int rtp_write_header(AVFormatContext *s1)
     // available range, so that any wraparound doesn't happen immediately.
     // (Immediate wraparound would be an issue for SRTP.)
     if (s->seq < 0) {
-        if (st->codec->flags & CODEC_FLAG_BITEXACT) {
+        if (s1->flags & AVFMT_FLAG_BITEXACT) {
             s->seq = 0;
         } else
             s->seq = av_get_random_seed() & 0x0fff;
@@ -145,7 +146,7 @@ static int rtp_write_header(AVFormatContext *s1)
         return AVERROR(EIO);
     }
     s->buf = av_malloc(s1->packet_size);
-    if (s->buf == NULL) {
+    if (!s->buf) {
         return AVERROR(ENOMEM);
     }
     s->max_payload_size = s1->packet_size - 12;
@@ -168,7 +169,12 @@ static int rtp_write_header(AVFormatContext *s1)
         }
         if (st->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
             /* FIXME: We should round down here... */
-            s->max_frames_per_packet = av_rescale_q(s1->max_delay, (AVRational){1, 1000000}, st->codec->time_base);
+            if (st->avg_frame_rate.num > 0 && st->avg_frame_rate.den > 0) {
+                s->max_frames_per_packet = av_rescale_q(s1->max_delay,
+                                                        (AVRational){1, 1000000},
+                                                        av_inv_q(st->avg_frame_rate));
+            } else
+                s->max_frames_per_packet = 1;
         }
     }
 
@@ -276,7 +282,8 @@ static void rtcp_send_sr(AVFormatContext *s1, int64_t ntp_time, int bye)
     avio_w8(s1->pb, RTCP_SR);
     avio_wb16(s1->pb, 6); /* length in words - 1 */
     avio_wb32(s1->pb, s->ssrc);
-    avio_wb64(s1->pb, NTP_TO_RTP_FORMAT(ntp_time));
+    avio_wb32(s1->pb, ntp_time / 1000000);
+    avio_wb32(s1->pb, ((ntp_time % 1000000) << 32) / 1000000);
     avio_wb32(s1->pb, rtp_ts);
     avio_wb32(s1->pb, s->packet_count);
     avio_wb32(s1->pb, s->octet_count);
@@ -550,6 +557,9 @@ static int rtp_write_packet(AVFormatContext *s1, AVPacket *pkt)
         break;
     case AV_CODEC_ID_H264:
         ff_rtp_send_h264(s1, pkt->data, size);
+        break;
+    case AV_CODEC_ID_H261:
+        ff_rtp_send_h261(s1, pkt->data, size);
         break;
     case AV_CODEC_ID_H263:
         if (s->flags & FF_RTP_FLAG_RFC2190) {

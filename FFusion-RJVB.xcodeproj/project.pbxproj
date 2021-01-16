@@ -7,6 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AB38B77E25B3848700DBBE4A /* libavcodec.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 11D4EFA10A3CE8C10066D45F /* libavcodec.a */; };
+		AB38B77F25B3848700DBBE4A /* libavutil.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 11D4EFA20A3CE8C10066D45F /* libavutil.a */; };
+		AB38B78525B3848700DBBE4A /* libavdevice.a in Frameworks */ = {isa = PBXBuildFile; fileRef = AB38B78025B3848700DBBE4A /* libavdevice.a */; };
+		AB38B78625B3848700DBBE4A /* libavfilter.a in Frameworks */ = {isa = PBXBuildFile; fileRef = AB38B78125B3848700DBBE4A /* libavfilter.a */; };
+		AB38B78725B3848700DBBE4A /* libavformat.a in Frameworks */ = {isa = PBXBuildFile; fileRef = AB38B78225B3848700DBBE4A /* libavformat.a */; };
+		AB38B78825B3848700DBBE4A /* libswresample.a in Frameworks */ = {isa = PBXBuildFile; fileRef = AB38B78325B3848700DBBE4A /* libswresample.a */; };
+		AB38B78925B3848700DBBE4A /* libswscale.a in Frameworks */ = {isa = PBXBuildFile; fileRef = AB38B78425B3848700DBBE4A /* libswscale.a */; };
 		ABAFF7F325B20487005D96A4 /* VideoDecodeAcceleration.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABAFF7F225B20487005D96A4 /* VideoDecodeAcceleration.framework */; };
 		ABAFF7F525B2048C005D96A4 /* CoreVideo.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABAFF7F425B2048C005D96A4 /* CoreVideo.framework */; };
 		D617D1B916CE9B06000EC428 /* NSLogger-LICENSE.txt in Resources */ = {isa = PBXBuildFile; fileRef = D617D1B816CE9B06000EC428 /* NSLogger-LICENSE.txt */; };
@@ -15,8 +22,6 @@
 		D61D797316BD77B000F6FB18 /* libavcore.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 3DEFA3F8120560AD0097FE4C /* libavcore.a */; };
 		D61D797416BD77B000F6FB18 /* libavcodec.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 11D4EFA10A3CE8C10066D45F /* libavcodec.a */; };
 		D61D798416BD77DA00F6FB18 /* libz.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = D61D798316BD77DA00F6FB18 /* libz.dylib */; };
-		D620105116C5507C00DC6EE5 /* libavutil.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 11D4EFA20A3CE8C10066D45F /* libavutil.a */; };
-		D620105316C5507C00DC6EE5 /* libavcodec.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 11D4EFA10A3CE8C10066D45F /* libavcodec.a */; };
 		D620108616C57CF400DC6EE5 /* LICENSE-libopenjpeg1.txt in Resources */ = {isa = PBXBuildFile; fileRef = D620108416C57CF400DC6EE5 /* LICENSE-libopenjpeg1.txt */; };
 		D67BC47316B166FF00E26386 /* Perian_icon.icns in Resources */ = {isa = PBXBuildFile; fileRef = 83D1D6F40B4C85AB00E09EC9 /* Perian_icon.icns */; };
 		D67BC47816B166FF00E26386 /* ff_private.c in Sources */ = {isa = PBXBuildFile; fileRef = 11C85ED60A641E6400DF3D73 /* ff_private.c */; };
@@ -94,6 +99,11 @@
 		61D517710AE0402E00A671E1 /* CommonUtils.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CommonUtils.h; sourceTree = "<group>"; };
 		61D517720AE0402E00A671E1 /* CommonUtils.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = CommonUtils.c; sourceTree = "<group>"; };
 		83D1D6F40B4C85AB00E09EC9 /* Perian_icon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; name = Perian_icon.icns; path = Resources/Perian_icon.icns; sourceTree = "<group>"; };
+		AB38B78025B3848700DBBE4A /* libavdevice.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavdevice.a; path = FFmpeg/osx86/lib/libavdevice.a; sourceTree = "<group>"; };
+		AB38B78125B3848700DBBE4A /* libavfilter.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavfilter.a; path = FFmpeg/osx86/lib/libavfilter.a; sourceTree = "<group>"; };
+		AB38B78225B3848700DBBE4A /* libavformat.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavformat.a; path = FFmpeg/osx86/lib/libavformat.a; sourceTree = "<group>"; };
+		AB38B78325B3848700DBBE4A /* libswresample.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libswresample.a; path = FFmpeg/osx86/lib/libswresample.a; sourceTree = "<group>"; };
+		AB38B78425B3848700DBBE4A /* libswscale.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libswscale.a; path = FFmpeg/osx86/lib/libswscale.a; sourceTree = "<group>"; };
 		ABAFF7F225B20487005D96A4 /* VideoDecodeAcceleration.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = VideoDecodeAcceleration.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.8.sdk/System/Library/Frameworks/VideoDecodeAcceleration.framework; sourceTree = DEVELOPER_DIR; };
 		ABAFF7F425B2048C005D96A4 /* CoreVideo.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreVideo.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.8.sdk/System/Library/Frameworks/CoreVideo.framework; sourceTree = DEVELOPER_DIR; };
 		D604CEC516DA3DC70066FD67 /* demux+code-bench.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = "demux+code-bench.c"; sourceTree = "<group>"; };
@@ -2280,6 +2290,13 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AB38B78525B3848700DBBE4A /* libavdevice.a in Frameworks */,
+				AB38B78625B3848700DBBE4A /* libavfilter.a in Frameworks */,
+				AB38B78725B3848700DBBE4A /* libavformat.a in Frameworks */,
+				AB38B78825B3848700DBBE4A /* libswresample.a in Frameworks */,
+				AB38B78925B3848700DBBE4A /* libswscale.a in Frameworks */,
+				AB38B77E25B3848700DBBE4A /* libavcodec.a in Frameworks */,
+				AB38B77F25B3848700DBBE4A /* libavutil.a in Frameworks */,
 				ABAFF7F525B2048C005D96A4 /* CoreVideo.framework in Frameworks */,
 				ABAFF7F325B20487005D96A4 /* VideoDecodeAcceleration.framework in Frameworks */,
 				D67BC49E16B166FF00E26386 /* libz.dylib in Frameworks */,
@@ -2288,8 +2305,6 @@
 				D67BC4A416B166FF00E26386 /* libbz2.dylib in Frameworks */,
 				D67BC4A516B166FF00E26386 /* CoreFoundation.framework in Frameworks */,
 				D68307A416BEE9F900301AD1 /* Cocoa.framework in Frameworks */,
-				D620105116C5507C00DC6EE5 /* libavutil.a in Frameworks */,
-				D620105316C5507C00DC6EE5 /* libavcodec.a in Frameworks */,
 				D6B9D87E16C81E7200865BF4 /* SystemConfiguration.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -2300,6 +2315,11 @@
 		089C166AFE841209C02AAC07 /* ffmpeg DivX */ = {
 			isa = PBXGroup;
 			children = (
+				AB38B78025B3848700DBBE4A /* libavdevice.a */,
+				AB38B78125B3848700DBBE4A /* libavfilter.a */,
+				AB38B78225B3848700DBBE4A /* libavformat.a */,
+				AB38B78325B3848700DBBE4A /* libswresample.a */,
+				AB38B78425B3848700DBBE4A /* libswscale.a */,
 				ABAFF7F425B2048C005D96A4 /* CoreVideo.framework */,
 				ABAFF7F225B20487005D96A4 /* VideoDecodeAcceleration.framework */,
 				D620108316C57CF400DC6EE5 /* FFmpeg-LICENSE.txt */,
@@ -5321,6 +5341,7 @@
 					/usr/local/FFmpeg/trunk/lib,
 					"$(SRCROOT)",
 					"$(SRCROOT)/FFmpeg/osx86/lib",
+					/Users/jonathan/Desktop/FFusion/FFmpeg/osx86/lib,
 				);
 				ONLY_ACTIVE_ARCH = NO;
 				OTHER_CFLAGS = "-march=core2";
@@ -5373,6 +5394,7 @@
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(SRCROOT)/FFmpeg/osx86/lib",
+					/Users/jonathan/Desktop/FFusion/FFmpeg/osx86/lib,
 				);
 				MACOSX_DEPLOYMENT_TARGET = 10.6;
 				OTHER_CFLAGS = (
@@ -5429,12 +5451,13 @@
 				INSTALL_PATH = "$(HOME)/Library/QuickTime";
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
-					"\\\"$(SRCROOT)/build/Universal\\\"",
+					"\\\\\\\"$(SRCROOT)/build/Universal\\\\\\\"",
 					/usr/local/FFmpeg/trunk/lib,
-					"\"$(SRCROOT)/build/Universal\"",
-					"\"$(SRCROOT)/../Perian-1.2.1/build/Universal\"",
-					"\"$(SRCROOT)\"",
-					"\"$(SRCROOT)/FFmpeg/osx86/lib\"",
+					"\\\"$(SRCROOT)/build/Universal\\\"",
+					"\\\"$(SRCROOT)/../Perian-1.2.1/build/Universal\\\"",
+					"$(SRCROOT)",
+					"\\\"$(SRCROOT)/FFmpeg/osx86/lib\\\"",
+					/Users/jonathan/Desktop/FFusion/FFmpeg/osx86/lib,
 				);
 				OTHER_CFLAGS = "-march=core2";
 				OTHER_CPLUSPLUSFLAGS = "$(OTHER_CFLAGS)";

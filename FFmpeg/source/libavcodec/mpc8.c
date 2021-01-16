@@ -29,7 +29,6 @@
 #include "libavutil/lfg.h"
 #include "avcodec.h"
 #include "get_bits.h"
-#include "dsputil.h"
 #include "internal.h"
 #include "mpegaudiodsp.h"
 
@@ -119,7 +118,6 @@ static av_cold int mpc8_decode_init(AVCodecContext * avctx)
     }
     memset(c->oldDSCF, 0, sizeof(c->oldDSCF));
     av_lfg_init(&c->rnd, 0xDEADBEEF);
-    ff_dsputil_init(&c->dsp, avctx);
     ff_mpadsp_init(&c->mpadsp);
 
     ff_mpc_init();
@@ -417,10 +415,14 @@ static int mpc8_decode_frame(AVCodecContext * avctx, void *data,
     c->cur_frame++;
 
     c->last_bits_used = get_bits_count(gb);
-    if(get_bits_left(gb) < 8) // we have only padding left
-        c->last_bits_used = buf_size << 3;
     if(c->cur_frame >= c->frames)
         c->cur_frame = 0;
+    if(c->cur_frame == 0 && get_bits_left(gb) < 8) {// we have only padding left
+        c->last_bits_used = buf_size << 3;
+    } else if (get_bits_left(gb) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Overread %d\n", -get_bits_left(gb));
+        c->last_bits_used = buf_size << 3;
+    }
 
     *got_frame_ptr = 1;
 

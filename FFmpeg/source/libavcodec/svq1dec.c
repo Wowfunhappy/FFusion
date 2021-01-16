@@ -3,8 +3,8 @@
  * ported to MPlayer by Arpi <arpi@thot.banki.hu>
  * ported to libavcodec by Nick Kurshev <nickols_k@mail.ru>
  *
- * Copyright (C) 2002 the xine project
- * Copyright (C) 2002 the ffmpeg project
+ * Copyright (c) 2002 The Xine Project
+ * Copyright (c) 2002 The FFmpeg Project
  *
  * SVQ1 Encoder (c) 2004 Mike Melanson <melanson@pcisys.net>
  *
@@ -617,9 +617,12 @@ static int svq1_decode_frame(AVCodecContext *avctx, void *data,
     uint8_t *current;
     int result, i, x, y, width, height;
     svq1_pmv *pmv;
+    int ret;
 
     /* initialize bit buffer */
-    init_get_bits8(&s->gb, buf, buf_size);
+    ret = init_get_bits8(&s->gb, buf, buf_size);
+    if (ret < 0)
+        return ret;
 
     /* decode frame header */
     s->frame_code = get_bits(&s->gb, 22);
@@ -636,8 +639,9 @@ static int svq1_decode_frame(AVCodecContext *avctx, void *data,
             return AVERROR_INVALIDDATA;
         }
 
-        av_fast_padded_malloc(&s->pkt_swapped, &s->pkt_swapped_allocated,
-                       buf_size);
+        av_fast_padded_malloc(&s->pkt_swapped,
+                              &s->pkt_swapped_allocated,
+                              buf_size);
         if (!s->pkt_swapped)
             return AVERROR(ENOMEM);
 

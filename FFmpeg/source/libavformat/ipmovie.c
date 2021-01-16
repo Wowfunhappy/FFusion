@@ -1,6 +1,6 @@
 /*
  * Interplay MVE File Demuxer
- * Copyright (c) 2003 The ffmpeg Project
+ * Copyright (c) 2003 The FFmpeg Project
  *
  * This file is part of FFmpeg.
  *
@@ -156,7 +156,7 @@ static int load_ipmovie_packet(IPMVEContext *s, AVIOContext *pb,
 
         /* send both the decode map and the video data together */
 
-        if (av_new_packet(pkt, s->decode_map_chunk_size + s->video_chunk_size))
+        if (av_new_packet(pkt, 2 + s->decode_map_chunk_size + s->video_chunk_size))
             return CHUNK_NOMEM;
 
         if (s->has_palette) {
@@ -178,7 +178,8 @@ static int load_ipmovie_packet(IPMVEContext *s, AVIOContext *pb,
         avio_seek(pb, s->decode_map_chunk_offset, SEEK_SET);
         s->decode_map_chunk_offset = 0;
 
-        if (avio_read(pb, pkt->data, s->decode_map_chunk_size) !=
+        AV_WL16(pkt->data, s->decode_map_chunk_size);
+        if (avio_read(pb, pkt->data + 2, s->decode_map_chunk_size) !=
             s->decode_map_chunk_size) {
             av_free_packet(pkt);
             return CHUNK_EOF;
@@ -187,7 +188,7 @@ static int load_ipmovie_packet(IPMVEContext *s, AVIOContext *pb,
         avio_seek(pb, s->video_chunk_offset, SEEK_SET);
         s->video_chunk_offset = 0;
 
-        if (avio_read(pb, pkt->data + s->decode_map_chunk_size,
+        if (avio_read(pb, pkt->data + 2 + s->decode_map_chunk_size,
             s->video_chunk_size) != s->video_chunk_size) {
             av_free_packet(pkt);
             return CHUNK_EOF;
@@ -237,7 +238,7 @@ static int process_ipmovie_chunk(IPMVEContext *s, AVIOContext *pb,
         return chunk_type;
 
     /* read the next chunk, wherever the file happens to be pointing */
-    if (url_feof(pb))
+    if (avio_feof(pb))
         return CHUNK_EOF;
     if (avio_read(pb, chunk_preamble, CHUNK_PREAMBLE_SIZE) !=
         CHUNK_PREAMBLE_SIZE)
@@ -283,7 +284,7 @@ static int process_ipmovie_chunk(IPMVEContext *s, AVIOContext *pb,
     while ((chunk_size > 0) && (chunk_type != CHUNK_BAD)) {
 
         /* read the next chunk, wherever the file happens to be pointing */
-        if (url_feof(pb)) {
+        if (avio_feof(pb)) {
             chunk_type = CHUNK_EOF;
             break;
         }
@@ -555,7 +556,7 @@ static int ipmovie_read_header(AVFormatContext *s)
     while (memcmp(signature_buffer, signature, sizeof(signature))) {
         memmove(signature_buffer, signature_buffer + 1, sizeof(signature_buffer) - 1);
         signature_buffer[sizeof(signature_buffer) - 1] = avio_r8(pb);
-        if (url_feof(pb))
+        if (avio_feof(pb))
             return AVERROR_EOF;
     }
     /* initialize private context members */

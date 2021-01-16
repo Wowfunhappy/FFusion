@@ -49,7 +49,7 @@ static inline int ir2_get_code(GetBitContext *gb)
 }
 
 static int ir2_decode_plane(Ir2Context *ctx, int width, int height, uint8_t *dst,
-                            int stride, const uint8_t *table)
+                            int pitch, const uint8_t *table)
 {
     int i;
     int j;
@@ -74,10 +74,12 @@ static int ir2_decode_plane(Ir2Context *ctx, int width, int height, uint8_t *dst
             dst[out++] = table[(c * 2) + 1];
         }
     }
-    dst += stride;
+    dst += pitch;
 
     for (j = 1; j < height; j++) {
         out = 0;
+        if (get_bits_left(&ctx->gb) <= 0)
+            return AVERROR_INVALIDDATA;
         while (out < width) {
             c = ir2_get_code(&ctx->gb);
             if (c >= 0x80) { /* we have a skip */
@@ -85,27 +87,27 @@ static int ir2_decode_plane(Ir2Context *ctx, int width, int height, uint8_t *dst
                 if (out + c*2 > width)
                     return AVERROR_INVALIDDATA;
                 for (i = 0; i < c * 2; i++) {
-                    dst[out] = dst[out - stride];
+                    dst[out] = dst[out - pitch];
                     out++;
                 }
             } else { /* add two deltas from table */
-                t        = dst[out - stride] + (table[c * 2] - 128);
+                t        = dst[out - pitch] + (table[c * 2] - 128);
                 t        = av_clip_uint8(t);
                 dst[out] = t;
                 out++;
-                t        = dst[out - stride] + (table[(c * 2) + 1] - 128);
+                t        = dst[out - pitch] + (table[(c * 2) + 1] - 128);
                 t        = av_clip_uint8(t);
                 dst[out] = t;
                 out++;
             }
         }
-        dst += stride;
+        dst += pitch;
     }
     return 0;
 }
 
 static int ir2_decode_plane_inter(Ir2Context *ctx, int width, int height, uint8_t *dst,
-                                  int stride, const uint8_t *table)
+                                  int pitch, const uint8_t *table)
 {
     int j;
     int out = 0;
@@ -117,6 +119,8 @@ static int ir2_decode_plane_inter(Ir2Context *ctx, int width, int height, uint8_
 
     for (j = 0; j < height; j++) {
         out = 0;
+        if (get_bits_left(&ctx->gb) <= 0)
+            return AVERROR_INVALIDDATA;
         while (out < width) {
             c = ir2_get_code(&ctx->gb);
             if (c >= 0x80) { /* we have a skip */
@@ -133,7 +137,7 @@ static int ir2_decode_plane_inter(Ir2Context *ctx, int width, int height, uint8_
                 out++;
             }
         }
-        dst += stride;
+        dst += pitch;
     }
     return 0;
 }
@@ -148,6 +152,7 @@ static int ir2_decode_frame(AVCodecContext *avctx,
     AVFrame *picture     = data;
     AVFrame * const p    = s->picture;
     int start, ret;
+    int ltab, ctab;
 
     if ((ret = ff_reget_buffer(avctx, p)) < 0)
         return ret;
@@ -169,34 +174,42 @@ static int ir2_decode_frame(AVCodecContext *avctx,
 
     init_get_bits(&s->gb, buf + start, (buf_size - start) * 8);
 
+    ltab = buf[0x22] & 3;
+    ctab = buf[0x22] >> 2;
+
+    if (ctab > 3) {
+        av_log(avctx, AV_LOG_ERROR, "ctab %d is invalid\n", ctab);
+        return AVERROR_INVALIDDATA;
+    }
+
     if (s->decode_delta) { /* intraframe */
         if ((ret = ir2_decode_plane(s, avctx->width, avctx->height,
                                     p->data[0], p->linesize[0],
-                                    ir2_luma_table)) < 0)
+                                    ir2_delta_table[ltab])) < 0)
             return ret;
 
         /* swapped U and V */
         if ((ret = ir2_decode_plane(s, avctx->width >> 2, avctx->height >> 2,
                                     p->data[2], p->linesize[2],
-                                    ir2_luma_table)) < 0)
+                                    ir2_delta_table[ctab])) < 0)
             return ret;
         if ((ret = ir2_decode_plane(s, avctx->width >> 2, avctx->height >> 2,
                                     p->data[1], p->linesize[1],
-                                    ir2_luma_table)) < 0)
+                                    ir2_delta_table[ctab])) < 0)
             return ret;
     } else { /* interframe */
         if ((ret = ir2_decode_plane_inter(s, avctx->width, avctx->height,
                                           p->data[0], p->linesize[0],
-                                          ir2_luma_table)) < 0)
+                                          ir2_delta_table[ltab])) < 0)
             return ret;
         /* swapped U and V */
         if ((ret = ir2_decode_plane_inter(s, avctx->width >> 2, avctx->height >> 2,
                                           p->data[2], p->linesize[2],
-                                          ir2_luma_table)) < 0)
+                                          ir2_delta_table[ctab])) < 0)
             return ret;
         if ((ret = ir2_decode_plane_inter(s, avctx->width >> 2, avctx->height >> 2,
                                           p->data[1], p->linesize[1],
-                                          ir2_luma_table)) < 0)
+                                          ir2_delta_table[ctab])) < 0)
             return ret;
     }
 

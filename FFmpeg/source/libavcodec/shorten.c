@@ -156,8 +156,11 @@ static int allocate_buffers(ShortenContext *s)
 
 static inline unsigned int get_uint(ShortenContext *s, int k)
 {
-    if (s->version != 0)
+    if (s->version != 0) {
         k = get_ur_golomb_shorten(&s->gb, ULONGSIZE);
+        if (k > 31U)
+            return AVERROR_INVALIDDATA;
+    }
     return get_ur_golomb_shorten(&s->gb, k);
 }
 
@@ -366,6 +369,10 @@ static int read_header(ShortenContext *s)
         s->blocksize = blocksize;
 
         maxnlpc  = get_uint(s, LPCQSIZE);
+        if (maxnlpc > 1024U) {
+            av_log(s->avctx, AV_LOG_ERROR, "maxnlpc is: %d\n", maxnlpc);
+            return AVERROR_INVALIDDATA;
+        }
         s->nmean = get_uint(s, 0);
 
         skip_bytes = get_uint(s, NSKIPSIZE);
@@ -509,9 +516,16 @@ static int shorten_decode_frame(AVCodecContext *avctx, void *data,
                 while (len--)
                     get_ur_golomb_shorten(&s->gb, VERBATIM_BYTE_SIZE);
                 break;
-            case FN_BITSHIFT:
-                s->bitshift = get_ur_golomb_shorten(&s->gb, BITSHIFTSIZE);
+            case FN_BITSHIFT: {
+                unsigned bitshift = get_ur_golomb_shorten(&s->gb, BITSHIFTSIZE);
+                if (bitshift > 31) {
+                    av_log(avctx, AV_LOG_ERROR, "bitshift %d is invalid\n",
+                           bitshift);
+                    return AVERROR_PATCHWELCOME;
+                }
+                s->bitshift = bitshift;
                 break;
+            }
             case FN_BLOCKSIZE: {
                 unsigned blocksize = get_uint(s, av_log2(s->blocksize));
                 if (blocksize > s->blocksize) {

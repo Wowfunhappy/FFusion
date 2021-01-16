@@ -22,8 +22,9 @@
 #ifndef AVCODEC_SNOW_H
 #define AVCODEC_SNOW_H
 
-#include "dsputil.h"
 #include "hpeldsp.h"
+#include "me_cmp.h"
+#include "qpeldsp.h"
 #include "snow_dwt.h"
 
 #include "rangecoder.h"
@@ -109,12 +110,14 @@ typedef struct SnowContext{
     AVClass *class;
     AVCodecContext *avctx;
     RangeCoder c;
-    DSPContext dsp;
+    MECmpContext mecc;
     HpelDSPContext hdsp;
+    QpelDSPContext qdsp;
     VideoDSPContext vdsp;
     H264QpelContext h264qpel;
+    MpegvideoEncDSPContext mpvencdsp;
     SnowDWTContext dwt;
-    AVFrame *new_picture;
+    const AVFrame *new_picture;
     AVFrame *input_picture;              ///< new_picture with the internal linesizes
     AVFrame *current_picture;
     AVFrame *last_picture[MAX_REF_FRAMES];
@@ -230,6 +233,7 @@ int ff_snow_frame_start(SnowContext *s);
 void ff_snow_pred_block(SnowContext *s, uint8_t *dst, uint8_t *tmp, ptrdiff_t stride,
                      int sx, int sy, int b_w, int b_h, BlockNode *block,
                      int plane_index, int w, int h);
+int ff_snow_get_buffer(SnowContext *s, AVFrame *frame);
 /* common inline functions */
 //XXX doublecheck all of them should stay inlined
 
@@ -292,6 +296,8 @@ static av_always_inline void add_yblock(SnowContext *s, int sliced, slice_buffer
     BlockNode *lb= lt+b_stride;
     BlockNode *rb= lb+1;
     uint8_t *block[4];
+    // When src_stride is large enough, it is possible to interleave the blocks.
+    // Otherwise the blocks are written sequentially in the tmp buffer.
     int tmp_step= src_stride >= 7*MB_SIZE ? MB_SIZE : MB_SIZE*src_stride;
     uint8_t *tmp = s->scratchbuf;
     uint8_t *ptmp;
@@ -334,8 +340,6 @@ static av_always_inline void add_yblock(SnowContext *s, int sliced, slice_buffer
     }
 
     if(b_w<=0 || b_h<=0) return;
-
-    av_assert2(src_stride > 2*MB_SIZE + 5);
 
     if(!sliced && offset_dst)
         dst += src_x + src_y*dst_stride;
@@ -547,10 +551,13 @@ static inline int get_symbol(RangeCoder *c, uint8_t *state, int is_signed){
     if(get_rac(c, state+0))
         return 0;
     else{
-        int i, e, a;
+        int i, e;
+        unsigned a;
         e= 0;
         while(get_rac(c, state+1 + FFMIN(e,9))){ //1..10
             e++;
+            if (e > 31)
+                return AVERROR_INVALIDDATA;
         }
 
         a= 1;

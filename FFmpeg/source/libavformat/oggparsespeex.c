@@ -74,6 +74,13 @@ static int speex_header(AVFormatContext *s, int idx) {
 
         spxp->packet_size  = AV_RL32(p + 56);
         frames_per_packet  = AV_RL32(p + 64);
+        if (spxp->packet_size < 0 ||
+            frames_per_packet < 0 ||
+            spxp->packet_size * (int64_t)frames_per_packet > INT32_MAX / 256) {
+            av_log(s, AV_LOG_ERROR, "invalid packet_size, frames_per_packet %d %d\n", spxp->packet_size, frames_per_packet);
+            spxp->packet_size = 0;
+            return AVERROR_INVALIDDATA;
+        }
         if (frames_per_packet)
             spxp->packet_size *= frames_per_packet;
 
@@ -83,7 +90,7 @@ static int speex_header(AVFormatContext *s, int idx) {
 
         avpriv_set_pts_info(st, 64, 1, st->codec->sample_rate);
     } else
-        ff_vorbis_comment(s, &st->metadata, p, os->psize);
+        ff_vorbis_stream_comment(s, st, p, os->psize);
 
     spxp->seq++;
     return 1;

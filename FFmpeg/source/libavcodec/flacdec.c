@@ -130,6 +130,7 @@ static void dump_headers(AVCodecContext *avctx, FLACStreaminfo *s)
 static int allocate_buffers(FLACContext *s)
 {
     int buf_size;
+    int ret;
 
     av_assert0(s->max_blocksize);
 
@@ -142,9 +143,10 @@ static int allocate_buffers(FLACContext *s)
     if (!s->decoded_buffer)
         return AVERROR(ENOMEM);
 
-    return av_samples_fill_arrays((uint8_t **)s->decoded, NULL,
+    ret = av_samples_fill_arrays((uint8_t **)s->decoded, NULL,
                                   s->decoded_buffer, s->channels,
                                   s->max_blocksize, AV_SAMPLE_FMT_S32P, 0);
+    return ret < 0 ? ret : 0;
 }
 
 /**
@@ -162,7 +164,7 @@ static int parse_streaminfo(FLACContext *s, const uint8_t *buf, int buf_size)
         /* need more data */
         return 0;
     }
-    avpriv_flac_parse_block_header(&buf[4], NULL, &metadata_type, &metadata_size);
+    flac_parse_block_header(&buf[4], NULL, &metadata_type, &metadata_size);
     if (metadata_type != FLAC_METADATA_TYPE_STREAMINFO ||
         metadata_size != FLAC_STREAMINFO_SIZE) {
         return AVERROR_INVALIDDATA;
@@ -192,12 +194,12 @@ static int get_metadata_size(const uint8_t *buf, int buf_size)
     buf += 4;
     do {
         if (buf_end - buf < 4)
-            return 0;
-        avpriv_flac_parse_block_header(buf, &metadata_last, NULL, &metadata_size);
+            return AVERROR_INVALIDDATA;
+        flac_parse_block_header(buf, &metadata_last, NULL, &metadata_size);
         buf += 4;
         if (buf_end - buf < metadata_size) {
             /* need more data in order to read the complete header */
-            return 0;
+            return AVERROR_INVALIDDATA;
         }
         buf += metadata_size;
     } while (!metadata_last);
@@ -259,7 +261,8 @@ static int decode_subframe_fixed(FLACContext *s, int32_t *decoded,
                                  int pred_order, int bps)
 {
     const int blocksize = s->blocksize;
-    int av_uninit(a), av_uninit(b), av_uninit(c), av_uninit(d), i;
+    unsigned av_uninit(a), av_uninit(b), av_uninit(c), av_uninit(d);
+    int i;
     int ret;
 
     /* warm up samples */
@@ -277,7 +280,7 @@ static int decode_subframe_fixed(FLACContext *s, int32_t *decoded,
     if (pred_order > 2)
         c = b - decoded[pred_order-2] + decoded[pred_order-3];
     if (pred_order > 3)
-        d = c - decoded[pred_order-2] + 2*decoded[pred_order-3] - decoded[pred_order-4];
+        d = c - decoded[pred_order-2] + 2U*decoded[pred_order-3] - decoded[pred_order-4];
 
     switch (pred_order) {
     case 0:
@@ -400,10 +403,10 @@ static inline int decode_subframe(FLACContext *s, int channel)
         return AVERROR_INVALIDDATA;
     }
 
-    if (wasted) {
+    if (wasted && wasted < 32) {
         int i;
         for (i = 0; i < s->blocksize; i++)
-            decoded[i] <<= wasted;
+            decoded[i] = (unsigned)decoded[i] << wasted;
     }
 
     return 0;
@@ -512,12 +515,12 @@ static int flac_decode_frame(AVCodecContext *avctx, void *data,
     }
 
     if (buf_size > 5 && !memcmp(buf, "\177FLAC", 5)) {
-        av_log(s->avctx, AV_LOG_DEBUG, "skiping flac header packet 1\n");
+        av_log(s->avctx, AV_LOG_DEBUG, "skipping flac header packet 1\n");
         return buf_size;
     }
 
     if (buf_size > 0 && (*buf & 0x7F) == FLAC_METADATA_TYPE_VORBIS_COMMENT) {
-        av_log(s->avctx, AV_LOG_DEBUG, "skiping vorbis comment\n");
+        av_log(s->avctx, AV_LOG_DEBUG, "skipping vorbis comment\n");
         return buf_size;
     }
 

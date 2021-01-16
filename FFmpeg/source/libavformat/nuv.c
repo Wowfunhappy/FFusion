@@ -72,7 +72,7 @@ static int get_codec_data(AVIOContext *pb, AVStream *vst,
 
     if (!vst && !myth)
         return 1; // no codec data needed
-    while (!url_feof(pb)) {
+    while (!avio_feof(pb)) {
         int size, subtype;
 
         frametype = avio_r8(pb);
@@ -171,6 +171,15 @@ static int nuv_header(AVFormatContext *s)
     if (aspect > 0.9999 && aspect < 1.0001)
         aspect = 4.0 / 3.0;
     fps = av_int2double(avio_rl64(pb));
+    if (fps < 0.0f) {
+        if (s->error_recognition & AV_EF_EXPLODE) {
+            av_log(s, AV_LOG_ERROR, "Invalid frame rate %f\n", fps);
+            return AVERROR_INVALIDDATA;
+        } else {
+            av_log(s, AV_LOG_WARNING, "Invalid frame rate %f, setting to 0.\n", fps);
+            fps = 0.0f;
+        }
+    }
 
     // number of packets per stream type, -1 means unknown, e.g. streaming
     v_packs = avio_rl32(pb);
@@ -236,7 +245,7 @@ static int nuv_packet(AVFormatContext *s, AVPacket *pkt)
     nuv_frametype frametype;
     int ret, size;
 
-    while (!url_feof(pb)) {
+    while (!avio_feof(pb)) {
         int copyhdrsize = ctx->rtjpg_video ? HDRSIZE : 0;
         uint64_t pos    = avio_tell(pb);
 
@@ -309,7 +318,7 @@ static int nuv_packet(AVFormatContext *s, AVPacket *pkt)
 static int nuv_resync(AVFormatContext *s, int64_t pos_limit) {
     AVIOContext *pb = s->pb;
     uint32_t tag = 0;
-    while(!url_feof(pb) && avio_tell(pb) < pos_limit) {
+    while(!avio_feof(pb) && avio_tell(pb) < pos_limit) {
         tag = (tag << 8) | avio_r8(pb);
         if (tag                  == MKBETAG('R','T','j','j') &&
            (tag = avio_rb32(pb)) == MKBETAG('j','j','j','j') &&
@@ -339,7 +348,7 @@ static int64_t nuv_read_dts(AVFormatContext *s, int stream_index,
     if (!nuv_resync(s, pos_limit))
         return AV_NOPTS_VALUE;
 
-    while (!url_feof(pb) && avio_tell(pb) < pos_limit) {
+    while (!avio_feof(pb) && avio_tell(pb) < pos_limit) {
         if (avio_read(pb, hdr, HDRSIZE) < HDRSIZE)
             return AV_NOPTS_VALUE;
         frametype = hdr[0];

@@ -31,6 +31,7 @@
 #include "internal.h"
 #include "avcodec.h"
 #include "h264.h"
+#include "mpegutils.h"
 #include "libavutil/avassert.h"
 
 
@@ -242,7 +243,7 @@ static av_always_inline void pred_8x16_motion(H264Context *const h,
             if (IS_INTERLACED(type)) {          \
                 refn >>= 1;                     \
                 AV_COPY32(mvbuf[idx], mvn);     \
-                mvbuf[idx][1] <<= 1;            \
+                mvbuf[idx][1] *= 2;             \
                 mvn = mvbuf[idx];               \
             }                                   \
         }                                       \

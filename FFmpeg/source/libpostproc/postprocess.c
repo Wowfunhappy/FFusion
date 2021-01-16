@@ -76,6 +76,7 @@ try to unroll inner for(x=0 ... loop to avoid these damn if(x ... checks
 #include "config.h"
 #include "libavutil/avutil.h"
 #include "libavutil/avassert.h"
+#include "libavutil/intreadwrite.h"
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -157,7 +158,7 @@ static const struct PPFilter filters[]=
     {NULL, NULL,0,0,0,0} //End Marker
 };
 
-static const char *replaceTable[]=
+static const char * const replaceTable[]=
 {
     "default",      "hb:a,vb:a,dr:a",
     "de",           "hb:a,vb:a,dr:a",
@@ -321,13 +322,13 @@ static inline void doHorizDefFilter_C(uint8_t dst[], int stride, const PPContext
 
             if(q>0)
             {
-                d= d<0 ? 0 : d;
-                d= d>q ? q : d;
+                d = FFMAX(d, 0);
+                d = FFMIN(d, q);
             }
             else
             {
-                d= d>0 ? 0 : d;
-                d= d<q ? q : d;
+                d = FFMIN(d, 0);
+                d = FFMAX(d, q);
             }
 
             dst[3]-= d;
@@ -518,11 +519,11 @@ static av_always_inline void do_a_deblock_C(uint8_t *src, int step,
                 d*= FFSIGN(-middleEnergy);
 
                 if(q>0){
-                    d= d<0 ? 0 : d;
-                    d= d>q ? q : d;
+                    d = FFMAX(d, 0);
+                    d = FFMIN(d, q);
                 }else{
-                    d= d>0 ? 0 : d;
-                    d= d<q ? q : d;
+                    d = FFMIN(d, 0);
+                    d = FFMAX(d, q);
                 }
 
                 src[3*step]-= d;
@@ -719,10 +720,10 @@ pp_mode *pp_get_mode_by_name_and_quality(const char *name, int quality)
         int enable=1; //does the user want us to enabled or disabled the filter
 
         filterToken= strtok(p, filterDelimiters);
-        if(filterToken == NULL) break;
+        if(!filterToken) break;
         p+= strlen(filterToken) + 1; // p points to next filterToken
         filterName= strtok(filterToken, optionDelimiters);
-        if (filterName == NULL) {
+        if (!filterName) {
             ppMode->error++;
             break;
         }
@@ -735,7 +736,7 @@ pp_mode *pp_get_mode_by_name_and_quality(const char *name, int quality)
 
         for(;;){ //for all options
             option= strtok(NULL, optionDelimiters);
-            if(option == NULL) break;
+            if(!option) break;
 
             av_log(NULL, AV_LOG_DEBUG, "pp: option: %s\n", option);
             if(!strcmp("autoq", option) || !strcmp("a", option)) q= quality;
@@ -751,7 +752,7 @@ pp_mode *pp_get_mode_by_name_and_quality(const char *name, int quality)
         options[numOfUnknownOptions] = NULL;
 
         /* replace stuff from the replace Table */
-        for(i=0; replaceTable[2*i]!=NULL; i++){
+        for(i=0; replaceTable[2*i]; i++){
             if(!strcmp(replaceTable[2*i], filterName)){
                 int newlen= strlen(replaceTable[2*i + 1]);
                 int plen;
@@ -771,7 +772,7 @@ pp_mode *pp_get_mode_by_name_and_quality(const char *name, int quality)
             }
         }
 
-        for(i=0; filters[i].shortName!=NULL; i++){
+        for(i=0; filters[i].shortName; i++){
             if(   !strcmp(filters[i].longName, filterName)
                || !strcmp(filters[i].shortName, filterName)){
                 ppMode->lumMode &= ~filters[i].mask;
@@ -790,7 +791,7 @@ pp_mode *pp_get_mode_by_name_and_quality(const char *name, int quality)
                     int o;
                     ppMode->minAllowedY= 16;
                     ppMode->maxAllowedY= 234;
-                    for(o=0; options[o]!=NULL; o++){
+                    for(o=0; options[o]; o++){
                         if(  !strcmp(options[o],"fullyrange")
                            ||!strcmp(options[o],"f")){
                             ppMode->minAllowedY= 0;
@@ -804,7 +805,7 @@ pp_mode *pp_get_mode_by_name_and_quality(const char *name, int quality)
                     int o;
                     int numOfNoises=0;
 
-                    for(o=0; options[o]!=NULL; o++){
+                    for(o=0; options[o]; o++){
                         char *tail;
                         ppMode->maxTmpNoise[numOfNoises]=
                             strtol(options[o], &tail, 0);
@@ -819,7 +820,7 @@ pp_mode *pp_get_mode_by_name_and_quality(const char *name, int quality)
                      || filters[i].mask == V_A_DEBLOCK || filters[i].mask == H_A_DEBLOCK){
                     int o;
 
-                    for(o=0; options[o]!=NULL && o<2; o++){
+                    for(o=0; options[o] && o<2; o++){
                         char *tail;
                         int val= strtol(options[o], &tail, 0);
                         if(tail==options[o]) break;
@@ -833,7 +834,7 @@ pp_mode *pp_get_mode_by_name_and_quality(const char *name, int quality)
                     int o;
                     ppMode->forcedQuant= 15;
 
-                    for(o=0; options[o]!=NULL && o<1; o++){
+                    for(o=0; options[o] && o<1; o++){
                         char *tail;
                         int val= strtol(options[o], &tail, 0);
                         if(tail==options[o]) break;
@@ -970,7 +971,7 @@ void  pp_postprocess(const uint8_t * src[3], const int srcStride[3],
                        FFMAX(minStride, c->stride),
                        FFMAX(c->qpStride, absQPStride));
 
-    if(QP_store==NULL || (mode->lumMode & FORCE_QUANT)){
+    if(!QP_store || (mode->lumMode & FORCE_QUANT)){
         int i;
         QP_store= c->forcedQPTable;
         absQPStride = QPStride = 0;
@@ -984,7 +985,7 @@ void  pp_postprocess(const uint8_t * src[3], const int srcStride[3],
         int i;
         const int count= FFMAX(mbHeight * absQPStride, mbWidth);
         for(i=0; i<(count>>2); i++){
-            ((uint32_t*)c->stdQPTable)[i] = (((const uint32_t*)QP_store)[i]>>1) & 0x7F7F7F7F;
+            AV_WN32(c->stdQPTable + (i<<2), AV_RN32(QP_store + (i<<2)) >> 1 & 0x7F7F7F7F);
         }
         for(i<<=2; i<count; i++){
             c->stdQPTable[i] = QP_store[i]>>1;
@@ -1009,7 +1010,7 @@ void  pp_postprocess(const uint8_t * src[3], const int srcStride[3],
             int i;
             const int count= FFMAX(mbHeight * QPStride, mbWidth);
             for(i=0; i<(count>>2); i++){
-                ((uint32_t*)c->nonBQPTable)[i] = ((const uint32_t*)QP_store)[i] & 0x3F3F3F3F;
+                AV_WN32(c->nonBQPTable + (i<<2), AV_RN32(QP_store + (i<<2)) & 0x3F3F3F3F);
             }
             for(i<<=2; i<count; i++){
                 c->nonBQPTable[i] = QP_store[i] & 0x3F;

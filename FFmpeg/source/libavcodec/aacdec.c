@@ -1206,6 +1206,8 @@ static int decode_ics_info(AACContext *ac, IndividualChannelStream *ics,
                            GetBitContext *gb)
 {
     int aot = ac->oc[1].m4ac.object_type;
+    int ret_fail = AVERROR_INVALIDDATA;
+
     if (aot != AOT_ER_AAC_ELD) {
         if (get_bits1(gb)) {
             av_log(ac->avctx, AV_LOG_ERROR, "Reserved bit set.\n");
@@ -1249,8 +1251,10 @@ static int decode_ics_info(AACContext *ac, IndividualChannelStream *ics,
             ics->swb_offset        =     ff_swb_offset_512[ac->oc[1].m4ac.sampling_index];
             ics->num_swb           =    ff_aac_num_swb_512[ac->oc[1].m4ac.sampling_index];
             ics->tns_max_bands     =  ff_tns_max_bands_512[ac->oc[1].m4ac.sampling_index];
-            if (!ics->num_swb || !ics->swb_offset)
-                return AVERROR_BUG;
+            if (!ics->num_swb || !ics->swb_offset) {
+                ret_fail = AVERROR_BUG;
+                goto fail;
+            }
         } else {
             ics->swb_offset        =    ff_swb_offset_1024[ac->oc[1].m4ac.sampling_index];
             ics->num_swb           =   ff_aac_num_swb_1024[ac->oc[1].m4ac.sampling_index];
@@ -1274,7 +1278,8 @@ static int decode_ics_info(AACContext *ac, IndividualChannelStream *ics,
                 if (aot == AOT_ER_AAC_LD) {
                     av_log(ac->avctx, AV_LOG_ERROR,
                            "LTP in ER AAC LD not yet implemented.\n");
-                    return AVERROR_PATCHWELCOME;
+                    ret_fail = AVERROR_PATCHWELCOME;
+                    goto fail;
                 }
                 if ((ics->ltp.present = get_bits(gb, 1)))
                     decode_ltp(&ics->ltp, gb, ics->max_sfb);
@@ -1293,7 +1298,7 @@ static int decode_ics_info(AACContext *ac, IndividualChannelStream *ics,
     return 0;
 fail:
     ics->max_sfb = 0;
-    return AVERROR_INVALIDDATA;
+    return ret_fail;
 }
 
 /**
@@ -1946,7 +1951,7 @@ static int decode_ics(AACContext *ac, SingleChannelElement *sce,
             avpriv_request_sample(ac->avctx, "SSR");
             return AVERROR_PATCHWELCOME;
         }
-        // I see no textual basis in the spec for this occuring after SSR gain
+        // I see no textual basis in the spec for this occurring after SSR gain
         // control, but this is what both reference and real implmentations do
         if (tns->present && er_syntax)
             if (decode_tns(ac, tns, gb, ics) < 0)
@@ -2631,7 +2636,7 @@ static void apply_dependent_coupling(AACContext *ac,
                 const float gain = cce->coup.gain[index][idx];
                 for (group = 0; group < ics->group_len[g]; group++) {
                     for (k = offsets[i]; k < offsets[i + 1]; k++) {
-                        // XXX dsputil-ize
+                        // FIXME: SIMDify
                         dest[group * 128 + k] += gain * src[group * 128 + k];
                     }
                 }
@@ -3096,7 +3101,7 @@ static int aac_decode_frame(AVCodecContext *avctx, void *data,
     if (INT_MAX / 8 <= buf_size)
         return AVERROR_INVALIDDATA;
 
-    if ((err = init_get_bits(&gb, buf, buf_size * 8)) < 0)
+    if ((err = init_get_bits8(&gb, buf, buf_size)) < 0)
         return err;
 
     switch (ac->oc[1].m4ac.object_type) {
@@ -3306,6 +3311,8 @@ static int read_payload_length_info(struct LATMContext *ctx, GetBitContext *gb)
     if (ctx->frame_length_type == 0) {
         int mux_slot_length = 0;
         do {
+            if (get_bits_left(gb) < 8)
+                return AVERROR_INVALIDDATA;
             tmp = get_bits(gb, 8);
             mux_slot_length += tmp;
         } while (tmp == 255);
@@ -3335,7 +3342,7 @@ static int read_audio_mux_element(struct LATMContext *latmctx,
     }
     if (latmctx->audio_mux_version_A == 0) {
         int mux_slot_length_bytes = read_payload_length_info(latmctx, gb);
-        if (mux_slot_length_bytes * 8 > get_bits_left(gb)) {
+        if (mux_slot_length_bytes < 0 || mux_slot_length_bytes * 8LL > get_bits_left(gb)) {
             av_log(latmctx->aac_ctx.avctx, AV_LOG_ERROR, "incomplete frame\n");
             return AVERROR_INVALIDDATA;
         } else if (mux_slot_length_bytes * 8 + 256 < get_bits_left(gb)) {

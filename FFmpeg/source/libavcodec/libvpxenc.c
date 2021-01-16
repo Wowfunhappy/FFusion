@@ -96,23 +96,16 @@ typedef struct VP8EncoderContext {
     int tile_columns;
     int tile_rows;
     int frame_parallel;
+    int aq_mode;
 } VP8Context;
 
 /** String mappings for enum vp8e_enc_control_id */
 static const char *const ctlidstr[] = {
-    [VP8E_UPD_ENTROPY]           = "VP8E_UPD_ENTROPY",
-    [VP8E_UPD_REFERENCE]         = "VP8E_UPD_REFERENCE",
-    [VP8E_USE_REFERENCE]         = "VP8E_USE_REFERENCE",
-    [VP8E_SET_ROI_MAP]           = "VP8E_SET_ROI_MAP",
-    [VP8E_SET_ACTIVEMAP]         = "VP8E_SET_ACTIVEMAP",
-    [VP8E_SET_SCALEMODE]         = "VP8E_SET_SCALEMODE",
     [VP8E_SET_CPUUSED]           = "VP8E_SET_CPUUSED",
     [VP8E_SET_ENABLEAUTOALTREF]  = "VP8E_SET_ENABLEAUTOALTREF",
     [VP8E_SET_NOISE_SENSITIVITY] = "VP8E_SET_NOISE_SENSITIVITY",
-    [VP8E_SET_SHARPNESS]         = "VP8E_SET_SHARPNESS",
     [VP8E_SET_STATIC_THRESHOLD]  = "VP8E_SET_STATIC_THRESHOLD",
     [VP8E_SET_TOKEN_PARTITIONS]  = "VP8E_SET_TOKEN_PARTITIONS",
-    [VP8E_GET_LAST_QUANTIZER]    = "VP8E_GET_LAST_QUANTIZER",
     [VP8E_SET_ARNR_MAXFRAMES]    = "VP8E_SET_ARNR_MAXFRAMES",
     [VP8E_SET_ARNR_STRENGTH]     = "VP8E_SET_ARNR_STRENGTH",
     [VP8E_SET_ARNR_TYPE]         = "VP8E_SET_ARNR_TYPE",
@@ -123,6 +116,7 @@ static const char *const ctlidstr[] = {
     [VP9E_SET_TILE_COLUMNS]            = "VP9E_SET_TILE_COLUMNS",
     [VP9E_SET_TILE_ROWS]               = "VP9E_SET_TILE_ROWS",
     [VP9E_SET_FRAME_PARALLEL_DECODING] = "VP9E_SET_FRAME_PARALLEL_DECODING",
+    [VP9E_SET_AQ_MODE]                 = "VP9E_SET_AQ_MODE",
 #endif
 };
 
@@ -158,7 +152,7 @@ static av_cold void dump_enc_cfg(AVCodecContext *avctx,
            width, "g_lag_in_frames:",   cfg->g_lag_in_frames);
     av_log(avctx, level, "rate control settings\n"
            "  %*s%u\n  %*s%u\n  %*s%u\n  %*s%u\n"
-           "  %*s%d\n  %*s%p(%zu)\n  %*s%u\n",
+           "  %*s%d\n  %*s%p(%"SIZE_SPECIFIER")\n  %*s%u\n",
            width, "rc_dropframe_thresh:",   cfg->rc_dropframe_thresh,
            width, "rc_resize_allowed:",     cfg->rc_resize_allowed,
            width, "rc_resize_up_thresh:",   cfg->rc_resize_up_thresh,
@@ -196,7 +190,7 @@ static void coded_frame_add(void *list, struct FrameListData *cx_frame)
 {
     struct FrameListData **p = list;
 
-    while (*p != NULL)
+    while (*p)
         p = &(*p)->next;
     *p = cx_frame;
     cx_frame->next = NULL;
@@ -300,14 +294,22 @@ static av_cold int vpx_init(AVCodecContext *avctx,
         enccfg.g_pass = VPX_RC_ONE_PASS;
 
     if (avctx->rc_min_rate == avctx->rc_max_rate &&
-        avctx->rc_min_rate == avctx->bit_rate && avctx->bit_rate)
+        avctx->rc_min_rate == avctx->bit_rate && avctx->bit_rate) {
         enccfg.rc_end_usage = VPX_CBR;
-    else if (ctx->crf)
+    } else if (ctx->crf >= 0) {
         enccfg.rc_end_usage = VPX_CQ;
+#if CONFIG_LIBVPX_VP9_ENCODER
+        if (!avctx->bit_rate && avctx->codec_id == AV_CODEC_ID_VP9)
+            enccfg.rc_end_usage = VPX_Q;
+#endif
+    }
 
     if (avctx->bit_rate) {
         enccfg.rc_target_bitrate = av_rescale_rnd(avctx->bit_rate, 1, 1000,
-                                                AV_ROUND_NEAR_INF);
+                                                  AV_ROUND_NEAR_INF);
+#if CONFIG_LIBVPX_VP9_ENCODER
+    } else if (enccfg.rc_end_usage == VPX_Q) {
+#endif
     } else {
         if (enccfg.rc_end_usage == VPX_CQ) {
             enccfg.rc_target_bitrate = 1000000;
@@ -324,11 +326,15 @@ static av_cold int vpx_init(AVCodecContext *avctx,
     if (avctx->qmax >= 0)
         enccfg.rc_max_quantizer = avctx->qmax;
 
-    if (enccfg.rc_end_usage == VPX_CQ) {
+    if (enccfg.rc_end_usage == VPX_CQ
+#if CONFIG_LIBVPX_VP9_ENCODER
+        || enccfg.rc_end_usage == VPX_Q
+#endif
+        ) {
         if (ctx->crf < enccfg.rc_min_quantizer || ctx->crf > enccfg.rc_max_quantizer) {
                 av_log(avctx, AV_LOG_ERROR,
-                       "CQ level must be between minimum and maximum quantizer value (%d-%d)\n",
-                       enccfg.rc_min_quantizer, enccfg.rc_max_quantizer);
+                       "CQ level %d must be between minimum and maximum quantizer value (%d-%d)\n",
+                       ctx->crf, enccfg.rc_min_quantizer, enccfg.rc_max_quantizer);
                 return AVERROR(EINVAL);
         }
     }
@@ -373,7 +379,7 @@ static av_cold int vpx_init(AVCodecContext *avctx,
         ret = av_reallocp(&ctx->twopass_stats.buf, ctx->twopass_stats.sz);
         if (ret < 0) {
             av_log(avctx, AV_LOG_ERROR,
-                   "Stat buffer alloc (%zu bytes) failed\n",
+                   "Stat buffer alloc (%"SIZE_SPECIFIER" bytes) failed\n",
                    ctx->twopass_stats.sz);
             return ret;
         }
@@ -415,8 +421,7 @@ static av_cold int vpx_init(AVCodecContext *avctx,
 
     //codec control failures are currently treated only as warnings
     av_log(avctx, AV_LOG_DEBUG, "vpx_codec_control\n");
-    if (ctx->cpu_used != INT_MIN)
-        codecctl_int(avctx, VP8E_SET_CPUUSED,          ctx->cpu_used);
+    codecctl_int(avctx, VP8E_SET_CPUUSED,          ctx->cpu_used);
     if (ctx->flags & VP8F_AUTO_ALT_REF)
         ctx->auto_alt_ref = 1;
     if (ctx->auto_alt_ref >= 0)
@@ -431,7 +436,8 @@ static av_cold int vpx_init(AVCodecContext *avctx,
     if (avctx->codec_id == AV_CODEC_ID_VP8)
         codecctl_int(avctx, VP8E_SET_TOKEN_PARTITIONS,  av_log2(avctx->slices));
     codecctl_int(avctx, VP8E_SET_STATIC_THRESHOLD,  avctx->mb_threshold);
-    codecctl_int(avctx, VP8E_SET_CQ_LEVEL,          ctx->crf);
+    if (ctx->crf >= 0)
+        codecctl_int(avctx, VP8E_SET_CQ_LEVEL,          ctx->crf);
     if (ctx->max_intra_rate >= 0)
         codecctl_int(avctx, VP8E_SET_MAX_INTRA_BITRATE_PCT, ctx->max_intra_rate);
 
@@ -445,6 +451,8 @@ static av_cold int vpx_init(AVCodecContext *avctx,
             codecctl_int(avctx, VP9E_SET_TILE_ROWS, ctx->tile_rows);
         if (ctx->frame_parallel >= 0)
             codecctl_int(avctx, VP9E_SET_FRAME_PARALLEL_DECODING, ctx->frame_parallel);
+        if (ctx->aq_mode >= 0)
+            codecctl_int(avctx, VP9E_SET_AQ_MODE, ctx->aq_mode);
     }
 #endif
 
@@ -543,7 +551,7 @@ static int storeframe(AVCodecContext *avctx, struct FrameListData *cx_frame,
             side_data = av_packet_new_side_data(pkt,
                                                 AV_PKT_DATA_MATROSKA_BLOCKADDITIONAL,
                                                 cx_frame->sz_alpha + 8);
-            if(side_data == NULL) {
+            if(!side_data) {
                 av_free_packet(pkt);
                 av_free(pkt);
                 return AVERROR(ENOMEM);
@@ -616,7 +624,7 @@ static int queue_frames(AVCodecContext *avctx, AVPacket *pkt_out,
 
                 if (!cx_frame->buf) {
                     av_log(avctx, AV_LOG_ERROR,
-                           "Data buffer alloc (%zu bytes) failed\n",
+                           "Data buffer alloc (%"SIZE_SPECIFIER" bytes) failed\n",
                            cx_frame->sz);
                     av_free(cx_frame);
                     return AVERROR(ENOMEM);
@@ -626,7 +634,7 @@ static int queue_frames(AVCodecContext *avctx, AVPacket *pkt_out,
                     cx_frame->buf_alpha = av_malloc(cx_frame->sz_alpha);
                     if (!cx_frame->buf_alpha) {
                         av_log(avctx, AV_LOG_ERROR,
-                               "Data buffer alloc (%zu bytes) failed\n",
+                               "Data buffer alloc (%"SIZE_SPECIFIER" bytes) failed\n",
                                cx_frame->sz_alpha);
                         av_free(cx_frame);
                         return AVERROR(ENOMEM);
@@ -754,7 +762,7 @@ static int vp8_encode(AVCodecContext *avctx, AVPacket *pkt,
 #endif
 
 #define COMMON_OPTIONS \
-    { "cpu-used",        "Quality/Speed ratio modifier",           OFFSET(cpu_used),        AV_OPT_TYPE_INT, {.i64 = INT_MIN}, INT_MIN, INT_MAX, VE}, \
+    { "cpu-used",        "Quality/Speed ratio modifier",           OFFSET(cpu_used),        AV_OPT_TYPE_INT, {.i64 = 1},       -16,     16,      VE}, \
     { "auto-alt-ref",    "Enable use of alternate reference " \
                          "frames (2-pass only)",                   OFFSET(auto_alt_ref),    AV_OPT_TYPE_INT, {.i64 = -1},      -1,      1,       VE}, \
     { "lag-in-frames",   "Number of frames to look ahead for " \
@@ -776,7 +784,7 @@ static int vp8_encode(AVCodecContext *avctx, AVPacket *pkt,
                          "by the bool decoder, meaning that partitions can be decoded even " \
                          "though earlier partitions have been lost. Note that intra predicition" \
                          " is still done over the partition boundary.",       0, AV_OPT_TYPE_CONST, {.i64 = VPX_ERROR_RESILIENT_PARTITIONS}, 0, 0, VE, "er"}, \
-    { "crf",              "Select the quality for constant quality mode", offsetof(VP8Context, crf), AV_OPT_TYPE_INT, {.i64 = 0}, 0, 63, VE }, \
+    { "crf",              "Select the quality for constant quality mode", offsetof(VP8Context, crf), AV_OPT_TYPE_INT, {.i64 = -1}, -1, 63, VE }, \
 
 #define LEGACY_OPTIONS \
     {"speed", "", offsetof(VP8Context, cpu_used), AV_OPT_TYPE_INT, {.i64 = 1}, -16, 16, VE}, \
@@ -804,6 +812,11 @@ static const AVOption vp9_options[] = {
     { "tile-columns",    "Number of tile columns to use, log2",         OFFSET(tile_columns),    AV_OPT_TYPE_INT, {.i64 = -1}, -1, 6, VE},
     { "tile-rows",       "Number of tile rows to use, log2",            OFFSET(tile_rows),       AV_OPT_TYPE_INT, {.i64 = -1}, -1, 2, VE},
     { "frame-parallel",  "Enable frame parallel decodability features", OFFSET(frame_parallel),  AV_OPT_TYPE_INT, {.i64 = -1}, -1, 1, VE},
+    { "aq-mode",         "adaptive quantization mode",                  OFFSET(aq_mode),         AV_OPT_TYPE_INT, {.i64 = -1}, -1, 3, VE, "aq_mode"},
+    { "none",            "Aq not used",         0, AV_OPT_TYPE_CONST, {.i64 = 0}, 0, 0, VE, "aq_mode" }, \
+    { "variance",        "Variance based Aq",   0, AV_OPT_TYPE_CONST, {.i64 = 1}, 0, 0, VE, "aq_mode" }, \
+    { "complexity",      "Complexity based Aq", 0, AV_OPT_TYPE_CONST, {.i64 = 2}, 0, 0, VE, "aq_mode" }, \
+    { "cyclic",          "Cyclic Refresh Aq",   0, AV_OPT_TYPE_CONST, {.i64 = 3}, 0, 0, VE, "aq_mode" }, \
     LEGACY_OPTIONS
     { NULL }
 };

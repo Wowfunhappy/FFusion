@@ -30,6 +30,7 @@
 #include "sbr.h"
 #include "aacsbr.h"
 #include "aacsbrdata.h"
+#include "aacsbr_tablegen.h"
 #include "fft.h"
 #include "aacps.h"
 #include "sbrdsp.h"
@@ -95,7 +96,6 @@ static void aacsbr_func_ptr_init(AACSBRContext *c);
 
 av_cold void ff_aac_sbr_init(void)
 {
-    int n;
     static const struct {
         const void *sbr_codes, *sbr_bits;
         const unsigned int table_size, elem_size;
@@ -124,13 +124,7 @@ av_cold void ff_aac_sbr_init(void)
     SBR_INIT_VLC_STATIC(8, 592);
     SBR_INIT_VLC_STATIC(9, 512);
 
-    for (n = 1; n < 320; n++)
-        sbr_qmf_window_us[320 + n] = sbr_qmf_window_us[320 - n];
-    sbr_qmf_window_us[384] = -sbr_qmf_window_us[384];
-    sbr_qmf_window_us[512] = -sbr_qmf_window_us[512];
-
-    for (n = 0; n < 320; n++)
-        sbr_qmf_window_ds[n] = sbr_qmf_window_us[2*n];
+    aacsbr_tableinit();
 
     ff_ps_init();
 }
@@ -568,7 +562,8 @@ static int sbr_hf_calc_npatches(AACContext *ac, SpectralBandReplication *sbr)
             k = sbr->n_master;
     } while (sb != sbr->kx[1] + sbr->m[1]);
 
-    if (sbr->num_patches > 1 && sbr->patch_num_subbands[sbr->num_patches-1] < 3)
+    if (sbr->num_patches > 1 &&
+        sbr->patch_num_subbands[sbr->num_patches - 1] < 3)
         sbr->num_patches--;
 
     return 0;
@@ -651,24 +646,26 @@ static int read_sbr_grid(AACContext *ac, SpectralBandReplication *sbr,
     int abs_bord_trail = 16;
     int num_rel_lead, num_rel_trail;
     unsigned bs_num_env_old = ch_data->bs_num_env;
+    int bs_frame_class, bs_num_env;
 
     ch_data->bs_freq_res[0] = ch_data->bs_freq_res[ch_data->bs_num_env];
     ch_data->bs_amp_res = sbr->bs_amp_res_header;
     ch_data->t_env_num_env_old = ch_data->t_env[bs_num_env_old];
 
-    switch (ch_data->bs_frame_class = get_bits(gb, 2)) {
+    switch (bs_frame_class = get_bits(gb, 2)) {
     case FIXFIX:
-        ch_data->bs_num_env                 = 1 << get_bits(gb, 2);
+        bs_num_env = 1 << get_bits(gb, 2);
+        if (bs_num_env > 4) {
+            av_log(ac->avctx, AV_LOG_ERROR,
+                   "Invalid bitstream, too many SBR envelopes in FIXFIX type SBR frame: %d\n",
+                   bs_num_env);
+            return -1;
+        }
+        ch_data->bs_num_env = bs_num_env;
         num_rel_lead                        = ch_data->bs_num_env - 1;
         if (ch_data->bs_num_env == 1)
             ch_data->bs_amp_res = 0;
 
-        if (ch_data->bs_num_env > 4) {
-            av_log(ac->avctx, AV_LOG_ERROR,
-                   "Invalid bitstream, too many SBR envelopes in FIXFIX type SBR frame: %d\n",
-                   ch_data->bs_num_env);
-            return -1;
-        }
 
         ch_data->t_env[0]                   = 0;
         ch_data->t_env[ch_data->bs_num_env] = abs_bord_trail;
@@ -716,14 +713,15 @@ static int read_sbr_grid(AACContext *ac, SpectralBandReplication *sbr,
         abs_bord_trail                     += get_bits(gb, 2);
         num_rel_lead                        = get_bits(gb, 2);
         num_rel_trail                       = get_bits(gb, 2);
-        ch_data->bs_num_env                 = num_rel_lead + num_rel_trail + 1;
+        bs_num_env                          = num_rel_lead + num_rel_trail + 1;
 
-        if (ch_data->bs_num_env > 5) {
+        if (bs_num_env > 5) {
             av_log(ac->avctx, AV_LOG_ERROR,
                    "Invalid bitstream, too many SBR envelopes in VARVAR type SBR frame: %d\n",
-                   ch_data->bs_num_env);
+                   bs_num_env);
             return -1;
         }
+        ch_data->bs_num_env = bs_num_env;
 
         ch_data->t_env[ch_data->bs_num_env] = abs_bord_trail;
 
@@ -738,6 +736,7 @@ static int read_sbr_grid(AACContext *ac, SpectralBandReplication *sbr,
         get_bits1_vector(gb, ch_data->bs_freq_res + 1, ch_data->bs_num_env);
         break;
     }
+    ch_data->bs_frame_class = bs_frame_class;
 
     if (bs_pointer > ch_data->bs_num_env + 1) {
         av_log(ac->avctx, AV_LOG_ERROR,
@@ -1022,6 +1021,8 @@ static unsigned int read_sbr_data(AACContext *ac, SpectralBandReplication *sbr,
                                   GetBitContext *gb, int id_aac)
 {
     unsigned int cnt = get_bits_count(gb);
+
+    sbr->id_aac = id_aac;
 
     if (id_aac == TYPE_SCE || id_aac == TYPE_CCE) {
         if (read_sbr_single_channel_element(ac, sbr, gb)) {
@@ -1693,6 +1694,12 @@ void ff_sbr_apply(AACContext *ac, SpectralBandReplication *sbr, int id_aac,
     int nch = (id_aac == TYPE_CPE) ? 2 : 1;
     int err;
 
+    if (id_aac != sbr->id_aac) {
+        av_log(ac->avctx, AV_LOG_ERROR,
+            "element type mismatch %d != %d\n", id_aac, sbr->id_aac);
+        sbr_turnoff(sbr);
+    }
+
     if (!sbr->kx_and_m_pushed) {
         sbr->kx[0] = sbr->kx[1];
         sbr->m[0] = sbr->m[1];
@@ -1716,6 +1723,7 @@ void ff_sbr_apply(AACContext *ac, SpectralBandReplication *sbr, int id_aac,
             sbr->c.sbr_hf_inverse_filter(&sbr->dsp, sbr->alpha0, sbr->alpha1,
                                          (const float (*)[40][2]) sbr->X_low, sbr->k[0]);
             sbr_chirp(sbr, &sbr->data[ch]);
+            av_assert0(sbr->data[ch].bs_num_env > 0);
             sbr_hf_gen(ac, sbr, sbr->X_high,
                        (const float (*)[40][2]) sbr->X_low,
                        (const float (*)[2]) sbr->alpha0,

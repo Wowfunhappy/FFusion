@@ -24,6 +24,7 @@
 #include "libavutil/avassert.h"
 #include "libavutil/common.h"
 #include "libavutil/internal.h"
+#include "libavutil/mathematics.h"
 #include "libavutil/mem.h"
 #include "avcodec.h"
 #include "bytestream.h"
@@ -58,6 +59,7 @@ void av_init_packet(AVPacket *pkt)
 #if FF_API_DESTRUCT_PACKET
 FF_DISABLE_DEPRECATION_WARNINGS
     pkt->destruct             = NULL;
+    pkt->priv                 = NULL;
 FF_ENABLE_DEPRECATION_WARNINGS
 #endif
     pkt->buf                  = NULL;
@@ -190,10 +192,11 @@ do {                                         \
     } while (0)
 
 /* Makes duplicates of data, side_data, but does not copy any other fields */
-static int copy_packet_data(AVPacket *pkt, AVPacket *src, int dup)
+static int copy_packet_data(AVPacket *pkt, const AVPacket *src, int dup)
 {
     pkt->data      = NULL;
     pkt->side_data = NULL;
+    pkt->side_data_elems = 0;
     if (pkt->buf) {
         AVBufferRef *ref = av_buffer_ref(src->buf);
         if (!ref)
@@ -208,9 +211,11 @@ FF_DISABLE_DEPRECATION_WARNINGS
     pkt->destruct = dummy_destruct_packet;
 FF_ENABLE_DEPRECATION_WARNINGS
 #endif
-    if (pkt->side_data_elems && dup)
+    if (src->side_data_elems && dup) {
         pkt->side_data = src->side_data;
-    if (pkt->side_data_elems && !dup) {
+        pkt->side_data_elems = src->side_data_elems;
+    }
+    if (src->side_data_elems && !dup) {
         return av_copy_packet_side_data(pkt, src);
     }
     return 0;
@@ -220,7 +225,7 @@ failed_alloc:
     return AVERROR(ENOMEM);
 }
 
-int av_copy_packet_side_data(AVPacket *pkt, AVPacket *src)
+int av_copy_packet_side_data(AVPacket *pkt, const AVPacket *src)
 {
     if (src->side_data_elems) {
         int i;
@@ -262,7 +267,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
     return 0;
 }
 
-int av_copy_packet(AVPacket *dst, AVPacket *src)
+int av_copy_packet(AVPacket *dst, const AVPacket *src)
 {
     *dst = *src;
     return copy_packet_data(dst, src, 0);
@@ -301,10 +306,11 @@ uint8_t *av_packet_new_side_data(AVPacket *pkt, enum AVPacketSideDataType type,
 {
     int elems = pkt->side_data_elems;
 
-    if ((unsigned)elems + 1 > INT_MAX / sizeof(*pkt->side_data))
+    if ((unsigned)elems + 1 > AV_PKT_DATA_NB)
         return NULL;
     if ((unsigned)size > INT_MAX - FF_INPUT_BUFFER_PADDING_SIZE)
         return NULL;
+
 
     pkt->side_data = av_realloc(pkt->side_data,
                                 (elems + 1) * sizeof(*pkt->side_data));
@@ -387,21 +393,26 @@ int av_packet_split_side_data(AVPacket *pkt){
         p = pkt->data + pkt->size - 8 - 5;
         for (i=1; ; i++){
             size = AV_RB32(p);
-            if (size>INT_MAX || p - pkt->data < size)
+            if (size>INT_MAX - 5 || p - pkt->data < size)
                 return 0;
             if (p[4]&128)
                 break;
+            if (p - pkt->data < size + 5)
+                return 0;
             p-= size+5;
         }
 
-        pkt->side_data = av_malloc(i * sizeof(*pkt->side_data));
+        if (i > AV_PKT_DATA_NB)
+            return AVERROR(ERANGE);
+
+        pkt->side_data = av_malloc_array(i, sizeof(*pkt->side_data));
         if (!pkt->side_data)
             return AVERROR(ENOMEM);
 
         p= pkt->data + pkt->size - 8 - 5;
         for (i=0; ; i++){
             size= AV_RB32(p);
-            av_assert0(size<=INT_MAX && p - pkt->data >= size);
+            av_assert0(size<=INT_MAX - 5 && p - pkt->data >= size);
             pkt->side_data[i].data = av_mallocz(size + FF_INPUT_BUFFER_PADDING_SIZE);
             pkt->side_data[i].size = size;
             pkt->side_data[i].type = p[4]&127;
@@ -533,7 +544,7 @@ void av_packet_unref(AVPacket *pkt)
     pkt->size = 0;
 }
 
-int av_packet_ref(AVPacket *dst, AVPacket *src)
+int av_packet_ref(AVPacket *dst, const AVPacket *src)
 {
     int ret;
 
@@ -561,4 +572,16 @@ void av_packet_move_ref(AVPacket *dst, AVPacket *src)
 {
     *dst = *src;
     av_init_packet(src);
+}
+
+void av_packet_rescale_ts(AVPacket *pkt, AVRational src_tb, AVRational dst_tb)
+{
+    if (pkt->pts != AV_NOPTS_VALUE)
+        pkt->pts = av_rescale_q(pkt->pts, src_tb, dst_tb);
+    if (pkt->dts != AV_NOPTS_VALUE)
+        pkt->dts = av_rescale_q(pkt->dts, src_tb, dst_tb);
+    if (pkt->duration > 0)
+        pkt->duration = av_rescale_q(pkt->duration, src_tb, dst_tb);
+    if (pkt->convergence_duration > 0)
+        pkt->convergence_duration = av_rescale_q(pkt->convergence_duration, src_tb, dst_tb);
 }

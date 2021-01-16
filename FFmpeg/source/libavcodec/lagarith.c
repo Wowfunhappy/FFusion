@@ -25,10 +25,12 @@
  * @author Nathan Caldwell
  */
 
+#include <inttypes.h>
+
 #include "avcodec.h"
 #include "get_bits.h"
 #include "mathops.h"
-#include "dsputil.h"
+#include "huffyuvdsp.h"
 #include "lagarithrac.h"
 #include "thread.h"
 
@@ -48,7 +50,7 @@ enum LagarithFrameType {
 
 typedef struct LagarithContext {
     AVCodecContext *avctx;
-    DSPContext dsp;
+    HuffYUVDSPContext hdsp;
     int zeros;                  /**< number of consecutive zero bytes encountered */
     int zeros_rem;              /**< number of zero bytes remaining to output */
     uint8_t *rgb_planes;
@@ -96,7 +98,7 @@ static uint32_t softfloat_mul(uint32_t x, uint64_t mantissa)
 
 static uint8_t lag_calc_zero_run(int8_t x)
 {
-    return (x << 1) ^ (x >> 7);
+    return (x * 2) ^ (x >> 7);
 }
 
 static int lag_decode_prob(GetBitContext *gb, uint32_t *value)
@@ -189,7 +191,9 @@ static int lag_read_prob_header(lag_rac *rac, GetBitContext *gb)
         }
 
         scale_factor++;
-        cumulative_target = 1 << scale_factor;
+        if (scale_factor >= 32U)
+            return AVERROR_INVALIDDATA;
+        cumulative_target = 1U << scale_factor;
 
         if (scaled_cumul_prob > cumulative_target) {
             av_log(rac->avctx, AV_LOG_ERROR,
@@ -231,7 +235,7 @@ static void add_lag_median_prediction(uint8_t *dst, uint8_t *src1,
                                       uint8_t *diff, int w, int *left,
                                       int *left_top)
 {
-    /* This is almost identical to add_hfyu_median_prediction in dsputil.h.
+    /* This is almost identical to add_hfyu_median_pred in huffyuvdsp.h.
      * However the &0xFF on the gradient predictor yealds incorrect output
      * for lagarith.
      */
@@ -258,8 +262,7 @@ static void lag_pred_line(LagarithContext *l, uint8_t *buf,
 
     if (!line) {
         /* Left prediction only for first line */
-        L = l->dsp.add_hfyu_left_prediction(buf, buf,
-                                            width, 0);
+        L = l->hdsp.add_hfyu_left_pred(buf, buf, width, 0);
     } else {
         /* Left pixel is actually prev_row[width] */
         L = buf[width - stride - 1];
@@ -288,7 +291,7 @@ static void lag_pred_line_yuy2(LagarithContext *l, uint8_t *buf,
         L= buf[0];
         if (is_luma)
             buf[0] = 0;
-        l->dsp.add_hfyu_left_prediction(buf, buf, width, 0);
+        l->hdsp.add_hfyu_left_pred(buf, buf, width, 0);
         if (is_luma)
             buf[0] = L;
         return;
@@ -311,8 +314,7 @@ static void lag_pred_line_yuy2(LagarithContext *l, uint8_t *buf,
     } else {
         TL = buf[width - (2 * stride) - 1];
         L  = buf[width - stride - 1];
-        l->dsp.add_hfyu_median_prediction(buf, buf - stride, buf, width,
-                                          &L, &TL);
+        l->hdsp.add_hfyu_median_pred(buf, buf - stride, buf, width, &L, &TL);
     }
 }
 
@@ -460,7 +462,7 @@ static int lag_decode_arith_plane(LagarithContext *l, uint8_t *dst,
 
         if (read > length)
             av_log(l->avctx, AV_LOG_WARNING,
-                   "Output more bytes than length (%d of %d)\n", read,
+                   "Output more bytes than length (%d of %"PRIu32")\n", read,
                    length);
     } else if (esc_count < 8) {
         esc_count -= 4;
@@ -711,7 +713,7 @@ static int lag_decode_frame(AVCodecContext *avctx,
         break;
     default:
         av_log(avctx, AV_LOG_ERROR,
-               "Unsupported Lagarith frame type: %#x\n", frametype);
+               "Unsupported Lagarith frame type: %#"PRIx8"\n", frametype);
         return AVERROR_PATCHWELCOME;
     }
 
@@ -725,7 +727,7 @@ static av_cold int lag_decode_init(AVCodecContext *avctx)
     LagarithContext *l = avctx->priv_data;
     l->avctx = avctx;
 
-    ff_dsputil_init(&l->dsp, avctx);
+    ff_huffyuvdsp_init(&l->hdsp);
 
     return 0;
 }
