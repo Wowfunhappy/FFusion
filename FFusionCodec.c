@@ -268,7 +268,8 @@ static enum AVPixelFormat FindPixFmtFromVideo(AVCodec *codec, AVCodecContext *av
 	av_init_packet(&pkt);
 	pkt.data = (UInt8*)data;
 	pkt.size = bufferSize;
-	avcodec_decode_video2(tmpContext, tmpFrame, &got_picture, &pkt);
+	int len = avcodec_decode_video2(tmpContext, tmpFrame, &got_picture, &pkt);
+	asl_log(NULL, NULL, ASL_LEVEL_ERR, "Decoded frame to find pix_fmt, got %d", len);
     pix_fmt = tmpContext->pix_fmt;
     avcodec_close(tmpContext);
 bail:
@@ -707,6 +708,7 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 		
 		if(codecID == CODEC_ID_NONE)
 		{
+			asl_log(NULL, NULL, ASL_LEVEL_ERR, "ComponentType: %s", FourCCString(glob->componentType));
 			asl_log(NULL, NULL, ASL_LEVEL_ERR, "Warning! Unknown codec type! Using MPEG4 by default.\n");
 			codecID = CODEC_ID_MPEG4;
 		}
@@ -910,8 +912,8 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 			// RJVB : yuv420p MJPEG2000 is (sometimes?) misrecognised as GRAY8 by the lavc version we use
 			pos[index++] = qtPixFmt;
 		}
-		else
-			err = featureUnsupported;
+		/*else
+			err = featureUnsupported;*/
 	}
 	
     p->wantedDestinationPixelTypes = (OSType **)glob->pixelTypes;

@@ -208,6 +208,9 @@ int getCodecID(OSType componentType)
 			break;
 			
 		case 'VP90':
+		case 'vp09':
+		case 'VP09':
+		case 'vp90':
 			codecID = AV_CODEC_ID_VP9;
 			break;
 
@@ -517,7 +520,9 @@ pascal ComponentResult getFFusionCodecInfo(ComponentInstance self, OSType compon
 				break;
 				
 			case 'VP90':
-				
+			case 'vp09':
+			case 'VP09':
+			case 'vp90':
 				err = GetComponentResource((Component)self, codecInfoResourceType, kVP9CodecInfoResID, (Handle *)&tempCodecInfo);
 				break;
 				

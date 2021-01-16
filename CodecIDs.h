@@ -87,7 +87,7 @@ enum {
 	kVideoFormatIndeo2                      = 'RT21',
 	kVideoFormatIndeo3                      = 'IV32',
 	kVideoFormatVP8                         = 'VP80',
-	kVideoFormatVP9                         = 'VP90',
+	kVideoFormatVP9                         = 'VP09',
 	kVideoFormatTheora                      = 'PeTh',
 	
 	kVideoFormatHEVC                        = 'hev1',
