@@ -15,9 +15,7 @@
 		D61D797316BD77B000F6FB18 /* libavcore.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 3DEFA3F8120560AD0097FE4C /* libavcore.a */; };
 		D61D797416BD77B000F6FB18 /* libavcodec.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 11D4EFA10A3CE8C10066D45F /* libavcodec.a */; };
 		D61D798416BD77DA00F6FB18 /* libz.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = D61D798316BD77DA00F6FB18 /* libz.dylib */; };
-		D620105016C5507C00DC6EE5 /* libopenjpeg.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D620104C16C5506400DC6EE5 /* libopenjpeg.a */; };
 		D620105116C5507C00DC6EE5 /* libavutil.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 11D4EFA20A3CE8C10066D45F /* libavutil.a */; };
-		D620105216C5507C00DC6EE5 /* libavcore.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 3DEFA3F8120560AD0097FE4C /* libavcore.a */; };
 		D620105316C5507C00DC6EE5 /* libavcodec.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 11D4EFA10A3CE8C10066D45F /* libavcodec.a */; };
 		D620108616C57CF400DC6EE5 /* LICENSE-libopenjpeg1.txt in Resources */ = {isa = PBXBuildFile; fileRef = D620108416C57CF400DC6EE5 /* LICENSE-libopenjpeg1.txt */; };
 		D67BC47316B166FF00E26386 /* Perian_icon.icns in Resources */ = {isa = PBXBuildFile; fileRef = 83D1D6F40B4C85AB00E09EC9 /* Perian_icon.icns */; };
@@ -2290,9 +2288,7 @@
 				D67BC4A416B166FF00E26386 /* libbz2.dylib in Frameworks */,
 				D67BC4A516B166FF00E26386 /* CoreFoundation.framework in Frameworks */,
 				D68307A416BEE9F900301AD1 /* Cocoa.framework in Frameworks */,
-				D620105016C5507C00DC6EE5 /* libopenjpeg.a in Frameworks */,
 				D620105116C5507C00DC6EE5 /* libavutil.a in Frameworks */,
-				D620105216C5507C00DC6EE5 /* libavcore.a in Frameworks */,
 				D620105316C5507C00DC6EE5 /* libavcodec.a in Frameworks */,
 				D6B9D87E16C81E7200865BF4 /* SystemConfiguration.framework in Frameworks */,
 			);
