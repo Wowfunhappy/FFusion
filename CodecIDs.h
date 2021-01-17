@@ -90,7 +90,7 @@ enum {
 	kVideoFormatVP9                         = 'VP09',
 	kVideoFormatTheora                      = 'PeTh',
 	
-	kVideoFormatHEVC                        = 'hev1',
+	//kVideoFormatHEVC                        = 'hev1',
 	
 	kAudioFormatFlashADPCM                  = 'FlAd',
 	kAudioFormatDTS                         = 'DTS ', 
