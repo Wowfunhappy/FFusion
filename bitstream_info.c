@@ -913,7 +913,6 @@ void registerFFusionParsers(FFusionParser *parser)
 
 void initFFusionParsers()
 {
-	asl_log(NULL, NULL, ASL_LEVEL_ERR, "InitParsers");
 	static Boolean inited = FALSE;
 	int unlock = FFusionInitEnter(&inited);
 
@@ -965,11 +964,9 @@ FFusionParserContext *ffusionParserInit(int codec_id)
 
 		for (i = 0; i < 5; i++)
 			if (parser->codec_ids[i] == codec_id) {
-				asl_log(NULL, NULL, ASL_LEVEL_ERR, "found parser");
 				goto found;
 			}
     }
-	asl_log(NULL, NULL, ASL_LEVEL_ERR, "didn't find parser");
     return NULL;
 found:
 	s = av_mallocz(sizeof(AVCodecParserContext));
