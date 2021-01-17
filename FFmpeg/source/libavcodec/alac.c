@@ -60,7 +60,7 @@
 
 #define ALAC_EXTRADATA_SIZE 36
 
-typedef struct {
+typedef struct ALACContext {
     AVClass *class;
     AVCodecContext *avctx;
     GetBitContext gb;
@@ -167,12 +167,12 @@ static inline int sign_only(int v)
     return v ? FFSIGN(v) : 0;
 }
 
-static void lpc_prediction(int32_t *error_buffer, int32_t *buffer_out,
+static void lpc_prediction(int32_t *error_buffer, uint32_t *buffer_out,
                            int nb_samples, int bps, int16_t *lpc_coefs,
                            int lpc_order, int lpc_quant)
 {
     int i;
-    int32_t *pred = buffer_out;
+    uint32_t *pred = buffer_out;
 
     /* first sample always copies */
     *buffer_out = *error_buffer;
@@ -204,27 +204,27 @@ static void lpc_prediction(int32_t *error_buffer, int32_t *buffer_out,
     for (; i < nb_samples; i++) {
         int j;
         int val = 0;
-        int error_val = error_buffer[i];
+        unsigned error_val = error_buffer[i];
         int error_sign;
         int d = *pred++;
 
         /* LPC prediction */
         for (j = 0; j < lpc_order; j++)
             val += (pred[j] - d) * lpc_coefs[j];
-        val = (val + (1 << (lpc_quant - 1))) >> lpc_quant;
+        val = (val + (1LL << (lpc_quant - 1))) >> lpc_quant;
         val += d + error_val;
         buffer_out[i] = sign_extend(val, bps);
 
         /* adapt LPC coefficients */
         error_sign = sign_only(error_val);
         if (error_sign) {
-            for (j = 0; j < lpc_order && error_val * error_sign > 0; j++) {
+            for (j = 0; j < lpc_order && (int)(error_val * error_sign) > 0; j++) {
                 int sign;
                 val  = d - pred[j];
                 sign = sign_only(val) * error_sign;
                 lpc_coefs[j] -= sign;
-                val *= sign;
-                error_val -= (val >> lpc_quant) * (j + 1);
+                val *= (unsigned)sign;
+                error_val -= (val >> lpc_quant) * (j + 1U);
             }
         }
     }
@@ -331,7 +331,7 @@ static int decode_element(AVCodecContext *avctx, AVFrame *frame, int ch_index,
             rice_history_mult[ch] = get_bits(&alac->gb, 3);
             lpc_order[ch]         = get_bits(&alac->gb, 5);
 
-            if (lpc_order[ch] >= alac->max_samples_per_frame)
+            if (lpc_order[ch] >= alac->max_samples_per_frame || !lpc_quant[ch])
                 return AVERROR_INVALIDDATA;
 
             /* read the predictor table */
@@ -674,6 +674,6 @@ AVCodec ff_alac_decoder = {
     .close          = alac_decode_close,
     .decode         = alac_decode_frame,
     .init_thread_copy = ONLY_IF_THREADS_ENABLED(init_thread_copy),
-    .capabilities   = CODEC_CAP_DR1 | CODEC_CAP_FRAME_THREADS,
+    .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_FRAME_THREADS,
     .priv_class     = &alac_class
 };

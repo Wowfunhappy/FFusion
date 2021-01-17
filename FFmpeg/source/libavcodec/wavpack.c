@@ -85,7 +85,7 @@ typedef struct WavpackContext {
 
 #define LEVEL_DECAY(a)  (((a) + 0x80) >> 8)
 
-static av_always_inline int get_tail(GetBitContext *gb, int k)
+static av_always_inline unsigned get_tail(GetBitContext *gb, int k)
 {
     int p, e, res;
 
@@ -299,7 +299,7 @@ static float wv_get_value_float(WavpackFrameContext *s, uint32_t *crc, int S)
         const int max_bits  = 1 + 23 + 8 + 1;
         const int left_bits = get_bits_left(&s->gb_extra_bits);
 
-        if (left_bits + 8 * FF_INPUT_BUFFER_PADDING_SIZE < max_bits)
+        if (left_bits + 8 * AV_INPUT_BUFFER_PADDING_SIZE < max_bits)
             return 0.0;
     }
 
@@ -474,7 +474,7 @@ static inline int wv_unpack_stereo(WavpackFrameContext *s, GetBitContext *gb,
         }
 
         if (type == AV_SAMPLE_FMT_S16P) {
-            if (FFABS(L) + (unsigned)FFABS(R) > (1<<19)) {
+            if (FFABS((int64_t)L) + FFABS((int64_t)R) > (1<<19)) {
                 av_log(s->avctx, AV_LOG_ERROR, "sample %d %d too large\n", L, R);
                 return AVERROR_INVALIDDATA;
             }
@@ -1131,5 +1131,5 @@ AVCodec ff_wavpack_decoder = {
     .decode         = wavpack_decode_frame,
     .flush          = wavpack_decode_flush,
     .init_thread_copy = ONLY_IF_THREADS_ENABLED(init_thread_copy),
-    .capabilities   = CODEC_CAP_DR1 | CODEC_CAP_FRAME_THREADS,
+    .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_FRAME_THREADS,
 };

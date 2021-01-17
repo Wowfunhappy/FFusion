@@ -326,10 +326,14 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     uint8_t *outptr;
     int dx, dy, w, h, depth, enc, chunks, res, size_left, ret;
 
+    bytestream2_init(gb, buf, buf_size);
+    bytestream2_skip(gb, 2);
+    chunks = bytestream2_get_be16(gb);
+    if (12LL * chunks > bytestream2_get_bytes_left(gb))
+        return AVERROR_INVALIDDATA;
+
     if ((ret = ff_reget_buffer(avctx, c->pic)) < 0)
         return ret;
-
-    bytestream2_init(gb, buf, buf_size);
 
     c->pic->key_frame = 0;
     c->pic->pict_type = AV_PICTURE_TYPE_P;
@@ -362,8 +366,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
             }
         }
     }
-    bytestream2_skip(gb, 2);
-    chunks = bytestream2_get_be16(gb);
+
     while (chunks--) {
         if (bytestream2_get_bytes_left(gb) < 12) {
             av_log(avctx, AV_LOG_ERROR, "Premature end of data!\n");
@@ -522,7 +525,6 @@ static av_cold int decode_init(AVCodecContext *avctx)
     c->width  = avctx->width;
     c->height = avctx->height;
     c->bpp    = avctx->bits_per_coded_sample;
-    c->bpp2   = c->bpp / 8;
 
     switch (c->bpp) {
     case 8:
@@ -531,13 +533,18 @@ static av_cold int decode_init(AVCodecContext *avctx)
     case 16:
         avctx->pix_fmt = AV_PIX_FMT_RGB555;
         break;
+    case 24:
+        /* 24 bits is not technically supported, but some clients might
+         * mistakenly set it, so let's assume they actually meant 32 bits */
+        c->bpp = 32;
     case 32:
-        avctx->pix_fmt = AV_PIX_FMT_RGB32;
+        avctx->pix_fmt = AV_PIX_FMT_0RGB32;
         break;
     default:
         av_log(avctx, AV_LOG_ERROR, "Unsupported bitdepth %i\n", c->bpp);
         return AVERROR_INVALIDDATA;
     }
+    c->bpp2 = c->bpp / 8;
 
     c->pic = av_frame_alloc();
     if (!c->pic)
@@ -567,5 +574,5 @@ AVCodec ff_vmnc_decoder = {
     .init           = decode_init,
     .close          = decode_end,
     .decode         = decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };

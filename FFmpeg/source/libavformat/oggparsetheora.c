@@ -127,11 +127,11 @@ static int theora_header(AVFormatContext *s, int idx)
     }
 
     if ((err = av_reallocp(&st->codec->extradata,
-                           cds + FF_INPUT_BUFFER_PADDING_SIZE)) < 0) {
+                           cds + AV_INPUT_BUFFER_PADDING_SIZE)) < 0) {
         st->codec->extradata_size = 0;
         return err;
     }
-    memset(st->codec->extradata + cds, 0, FF_INPUT_BUFFER_PADDING_SIZE);
+    memset(st->codec->extradata + cds, 0, AV_INPUT_BUFFER_PADDING_SIZE);
 
     cdp    = st->codec->extradata + st->codec->extradata_size;
     *cdp++ = os->psize >> 8;
@@ -181,6 +181,7 @@ static int theora_packet(AVFormatContext *s, int idx)
 
     if ((!os->lastpts || os->lastpts == AV_NOPTS_VALUE) && !(os->flags & OGG_FLAG_EOS)) {
         int seg;
+        int64_t pts;
 
         duration = 1;
         for (seg = os->segp; seg < os->nsegs; seg++) {
@@ -188,7 +189,10 @@ static int theora_packet(AVFormatContext *s, int idx)
                 duration ++;
         }
 
-        os->lastpts = os->lastdts   = theora_gptopts(s, idx, os->granule, NULL) - duration;
+        pts = theora_gptopts(s, idx, os->granule, NULL);
+        if (pts != AV_NOPTS_VALUE)
+            pts -= duration;
+        os->lastpts = os->lastdts = pts;
         if(s->streams[idx]->start_time == AV_NOPTS_VALUE) {
             s->streams[idx]->start_time = os->lastpts;
             if (s->streams[idx]->duration)

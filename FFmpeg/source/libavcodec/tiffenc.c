@@ -164,7 +164,8 @@ static int add_entry1(TiffEncoderContext *s,
  * @param dst output buffer
  * @param n size of input buffer
  * @param compr compression method
- * @return number of output bytes. If an output error is encountered, -1 is returned
+ * @return number of output bytes. If an output error is encountered, a negative
+ * value corresponding to an AVERROR error code is returned.
  */
 static int encode_strip(TiffEncoderContext *s, const int8_t *src,
                         uint8_t *dst, int n, int compr)
@@ -177,14 +178,14 @@ static int encode_strip(TiffEncoderContext *s, const int8_t *src,
         unsigned long zlen = s->buf_size - (*s->buf - s->buf_start);
         if (compress(dst, &zlen, src, n) != Z_OK) {
             av_log(s->avctx, AV_LOG_ERROR, "Compressing failed\n");
-            return -1;
+            return AVERROR_EXTERNAL;
         }
         return zlen;
     }
 #endif
     case TIFF_RAW:
         if (check_size(s, n))
-            return -1;
+            return AVERROR(EINVAL);
         memcpy(dst, src, n);
         return n;
     case TIFF_PACKBITS:
@@ -193,7 +194,9 @@ static int encode_strip(TiffEncoderContext *s, const int8_t *src,
     case TIFF_LZW:
         return ff_lzw_encode(s->lzws, src, n);
     default:
-        return -1;
+        av_log(s->avctx, AV_LOG_ERROR, "Unsupported compression method: %d\n",
+               compr);
+        return AVERROR(EINVAL);
     }
 }
 
@@ -230,14 +233,14 @@ static void pack_yuv(TiffEncoderContext *s, const AVFrame *p,
         ret = add_entry(s, tag, type, count, ptr_val);  \
         if (ret < 0)                                    \
             goto fail;                                  \
-    } while(0);
+    } while (0)
 
 #define ADD_ENTRY1(s, tag, type, val)           \
     do {                                        \
         ret = add_entry1(s, tag, type, val);    \
         if (ret < 0)                            \
             goto fail;                          \
-    } while(0);
+    } while (0)
 
 static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
                         const AVFrame *pict, int *got_packet)
@@ -277,7 +280,8 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     case AV_PIX_FMT_GRAY8:
         avctx->bits_per_coded_sample = 0x28;
     case AV_PIX_FMT_GRAY8A:
-        alpha = avctx->pix_fmt == AV_PIX_FMT_GRAY8A;
+    case AV_PIX_FMT_YA16LE:
+        alpha = avctx->pix_fmt == AV_PIX_FMT_GRAY8A || avctx->pix_fmt == AV_PIX_FMT_YA16LE;
     case AV_PIX_FMT_GRAY16LE:
     case AV_PIX_FMT_MONOBLACK:
         s->photometric_interpretation = TIFF_PHOTOMETRIC_BLACK_IS_ZERO;
@@ -303,7 +307,7 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     default:
         av_log(s->avctx, AV_LOG_ERROR,
                "This colors format is not supported\n");
-        return -1;
+        return AVERROR(EINVAL);
     }
 
     for (i = 0; i < s->bpp_tab_size; i++)
@@ -325,17 +329,19 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     bytes_per_row = (((s->width - 1) / s->subsampling[0] + 1) * s->bpp *
                      s->subsampling[0] * s->subsampling[1] + 7) >> 3;
     packet_size = avctx->height * bytes_per_row * 2 +
-                  avctx->height * 4 + FF_MIN_BUFFER_SIZE;
+                  avctx->height * 4 + AV_INPUT_BUFFER_MIN_SIZE;
 
-    if ((ret = ff_alloc_packet2(avctx, pkt, packet_size)) < 0)
+    if ((ret = ff_alloc_packet2(avctx, pkt, packet_size, 0)) < 0)
         return ret;
     ptr          = pkt->data;
     s->buf_start = pkt->data;
     s->buf       = &ptr;
     s->buf_size  = pkt->size;
 
-    if (check_size(s, 8))
+    if (check_size(s, 8)) {
+        ret = AVERROR(EINVAL);
         goto fail;
+    }
 
     // write header
     bytestream_put_le16(&ptr, 0x4949);
@@ -344,6 +350,10 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     offset = ptr;
     bytestream_put_le32(&ptr, 0);
 
+    if (strips > INT_MAX / FFMAX(sizeof(s->strip_sizes[0]), sizeof(s->strip_offsets[0]))) {
+        ret = AVERROR(ENOMEM);
+        goto fail;
+    }
     av_fast_padded_mallocz(&s->strip_sizes  , &s->strip_sizes_size  , sizeof(s->strip_sizes  [0]) * strips);
     av_fast_padded_mallocz(&s->strip_offsets, &s->strip_offsets_size, sizeof(s->strip_offsets[0]) * strips);
 
@@ -433,7 +443,7 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
         }
     }
     if (s->compr == TIFF_LZW)
-        av_free(s->lzws);
+        av_freep(&s->lzws);
     }
 
     s->num_entries = 0;
@@ -465,7 +475,7 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     ADD_ENTRY(s,  TIFF_YRES,         TIFF_RATIONAL, 1,      res);
     ADD_ENTRY1(s, TIFF_RES_UNIT,     TIFF_SHORT,    2);
 
-    if (!(avctx->flags & CODEC_FLAG_BITEXACT))
+    if (!(avctx->flags & AV_CODEC_FLAG_BITEXACT))
         ADD_ENTRY(s, TIFF_SOFTWARE_NAME, TIFF_STRING,
                   strlen(LIBAVCODEC_IDENT) + 1, LIBAVCODEC_IDENT);
 
@@ -480,13 +490,13 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
         ADD_ENTRY(s, TIFF_PAL, TIFF_SHORT, 256 * 3, pal);
     }
     if (alpha)
-        add_entry1(s,TIFF_EXTRASAMPLES,      TIFF_SHORT,            2);
+        ADD_ENTRY1(s,TIFF_EXTRASAMPLES,      TIFF_SHORT,            2);
     if (is_yuv) {
         /** according to CCIR Recommendation 601.1 */
         uint32_t refbw[12] = { 15, 1, 235, 1, 128, 1, 240, 1, 128, 1, 240, 1 };
         ADD_ENTRY(s, TIFF_YCBCR_SUBSAMPLING, TIFF_SHORT,    2, s->subsampling);
         if (avctx->chroma_sample_location == AVCHROMA_LOC_TOPLEFT)
-            add_entry1(s, TIFF_YCBCR_POSITIONING, TIFF_SHORT, 2);
+            ADD_ENTRY1(s, TIFF_YCBCR_POSITIONING, TIFF_SHORT, 2);
         ADD_ENTRY(s, TIFF_REFERENCE_BW,      TIFF_RATIONAL, 6, refbw);
     }
     // write offset to dir
@@ -511,13 +521,12 @@ fail:
 static av_cold int encode_init(AVCodecContext *avctx)
 {
     TiffEncoderContext *s = avctx->priv_data;
-
-    avctx->coded_frame = av_frame_alloc();
-    if (!avctx->coded_frame)
-        return AVERROR(ENOMEM);
-
+#if FF_API_CODED_FRAME
+FF_DISABLE_DEPRECATION_WARNINGS
     avctx->coded_frame->pict_type = AV_PICTURE_TYPE_I;
     avctx->coded_frame->key_frame = 1;
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
     s->avctx = avctx;
 
     return 0;
@@ -527,7 +536,6 @@ static av_cold int encode_close(AVCodecContext *avctx)
 {
     TiffEncoderContext *s = avctx->priv_data;
 
-    av_frame_free(&avctx->coded_frame);
     av_freep(&s->strip_sizes);
     av_freep(&s->strip_offsets);
     av_freep(&s->yuv_line);
@@ -564,15 +572,15 @@ AVCodec ff_tiff_encoder = {
     .priv_data_size = sizeof(TiffEncoderContext),
     .init           = encode_init,
     .close          = encode_close,
-    .capabilities   = CODEC_CAP_FRAME_THREADS | CODEC_CAP_INTRA_ONLY,
+    .capabilities   = AV_CODEC_CAP_FRAME_THREADS | AV_CODEC_CAP_INTRA_ONLY,
     .encode2        = encode_frame,
     .pix_fmts       = (const enum AVPixelFormat[]) {
-        AV_PIX_FMT_RGB24, AV_PIX_FMT_PAL8, AV_PIX_FMT_GRAY8,
-        AV_PIX_FMT_GRAY8A, AV_PIX_FMT_GRAY16LE,
+        AV_PIX_FMT_RGB24, AV_PIX_FMT_RGB48LE, AV_PIX_FMT_PAL8,
+        AV_PIX_FMT_RGBA, AV_PIX_FMT_RGBA64LE,
+        AV_PIX_FMT_GRAY8, AV_PIX_FMT_GRAY8A, AV_PIX_FMT_GRAY16LE, AV_PIX_FMT_YA16LE,
         AV_PIX_FMT_MONOBLACK, AV_PIX_FMT_MONOWHITE,
         AV_PIX_FMT_YUV420P, AV_PIX_FMT_YUV422P, AV_PIX_FMT_YUV440P, AV_PIX_FMT_YUV444P,
-        AV_PIX_FMT_YUV410P, AV_PIX_FMT_YUV411P, AV_PIX_FMT_RGB48LE,
-        AV_PIX_FMT_RGBA, AV_PIX_FMT_RGBA64LE,
+        AV_PIX_FMT_YUV410P, AV_PIX_FMT_YUV411P,
         AV_PIX_FMT_NONE
     },
     .priv_class     = &tiffenc_class,

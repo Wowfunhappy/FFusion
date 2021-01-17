@@ -90,6 +90,8 @@ static void qpeg_decode_intra(QpegContext *qctx, uint8_t *dst,
                 }
             }
         } else {
+            if (bytestream2_get_bytes_left(&qctx->buffer) < copy)
+                copy = bytestream2_get_bytes_left(&qctx->buffer);
             for(i = 0; i < copy; i++) {
                 dst[filled++] = bytestream2_get_byte(&qctx->buffer);
                 if (filled >= width) {
@@ -354,5 +356,5 @@ AVCodec ff_qpeg_decoder = {
     .close          = decode_end,
     .decode         = decode_frame,
     .flush          = decode_flush,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };

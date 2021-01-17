@@ -358,7 +358,7 @@ static void imdct_and_window(TwinVQContext *tctx, enum TwinVQFrameType ftype,
 
         mdct->imdct_half(mdct, buf1 + bsize * j, in + bsize * j);
 
-        tctx->fdsp.vector_fmul_window(out2, prev_buf + (bsize - wsize) / 2,
+        tctx->fdsp->vector_fmul_window(out2, prev_buf + (bsize - wsize) / 2,
                                       buf1 + bsize * j,
                                       ff_sine_windows[av_log2(wsize)],
                                       wsize / 2);
@@ -405,7 +405,7 @@ static void imdct_output(TwinVQContext *tctx, enum TwinVQFrameType ftype,
                size1 * sizeof(*out2));
         memcpy(out2 + size1, &tctx->curr_frame[2 * mtab->size],
                size2 * sizeof(*out2));
-        tctx->fdsp.butterflies_float(out1, out2, mtab->size);
+        tctx->fdsp->butterflies_float(out1, out2, mtab->size);
     }
 }
 
@@ -446,7 +446,7 @@ static void read_and_decode_spectrum(TwinVQContext *tctx, float *out,
                                bits->bark_use_hist[i][j], i,
                                tctx->tmp_buf, gain[sub * i + j], ftype);
 
-            tctx->fdsp.vector_fmul(chunk + block_size * j,
+            tctx->fdsp->vector_fmul(chunk + block_size * j,
                                    chunk + block_size * j,
                                    tctx->tmp_buf, block_size);
         }
@@ -461,7 +461,7 @@ static void read_and_decode_spectrum(TwinVQContext *tctx, float *out,
         dec_lpc_spectrum_inv(tctx, lsp, ftype, tctx->tmp_buf);
 
         for (j = 0; j < mtab->fmode[ftype].sub; j++) {
-            tctx->fdsp.vector_fmul(chunk, chunk, tctx->tmp_buf, block_size);
+            tctx->fdsp->vector_fmul(chunk, chunk, tctx->tmp_buf, block_size);
             chunk += block_size;
         }
     }
@@ -755,13 +755,14 @@ av_cold int ff_twinvq_decode_close(AVCodecContext *avctx)
 
     for (i = 0; i < 3; i++) {
         ff_mdct_end(&tctx->mdct_ctx[i]);
-        av_free(tctx->cos_tabs[i]);
+        av_freep(&tctx->cos_tabs[i]);
     }
 
-    av_free(tctx->curr_frame);
-    av_free(tctx->spectrum);
-    av_free(tctx->prev_frame);
-    av_free(tctx->tmp_buf);
+    av_freep(&tctx->curr_frame);
+    av_freep(&tctx->spectrum);
+    av_freep(&tctx->prev_frame);
+    av_freep(&tctx->tmp_buf);
+    av_freep(&tctx->fdsp);
 
     return 0;
 }
@@ -770,25 +771,32 @@ av_cold int ff_twinvq_decode_init(AVCodecContext *avctx)
 {
     int ret;
     TwinVQContext *tctx = avctx->priv_data;
+    int64_t frames_per_packet;
 
     tctx->avctx       = avctx;
     avctx->sample_fmt = AV_SAMPLE_FMT_FLTP;
 
     if (!avctx->block_align) {
         avctx->block_align = tctx->frame_size + 7 >> 3;
-    } else if (avctx->block_align * 8 < tctx->frame_size) {
-        av_log(avctx, AV_LOG_ERROR, "Block align is %d bits, expected %d\n",
-               avctx->block_align * 8, tctx->frame_size);
+    }
+    frames_per_packet = avctx->block_align * 8LL / tctx->frame_size;
+    if (frames_per_packet <= 0) {
+        av_log(avctx, AV_LOG_ERROR, "Block align is %"PRId64" bits, expected %d\n",
+               avctx->block_align * (int64_t)8, tctx->frame_size);
         return AVERROR_INVALIDDATA;
     }
-    tctx->frames_per_packet = avctx->block_align * 8 / tctx->frame_size;
-    if (tctx->frames_per_packet > TWINVQ_MAX_FRAMES_PER_PACKET) {
-        av_log(avctx, AV_LOG_ERROR, "Too many frames per packet (%d)\n",
-               tctx->frames_per_packet);
+    if (frames_per_packet > TWINVQ_MAX_FRAMES_PER_PACKET) {
+        av_log(avctx, AV_LOG_ERROR, "Too many frames per packet (%"PRId64")\n",
+               frames_per_packet);
         return AVERROR_INVALIDDATA;
     }
+    tctx->frames_per_packet = frames_per_packet;
 
-    avpriv_float_dsp_init(&tctx->fdsp, avctx->flags & CODEC_FLAG_BITEXACT);
+    tctx->fdsp = avpriv_float_dsp_alloc(avctx->flags & AV_CODEC_FLAG_BITEXACT);
+    if (!tctx->fdsp) {
+        ff_twinvq_decode_close(avctx);
+        return AVERROR(ENOMEM);
+    }
     if ((ret = init_mdct_win(tctx))) {
         av_log(avctx, AV_LOG_ERROR, "Error initializing MDCT\n");
         ff_twinvq_decode_close(avctx);

@@ -592,14 +592,21 @@ static int decode_residual_block(AVSContext *h, GetBitContext *gb,
 }
 
 
-static inline void decode_residual_chroma(AVSContext *h)
+static inline int decode_residual_chroma(AVSContext *h)
 {
-    if (h->cbp & (1 << 4))
-        decode_residual_block(h, &h->gb, chroma_dec, 0,
+    if (h->cbp & (1 << 4)) {
+        int ret = decode_residual_block(h, &h->gb, chroma_dec, 0,
                               ff_cavs_chroma_qp[h->qp], h->cu, h->c_stride);
-    if (h->cbp & (1 << 5))
-        decode_residual_block(h, &h->gb, chroma_dec, 0,
+        if (ret < 0)
+            return ret;
+    }
+    if (h->cbp & (1 << 5)) {
+        int ret = decode_residual_block(h, &h->gb, chroma_dec, 0,
                               ff_cavs_chroma_qp[h->qp], h->cv, h->c_stride);
+        if (ret < 0)
+            return ret;
+    }
+    return 0;
 }
 
 static inline int decode_residual_inter(AVSContext *h)
@@ -650,6 +657,7 @@ static int decode_mb_i(AVSContext *h, int cbp_code)
     uint8_t top[18];
     uint8_t *left = NULL;
     uint8_t *d;
+    int ret;
 
     ff_cavs_init_mb(h);
 
@@ -693,8 +701,11 @@ static int decode_mb_i(AVSContext *h, int cbp_code)
         ff_cavs_load_intra_pred_luma(h, top, &left, block);
         h->intra_pred_l[h->pred_mode_Y[scan3x3[block]]]
             (d, top, left, h->l_stride);
-        if (h->cbp & (1<<block))
-            decode_residual_block(h, gb, intra_dec, 1, h->qp, d, h->l_stride);
+        if (h->cbp & (1<<block)) {
+            ret = decode_residual_block(h, gb, intra_dec, 1, h->qp, d, h->l_stride);
+            if (ret < 0)
+                return ret;
+        }
     }
 
     /* chroma intra prediction */
@@ -704,7 +715,9 @@ static int decode_mb_i(AVSContext *h, int cbp_code)
     h->intra_pred_c[pred_mode_uv](h->cv, &h->top_border_v[h->mbx * 10],
                                   h->left_border_v, h->c_stride);
 
-    decode_residual_chroma(h);
+    ret = decode_residual_chroma(h);
+    if (ret < 0)
+        return ret;
     ff_cavs_filter(h, I_8X8);
     set_mv_intra(h);
     return 0;
@@ -1068,6 +1081,11 @@ static int decode_pic(AVSContext *h)
     if (!h->loop_filter_disable && get_bits1(&h->gb)) {
         h->alpha_offset        = get_se_golomb(&h->gb);
         h->beta_offset         = get_se_golomb(&h->gb);
+        if (   h->alpha_offset < -64 || h->alpha_offset > 64
+            || h-> beta_offset < -64 || h-> beta_offset > 64) {
+            h->alpha_offset = h->beta_offset  = 0;
+            return AVERROR_INVALIDDATA;
+        }
     } else {
         h->alpha_offset = h->beta_offset  = 0;
     }
@@ -1127,6 +1145,7 @@ static int decode_seq_header(AVSContext *h)
 {
     int frame_rate_code;
     int width, height;
+    int ret;
 
     h->profile = get_bits(&h->gb, 8);
     h->level   = get_bits(&h->gb, 8);
@@ -1143,25 +1162,32 @@ static int decode_seq_header(AVSContext *h)
         av_log(h->avctx, AV_LOG_ERROR, "Dimensions invalid\n");
         return AVERROR_INVALIDDATA;
     }
-    h->width  = width;
-    h->height = height;
-
     skip_bits(&h->gb, 2); //chroma format
     skip_bits(&h->gb, 3); //sample_precision
     h->aspect_ratio = get_bits(&h->gb, 4);
     frame_rate_code = get_bits(&h->gb, 4);
+    if (frame_rate_code == 0 || frame_rate_code > 13) {
+        av_log(h->avctx, AV_LOG_WARNING,
+               "frame_rate_code %d is invalid\n", frame_rate_code);
+        frame_rate_code = 1;
+    }
+
     skip_bits(&h->gb, 18); //bit_rate_lower
     skip_bits1(&h->gb);    //marker_bit
     skip_bits(&h->gb, 12); //bit_rate_upper
     h->low_delay =  get_bits1(&h->gb);
+
+    ret = ff_set_dimensions(h->avctx, width, height);
+    if (ret < 0)
+        return ret;
+
+    h->width  = width;
+    h->height = height;
     h->mb_width  = (h->width  + 15) >> 4;
     h->mb_height = (h->height + 15) >> 4;
-    h->avctx->time_base.den = ff_mpeg12_frame_rate_tab[frame_rate_code].num;
-    h->avctx->time_base.num = ff_mpeg12_frame_rate_tab[frame_rate_code].den;
-    h->avctx->width  = h->width;
-    h->avctx->height = h->height;
+    h->avctx->framerate = ff_mpeg12_frame_rate_tab[frame_rate_code];
     if (!h->top_qp)
-        ff_cavs_init_top_lines(h);
+        return ff_cavs_init_top_lines(h);
     return 0;
 }
 
@@ -1181,6 +1207,7 @@ static int cavs_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     int input_size, ret;
     const uint8_t *buf_end;
     const uint8_t *buf_ptr;
+    int frame_start = 0;
 
     if (buf_size == 0) {
         if (!h->low_delay && h->DPB[0].f->data[0]) {
@@ -1214,6 +1241,11 @@ static int cavs_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
                 h->got_keyframe = 1;
             }
         case PIC_PB_START_CODE:
+            if (frame_start > 1)
+                return AVERROR_INVALIDDATA;
+            frame_start ++;
+            if (*got_frame)
+                av_frame_unref(data);
             *got_frame = 0;
             if (!h->got_keyframe)
                 break;
@@ -1258,6 +1290,6 @@ AVCodec ff_cavs_decoder = {
     .init           = ff_cavs_init,
     .close          = ff_cavs_end,
     .decode         = cavs_decode_frame,
-    .capabilities   = CODEC_CAP_DR1 | CODEC_CAP_DELAY,
+    .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DELAY,
     .flush          = cavs_flush,
 };

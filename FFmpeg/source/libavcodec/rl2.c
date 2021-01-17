@@ -134,9 +134,14 @@ static av_cold int rl2_decode_init(AVCodecContext *avctx)
     Rl2Context *s = avctx->priv_data;
     int back_size;
     int i;
+    int ret;
 
     s->avctx       = avctx;
     avctx->pix_fmt = AV_PIX_FMT_PAL8;
+
+    ret = ff_set_dimensions(avctx, 320, 200);
+    if (ret < 0)
+        return ret;
 
     /** parse extra data */
     if (!avctx->extradata || avctx->extradata_size < EXTRADATA1_SIZE) {
@@ -207,7 +212,7 @@ static av_cold int rl2_decode_end(AVCodecContext *avctx)
 {
     Rl2Context *s = avctx->priv_data;
 
-    av_free(s->back_frame);
+    av_freep(&s->back_frame);
 
     return 0;
 }
@@ -222,5 +227,5 @@ AVCodec ff_rl2_decoder = {
     .init           = rl2_decode_init,
     .close          = rl2_decode_end,
     .decode         = rl2_decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };

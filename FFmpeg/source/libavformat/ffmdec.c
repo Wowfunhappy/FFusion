@@ -21,8 +21,13 @@
 
 #include <stdint.h>
 
+#include "libavutil/internal.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/intfloat.h"
+#include "libavutil/opt.h"
+#include "libavutil/avassert.h"
+#include "libavutil/avstring.h"
+#include "libavutil/pixdesc.h"
 #include "avformat.h"
 #include "internal.h"
 #include "ffm.h"
@@ -150,7 +155,7 @@ static int ffm_read_data(AVFormatContext *s,
     return size1 - size;
 }
 
-/* ensure that acutal seeking happens between FFM_PACKET_SIZE
+/* ensure that actual seeking happens between FFM_PACKET_SIZE
    and file_size - FFM_PACKET_SIZE */
 static int64_t ffm_seek1(AVFormatContext *s, int64_t pos1)
 {
@@ -160,7 +165,7 @@ static int64_t ffm_seek1(AVFormatContext *s, int64_t pos1)
 
     pos = FFMIN(pos1, ffm->file_size - FFM_PACKET_SIZE);
     pos = FFMAX(pos, FFM_PACKET_SIZE);
-    av_dlog(s, "seek to %"PRIx64" -> %"PRIx64"\n", pos1, pos);
+    ff_dlog(s, "seek to %"PRIx64" -> %"PRIx64"\n", pos1, pos);
     return avio_seek(pb, pos, SEEK_SET);
 }
 
@@ -172,7 +177,7 @@ static int64_t get_dts(AVFormatContext *s, int64_t pos)
     ffm_seek1(s, pos);
     avio_skip(pb, 4);
     dts = avio_rb64(pb);
-    av_dlog(s, "dts=%0.6f\n", dts / 1000000.0);
+    ff_dlog(s, "dts=%0.6f\n", dts / 1000000.0);
     return dts;
 }
 
@@ -240,6 +245,27 @@ static int ffm_close(AVFormatContext *s)
     return 0;
 }
 
+static int ffm_append_recommended_configuration(AVStream *st, char **conf)
+{
+    int ret;
+    size_t newsize;
+    av_assert0(conf && st);
+    if (!*conf)
+        return 0;
+    if (!st->recommended_encoder_configuration) {
+        st->recommended_encoder_configuration = *conf;
+        *conf = 0;
+        return 0;
+    }
+    newsize = strlen(*conf) + strlen(st->recommended_encoder_configuration) + 2;
+    if ((ret = av_reallocp(&st->recommended_encoder_configuration, newsize)) < 0)
+        return ret;
+    av_strlcat(st->recommended_encoder_configuration, ",", newsize);
+    av_strlcat(st->recommended_encoder_configuration, *conf, newsize);
+    av_freep(conf);
+    return 0;
+}
+
 static int ffm2_read_header(AVFormatContext *s)
 {
     FFMContext *ffm = s->priv_data;
@@ -248,6 +274,9 @@ static int ffm2_read_header(AVFormatContext *s)
     AVCodecContext *codec;
     const AVCodecDescriptor *codec_desc;
     int ret;
+    int f_main = 0, f_cprv = -1, f_stvi = -1, f_stau = -1;
+    AVCodec *enc;
+    char *buffer;
 
     ffm->packet_size = avio_rb32(pb);
     if (ffm->packet_size != FFM_PACKET_SIZE) {
@@ -278,10 +307,15 @@ static int ffm2_read_header(AVFormatContext *s)
 
         switch(id) {
         case MKBETAG('M', 'A', 'I', 'N'):
+            if (f_main++) {
+                ret = AVERROR(EINVAL);
+                goto fail;
+            }
             avio_rb32(pb); /* nb_streams */
             avio_rb32(pb); /* total bitrate */
             break;
         case MKBETAG('C', 'O', 'M', 'M'):
+            f_cprv = f_stvi = f_stau = 0;
             st = avformat_new_stream(s, NULL);
             if (!st) {
                 ret = AVERROR(ENOMEM);
@@ -311,73 +345,127 @@ static int ffm2_read_header(AVFormatContext *s)
             codec->flags = avio_rb32(pb);
             codec->flags2 = avio_rb32(pb);
             codec->debug = avio_rb32(pb);
-            if (codec->flags & CODEC_FLAG_GLOBAL_HEADER) {
+            if (codec->flags & AV_CODEC_FLAG_GLOBAL_HEADER) {
                 if (ff_get_extradata(codec, pb, avio_rb32(pb)) < 0)
                     return AVERROR(ENOMEM);
             }
-            avio_seek(pb, next, SEEK_SET);
-            id = avio_rb32(pb);
-            size = avio_rb32(pb);
-            next = avio_tell(pb) + size;
-            switch(id) {
-            case MKBETAG('S', 'T', 'V', 'I'):
-                codec->time_base.num = avio_rb32(pb);
-                codec->time_base.den = avio_rb32(pb);
-                if (codec->time_base.num <= 0 || codec->time_base.den <= 0) {
-                    av_log(s, AV_LOG_ERROR, "Invalid time base %d/%d\n",
-                           codec->time_base.num, codec->time_base.den);
-                    ret = AVERROR_INVALIDDATA;
+            break;
+        case MKBETAG('S', 'T', 'V', 'I'):
+            if (f_stvi++ || codec->codec_type != AVMEDIA_TYPE_VIDEO) {
+                ret = AVERROR(EINVAL);
+                goto fail;
+            }
+            codec->time_base.num = avio_rb32(pb);
+            codec->time_base.den = avio_rb32(pb);
+            if (codec->time_base.num <= 0 || codec->time_base.den <= 0) {
+                av_log(s, AV_LOG_ERROR, "Invalid time base %d/%d\n",
+                       codec->time_base.num, codec->time_base.den);
+                ret = AVERROR_INVALIDDATA;
+                goto fail;
+            }
+            codec->width = avio_rb16(pb);
+            codec->height = avio_rb16(pb);
+            codec->gop_size = avio_rb16(pb);
+            codec->pix_fmt = avio_rb32(pb);
+            if (!av_pix_fmt_desc_get(codec->pix_fmt)) {
+                av_log(s, AV_LOG_ERROR, "Invalid pix fmt id: %d\n", codec->pix_fmt);
+                codec->pix_fmt = AV_PIX_FMT_NONE;
+                goto fail;
+            }
+            codec->qmin = avio_r8(pb);
+            codec->qmax = avio_r8(pb);
+            codec->max_qdiff = avio_r8(pb);
+            codec->qcompress = avio_rb16(pb) / 10000.0;
+            codec->qblur = avio_rb16(pb) / 10000.0;
+            codec->bit_rate_tolerance = avio_rb32(pb);
+            avio_get_str(pb, INT_MAX, rc_eq_buf, sizeof(rc_eq_buf));
+            codec->rc_eq = av_strdup(rc_eq_buf);
+            codec->rc_max_rate = avio_rb32(pb);
+            codec->rc_min_rate = avio_rb32(pb);
+            codec->rc_buffer_size = avio_rb32(pb);
+            codec->i_quant_factor = av_int2double(avio_rb64(pb));
+            codec->b_quant_factor = av_int2double(avio_rb64(pb));
+            codec->i_quant_offset = av_int2double(avio_rb64(pb));
+            codec->b_quant_offset = av_int2double(avio_rb64(pb));
+            codec->dct_algo = avio_rb32(pb);
+            codec->strict_std_compliance = avio_rb32(pb);
+            codec->max_b_frames = avio_rb32(pb);
+            codec->mpeg_quant = avio_rb32(pb);
+            codec->intra_dc_precision = avio_rb32(pb);
+            codec->me_method = avio_rb32(pb);
+            codec->mb_decision = avio_rb32(pb);
+            codec->nsse_weight = avio_rb32(pb);
+            codec->frame_skip_cmp = avio_rb32(pb);
+            codec->rc_buffer_aggressivity = av_int2double(avio_rb64(pb));
+            codec->codec_tag = avio_rb32(pb);
+            codec->thread_count = avio_r8(pb);
+            codec->coder_type = avio_rb32(pb);
+            codec->me_cmp = avio_rb32(pb);
+            codec->me_subpel_quality = avio_rb32(pb);
+            codec->me_range = avio_rb32(pb);
+            codec->keyint_min = avio_rb32(pb);
+            codec->scenechange_threshold = avio_rb32(pb);
+            codec->b_frame_strategy = avio_rb32(pb);
+            codec->qcompress = av_int2double(avio_rb64(pb));
+            codec->qblur = av_int2double(avio_rb64(pb));
+            codec->max_qdiff = avio_rb32(pb);
+            codec->refs = avio_rb32(pb);
+            break;
+        case MKBETAG('S', 'T', 'A', 'U'):
+            if (f_stau++ || codec->codec_type != AVMEDIA_TYPE_AUDIO) {
+                ret = AVERROR(EINVAL);
+                goto fail;
+            }
+            codec->sample_rate = avio_rb32(pb);
+            codec->channels = avio_rl16(pb);
+            codec->frame_size = avio_rl16(pb);
+            break;
+        case MKBETAG('C', 'P', 'R', 'V'):
+            if (f_cprv++) {
+                ret = AVERROR(EINVAL);
+                goto fail;
+            }
+            enc = avcodec_find_encoder(codec->codec_id);
+            if (enc && enc->priv_data_size && enc->priv_class) {
+                buffer = av_malloc(size + 1);
+                if (!buffer) {
+                    ret = AVERROR(ENOMEM);
                     goto fail;
                 }
-                codec->width = avio_rb16(pb);
-                codec->height = avio_rb16(pb);
-                codec->gop_size = avio_rb16(pb);
-                codec->pix_fmt = avio_rb32(pb);
-                codec->qmin = avio_r8(pb);
-                codec->qmax = avio_r8(pb);
-                codec->max_qdiff = avio_r8(pb);
-                codec->qcompress = avio_rb16(pb) / 10000.0;
-                codec->qblur = avio_rb16(pb) / 10000.0;
-                codec->bit_rate_tolerance = avio_rb32(pb);
-                avio_get_str(pb, INT_MAX, rc_eq_buf, sizeof(rc_eq_buf));
-                codec->rc_eq = av_strdup(rc_eq_buf);
-                codec->rc_max_rate = avio_rb32(pb);
-                codec->rc_min_rate = avio_rb32(pb);
-                codec->rc_buffer_size = avio_rb32(pb);
-                codec->i_quant_factor = av_int2double(avio_rb64(pb));
-                codec->b_quant_factor = av_int2double(avio_rb64(pb));
-                codec->i_quant_offset = av_int2double(avio_rb64(pb));
-                codec->b_quant_offset = av_int2double(avio_rb64(pb));
-                codec->dct_algo = avio_rb32(pb);
-                codec->strict_std_compliance = avio_rb32(pb);
-                codec->max_b_frames = avio_rb32(pb);
-                codec->mpeg_quant = avio_rb32(pb);
-                codec->intra_dc_precision = avio_rb32(pb);
-                codec->me_method = avio_rb32(pb);
-                codec->mb_decision = avio_rb32(pb);
-                codec->nsse_weight = avio_rb32(pb);
-                codec->frame_skip_cmp = avio_rb32(pb);
-                codec->rc_buffer_aggressivity = av_int2double(avio_rb64(pb));
-                codec->codec_tag = avio_rb32(pb);
-                codec->thread_count = avio_r8(pb);
-                codec->coder_type = avio_rb32(pb);
-                codec->me_cmp = avio_rb32(pb);
-                codec->me_subpel_quality = avio_rb32(pb);
-                codec->me_range = avio_rb32(pb);
-                codec->keyint_min = avio_rb32(pb);
-                codec->scenechange_threshold = avio_rb32(pb);
-                codec->b_frame_strategy = avio_rb32(pb);
-                codec->qcompress = av_int2double(avio_rb64(pb));
-                codec->qblur = av_int2double(avio_rb64(pb));
-                codec->max_qdiff = avio_rb32(pb);
-                codec->refs = avio_rb32(pb);
-                break;
-            case MKBETAG('S', 'T', 'A', 'U'):
-                codec->sample_rate = avio_rb32(pb);
-                codec->channels = avio_rl16(pb);
-                codec->frame_size = avio_rl16(pb);
-                break;
+                avio_get_str(pb, size, buffer, size + 1);
+                if ((ret = ffm_append_recommended_configuration(st, &buffer)) < 0)
+                    goto fail;
             }
+            break;
+        case MKBETAG('S', '2', 'V', 'I'):
+            if (f_stvi++ || !size || codec->codec_type != AVMEDIA_TYPE_VIDEO) {
+                ret = AVERROR(EINVAL);
+                goto fail;
+            }
+            buffer = av_malloc(size);
+            if (!buffer) {
+                ret = AVERROR(ENOMEM);
+                goto fail;
+            }
+            avio_get_str(pb, INT_MAX, buffer, size);
+            av_set_options_string(codec, buffer, "=", ",");
+            if ((ret = ffm_append_recommended_configuration(st, &buffer)) < 0)
+                goto fail;
+            break;
+        case MKBETAG('S', '2', 'A', 'U'):
+            if (f_stau++ || !size || codec->codec_type != AVMEDIA_TYPE_AUDIO) {
+                ret = AVERROR(EINVAL);
+                goto fail;
+            }
+            buffer = av_malloc(size);
+            if (!buffer) {
+                ret = AVERROR(ENOMEM);
+                goto fail;
+            }
+            avio_get_str(pb, INT_MAX, buffer, size);
+            av_set_options_string(codec, buffer, "=", ",");
+            if ((ret = ffm_append_recommended_configuration(st, &buffer)) < 0)
+                goto fail;
             break;
         }
         avio_seek(pb, next, SEEK_SET);
@@ -476,6 +564,11 @@ static int ffm_read_header(AVFormatContext *s)
             codec->height = avio_rb16(pb);
             codec->gop_size = avio_rb16(pb);
             codec->pix_fmt = avio_rb32(pb);
+            if (!av_pix_fmt_desc_get(codec->pix_fmt)) {
+                av_log(s, AV_LOG_ERROR, "Invalid pix fmt id: %d\n", codec->pix_fmt);
+                codec->pix_fmt = AV_PIX_FMT_NONE;
+                goto fail;
+            }
             codec->qmin = avio_r8(pb);
             codec->qmax = avio_r8(pb);
             codec->max_qdiff = avio_r8(pb);
@@ -523,7 +616,7 @@ static int ffm_read_header(AVFormatContext *s)
         default:
             goto fail;
         }
-        if (codec->flags & CODEC_FLAG_GLOBAL_HEADER) {
+        if (codec->flags & AV_CODEC_FLAG_GLOBAL_HEADER) {
             if (ff_get_extradata(codec, pb, avio_rb32(pb)) < 0)
                 return AVERROR(ENOMEM);
         }
@@ -558,7 +651,7 @@ static int ffm_read_packet(AVFormatContext *s, AVPacket *pkt)
         if ((ret = ffm_is_avail_data(s, FRAME_HEADER_SIZE+4)) < 0)
             return ret;
 
-        av_dlog(s, "pos=%08"PRIx64" spos=%"PRIx64", write_index=%"PRIx64" size=%"PRIx64"\n",
+        ff_dlog(s, "pos=%08"PRIx64" spos=%"PRIx64", write_index=%"PRIx64" size=%"PRIx64"\n",
                avio_tell(s->pb), s->pb->pos, ffm->write_index, ffm->file_size);
         if (ffm_read_data(s, ffm->header, FRAME_HEADER_SIZE, 1) !=
             FRAME_HEADER_SIZE)
@@ -616,7 +709,7 @@ static int ffm_seek(AVFormatContext *s, int stream_index, int64_t wanted_pts, in
     int64_t pts_min, pts_max, pts;
     double pos1;
 
-    av_dlog(s, "wanted_pts=%0.6f\n", wanted_pts / 1000000.0);
+    ff_dlog(s, "wanted_pts=%0.6f\n", wanted_pts / 1000000.0);
     /* find the position using linear interpolation (better than
        dichotomy in typical cases) */
     if (ffm->write_index && ffm->write_index < ffm->file_size) {

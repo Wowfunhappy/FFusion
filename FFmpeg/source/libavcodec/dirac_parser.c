@@ -150,6 +150,8 @@ static int dirac_combine_frame(AVCodecParserContext *s, AVCodecContext *avctx,
         void *new_buffer =
             av_fast_realloc(pc->buffer, &pc->buffer_size,
                             pc->index + (*buf_size - pc->sync_offset));
+        if (!new_buffer)
+            return AVERROR(ENOMEM);
         pc->buffer = new_buffer;
         memcpy(pc->buffer + pc->index, (*buf + pc->sync_offset),
                *buf_size - pc->sync_offset);
@@ -160,6 +162,8 @@ static int dirac_combine_frame(AVCodecParserContext *s, AVCodecContext *avctx,
         DiracParseUnit pu1, pu;
         void *new_buffer = av_fast_realloc(pc->buffer, &pc->buffer_size,
                                            pc->index + next);
+        if (!new_buffer)
+            return AVERROR(ENOMEM);
         pc->buffer = new_buffer;
         memcpy(pc->buffer + pc->index, *buf, next);
         pc->index += next;
@@ -200,7 +204,7 @@ static int dirac_combine_frame(AVCodecParserContext *s, AVCodecContext *avctx,
         if (parse_timing_info && pu1.prev_pu_offset >= 13) {
             uint8_t *cur_pu = pc->buffer +
                               pc->index - 13 - pu1.prev_pu_offset;
-            int pts = AV_RB32(cur_pu + 13);
+            int64_t pts = AV_RB32(cur_pu + 13);
             if (s->last_pts == 0 && s->last_dts == 0)
                 s->dts = pts - 1;
             else
@@ -258,7 +262,7 @@ static void dirac_parse_close(AVCodecParserContext *s)
     DiracParseContext *pc = s->priv_data;
 
     if (pc->buffer_size > 0)
-        av_free(pc->buffer);
+        av_freep(&pc->buffer);
 }
 
 AVCodecParser ff_dirac_parser = {

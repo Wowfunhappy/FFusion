@@ -45,6 +45,7 @@ typedef struct MJpegDecodeContext {
     AVClass *class;
     AVCodecContext *avctx;
     GetBitContext gb;
+    int buf_size;
 
     int start_code; /* current start code */
     int buffer_size;
@@ -62,9 +63,8 @@ typedef struct MJpegDecodeContext {
     int ls;
     int progressive;
     int rgb;
-    int upscale_h;
-    int chroma_height;
-    int upscale_v;
+    uint8_t upscale_h[4];
+    uint8_t upscale_v[4];
     int rct;            /* standard rct */
     int pegasus_rct;    /* pegasus reversible colorspace transform */
     int bits;           /* bits per component */
@@ -115,6 +115,7 @@ typedef struct MJpegDecodeContext {
     int buggy_avid;
     int cs_itu601;
     int interlace_polarity;
+    int multiscope;
 
     int mjpb_skiptosod;
 

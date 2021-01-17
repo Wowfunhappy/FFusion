@@ -266,7 +266,7 @@ static inline void xan_wc3_copy_pixel_run(XanContext *s, AVFrame *frame,
     prevframe_x = x + motion_x;
 
     if (prev_palette_plane == palette_plane && FFABS(motion_x + width*motion_y) < pixel_count) {
-         avpriv_request_sample(s->avctx, "Overlapping copy\n");
+         avpriv_request_sample(s->avctx, "Overlapping copy");
          return ;
     }
 
@@ -570,8 +570,8 @@ static int xan_decode_frame(AVCodecContext *avctx,
                 return AVERROR_INVALIDDATA;
             if (s->palettes_count >= PALETTES_MAX)
                 return AVERROR_INVALIDDATA;
-            tmpptr = av_realloc(s->palettes,
-                                (s->palettes_count + 1) * AVPALETTE_SIZE);
+            tmpptr = av_realloc_array(s->palettes,
+                                      s->palettes_count + 1, AVPALETTE_SIZE);
             if (!tmpptr)
                 return AVERROR(ENOMEM);
             s->palettes = tmpptr;
@@ -647,5 +647,5 @@ AVCodec ff_xan_wc3_decoder = {
     .init           = xan_decode_init,
     .close          = xan_decode_end,
     .decode         = xan_decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };

@@ -136,7 +136,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
     case 24:
              avctx->pix_fmt = AV_PIX_FMT_BGR24;
              break;
-    case 32: avctx->pix_fmt = AV_PIX_FMT_RGB32; break;
+    case 32: avctx->pix_fmt = AV_PIX_FMT_0RGB32; break;
     default: av_log(avctx, AV_LOG_ERROR, "Camtasia error: unknown depth %i bpp\n", avctx->bits_per_coded_sample);
              return AVERROR_PATCHWELCOME;
     }
@@ -187,5 +187,5 @@ AVCodec ff_tscc_decoder = {
     .init           = decode_init,
     .close          = decode_end,
     .decode         = decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };

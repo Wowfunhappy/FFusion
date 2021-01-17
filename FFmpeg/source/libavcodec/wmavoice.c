@@ -129,7 +129,7 @@ static const struct frame_type_desc {
 /**
  * WMA Voice decoding context.
  */
-typedef struct {
+typedef struct WMAVoiceContext {
     /**
      * @name Global values specified in the stream header / extradata or used all over.
      * @{
@@ -203,7 +203,7 @@ typedef struct {
                                   ///< to #wmavoice_decode_packet() (since
                                   ///< they're part of the previous superframe)
 
-    uint8_t sframe_cache[SFRAME_CACHE_MAXSIZE + FF_INPUT_BUFFER_PADDING_SIZE];
+    uint8_t sframe_cache[SFRAME_CACHE_MAXSIZE + AV_INPUT_BUFFER_PADDING_SIZE];
                                   ///< cache for superframe data split over
                                   ///< multiple packets
     int sframe_cache_size;        ///< set to >0 if we have data from an
@@ -405,6 +405,9 @@ static av_cold int wmavoice_decode_init(AVCodecContext *ctx)
         return AVERROR_INVALIDDATA;
     }
 
+    if (ctx->sample_rate >= INT_MAX / (256 * 37))
+        return AVERROR_INVALIDDATA;
+
     s->min_pitch_val    = ((ctx->sample_rate << 8)      /  400 + 50) >> 8;
     s->max_pitch_val    = ((ctx->sample_rate << 8) * 37 / 2000 + 50) >> 8;
     pitch_range         = s->max_pitch_val - s->min_pitch_val;
@@ -604,12 +607,14 @@ static void calc_input_response(WMAVoiceContext *s, float *lpcs,
     for (n = 0; n <= 64; n++) {
         float pwr;
 
-        idx = FFMAX(0, lrint((max - lpcs[n]) * irange) - 1);
+        idx = lrint((max - lpcs[n]) * irange - 1);
+        idx = FFMAX(0, idx);
         pwr = wmavoice_denoise_power_table[s->denoise_strength][idx];
         lpcs[n] = angle_mul * pwr;
 
         /* 70.57 =~ 1/log10(1.0331663) */
-        idx = (pwr * gain_mul - 0.0295) * 70.570526123;
+        idx = av_clipf((pwr * gain_mul - 0.0295) * 70.570526123, 0, INT_MAX / 2);
+
         if (idx > 127) { // fall back if index falls outside table range
             coeffs[n] = wmavoice_energy_table[127] *
                         powf(1.0331663, idx - 127);
@@ -1494,7 +1499,7 @@ static int synth_frame(AVCodecContext *ctx, GetBitContext *gb, int frame_idx,
 
         /* "pitch-diff-per-sample" for calculation of pitch per sample */
         s->pitch_diff_sh16 =
-            ((cur_pitch_val - s->last_pitch_val) << 16) / MAX_FRAMESIZE;
+            (cur_pitch_val - s->last_pitch_val) * (1 << 16) / MAX_FRAMESIZE;
     }
 
     /* Global gain (if silence) and pitch-adaptive window coordinates */
@@ -1889,6 +1894,9 @@ static int parse_packet_header(WMAVoiceContext *s)
     skip_bits(gb, 4);          // packet sequence number
     s->has_residual_lsps = get_bits1(gb);
     do {
+        if (get_bits_left(gb) < 6 + s->spillover_bitsize)
+            return AVERROR_INVALIDDATA;
+
         res = get_bits(gb, 6); // number of superframes per packet
                                // (minus first one if there is spillover)
         if (get_bits_left(gb) < 6 * (res == 0x3F) + s->spillover_bitsize)
@@ -2084,6 +2092,6 @@ AVCodec ff_wmavoice_decoder = {
     .init_static_data = wmavoice_init_static_data,
     .close            = wmavoice_decode_end,
     .decode           = wmavoice_decode_packet,
-    .capabilities     = CODEC_CAP_SUBFRAMES | CODEC_CAP_DR1,
+    .capabilities     = AV_CODEC_CAP_SUBFRAMES | AV_CODEC_CAP_DR1,
     .flush            = wmavoice_flush,
 };

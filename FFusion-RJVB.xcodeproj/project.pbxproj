@@ -7,10 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AB2FE86A25B3A29C00C96D74 /* CoreMedia.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AB2FE86925B3A29C00C96D74 /* CoreMedia.framework */; };
+		AB2FE86C25B3A2C800C96D74 /* VideoToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AB2FE86B25B3A2C800C96D74 /* VideoToolbox.framework */; };
 		AB38B77E25B3848700DBBE4A /* libavcodec.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 11D4EFA10A3CE8C10066D45F /* libavcodec.a */; };
 		AB38B77F25B3848700DBBE4A /* libavutil.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 11D4EFA20A3CE8C10066D45F /* libavutil.a */; };
 		AB38B78525B3848700DBBE4A /* libavdevice.a in Frameworks */ = {isa = PBXBuildFile; fileRef = AB38B78025B3848700DBBE4A /* libavdevice.a */; };
-		AB38B78625B3848700DBBE4A /* libavfilter.a in Frameworks */ = {isa = PBXBuildFile; fileRef = AB38B78125B3848700DBBE4A /* libavfilter.a */; };
 		AB38B78725B3848700DBBE4A /* libavformat.a in Frameworks */ = {isa = PBXBuildFile; fileRef = AB38B78225B3848700DBBE4A /* libavformat.a */; };
 		AB38B78825B3848700DBBE4A /* libswresample.a in Frameworks */ = {isa = PBXBuildFile; fileRef = AB38B78325B3848700DBBE4A /* libswresample.a */; };
 		AB38B78925B3848700DBBE4A /* libswscale.a in Frameworks */ = {isa = PBXBuildFile; fileRef = AB38B78425B3848700DBBE4A /* libswscale.a */; };
@@ -99,6 +100,8 @@
 		61D517710AE0402E00A671E1 /* CommonUtils.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CommonUtils.h; sourceTree = "<group>"; };
 		61D517720AE0402E00A671E1 /* CommonUtils.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = CommonUtils.c; sourceTree = "<group>"; };
 		83D1D6F40B4C85AB00E09EC9 /* Perian_icon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; name = Perian_icon.icns; path = Resources/Perian_icon.icns; sourceTree = "<group>"; };
+		AB2FE86925B3A29C00C96D74 /* CoreMedia.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreMedia.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.8.sdk/System/Library/Frameworks/CoreMedia.framework; sourceTree = DEVELOPER_DIR; };
+		AB2FE86B25B3A2C800C96D74 /* VideoToolbox.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = VideoToolbox.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.8.sdk/System/Library/Frameworks/VideoToolbox.framework; sourceTree = DEVELOPER_DIR; };
 		AB38B78025B3848700DBBE4A /* libavdevice.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavdevice.a; path = FFmpeg/osx86/lib/libavdevice.a; sourceTree = "<group>"; };
 		AB38B78125B3848700DBBE4A /* libavfilter.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavfilter.a; path = FFmpeg/osx86/lib/libavfilter.a; sourceTree = "<group>"; };
 		AB38B78225B3848700DBBE4A /* libavformat.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavformat.a; path = FFmpeg/osx86/lib/libavformat.a; sourceTree = "<group>"; };
@@ -2290,8 +2293,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AB2FE86C25B3A2C800C96D74 /* VideoToolbox.framework in Frameworks */,
+				AB2FE86A25B3A29C00C96D74 /* CoreMedia.framework in Frameworks */,
 				AB38B78525B3848700DBBE4A /* libavdevice.a in Frameworks */,
-				AB38B78625B3848700DBBE4A /* libavfilter.a in Frameworks */,
 				AB38B78725B3848700DBBE4A /* libavformat.a in Frameworks */,
 				AB38B78825B3848700DBBE4A /* libswresample.a in Frameworks */,
 				AB38B78925B3848700DBBE4A /* libswscale.a in Frameworks */,
@@ -2315,6 +2319,8 @@
 		089C166AFE841209C02AAC07 /* ffmpeg DivX */ = {
 			isa = PBXGroup;
 			children = (
+				AB2FE86B25B3A2C800C96D74 /* VideoToolbox.framework */,
+				AB2FE86925B3A29C00C96D74 /* CoreMedia.framework */,
 				AB38B78025B3848700DBBE4A /* libavdevice.a */,
 				AB38B78125B3848700DBBE4A /* libavfilter.a */,
 				AB38B78225B3848700DBBE4A /* libavformat.a */,

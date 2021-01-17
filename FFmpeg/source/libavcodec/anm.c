@@ -47,8 +47,10 @@ static av_cold int decode_init(AVCodecContext *avctx)
         return AVERROR(ENOMEM);
 
     bytestream2_init(&s->gb, avctx->extradata, avctx->extradata_size);
-    if (bytestream2_get_bytes_left(&s->gb) < 16 * 8 + 4 * 256)
+    if (bytestream2_get_bytes_left(&s->gb) < 16 * 8 + 4 * 256) {
+        av_frame_free(&s->frame);
         return AVERROR_INVALIDDATA;
+    }
 
     bytestream2_skipu(&s->gb, 16 * 8);
     for (i = 0; i < 256; i++)
@@ -116,6 +118,9 @@ static int decode_frame(AVCodecContext *avctx,
     const int buf_size = avpkt->size;
     uint8_t *dst, *dst_end;
     int count, ret;
+
+    if (buf_size < 7)
+        return AVERROR_INVALIDDATA;
 
     if ((ret = ff_reget_buffer(avctx, s->frame)) < 0)
         return ret;
@@ -196,5 +201,5 @@ AVCodec ff_anm_decoder = {
     .init           = decode_init,
     .close          = decode_end,
     .decode         = decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };

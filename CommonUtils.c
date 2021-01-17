@@ -469,18 +469,12 @@ static int isApplicationNameInList(void *prefOverrideIgnored, const char *defaul
 
 int IsFrameDroppingEnabled()
 {
-	static int enabled = -1;
+	static int enabled = 1;
 
-#if TARGET_OS_MAC
 	if (enabled == -1)
 		enabled = isApplicationNameInList(CFSTR("FrameDroppingWhiteList"),
 										  defaultFrameDroppingList,
 										  sizeof(defaultFrameDroppingList)/sizeof(defaultFrameDroppingList[0]));
-#else
-	enabled = isApplicationNameInList( NULL,
-									  defaultFrameDroppingList,
-									  sizeof(defaultFrameDroppingList)/sizeof(defaultFrameDroppingList[0]));
-#endif
 	return enabled;
 }
 

@@ -28,7 +28,7 @@
 #define PVA_AUDIO_PAYLOAD       0x02
 #define PVA_MAGIC               (('A' << 8) + 'V')
 
-typedef struct {
+typedef struct PVAContext {
     int continue_pes;
 } PVAContext;
 
@@ -133,6 +133,10 @@ recover:
             pes_packet_length      = avio_rb16(pb);
             pes_flags              = avio_rb16(pb);
             pes_header_data_length = avio_r8(pb);
+
+            if (avio_feof(pb)) {
+                return AVERROR_EOF;
+            }
 
             if (pes_signal != 1 || pes_header_data_length == 0) {
                 pva_log(s, AV_LOG_WARNING, "expected non empty signaled PES packet, "

@@ -34,7 +34,6 @@
 #include "get_bits.h"
 #include "dct.h"
 #include "rdft.h"
-#include "fmtconvert.h"
 #include "internal.h"
 #include "wma_freqs.h"
 #include "libavutil/intfloat.h"
@@ -44,7 +43,7 @@ static float quant_table[96];
 #define MAX_CHANNELS 2
 #define BINK_BLOCK_MAX_SIZE (MAX_CHANNELS << 11)
 
-typedef struct {
+typedef struct BinkAudioContext {
     GetBitContext gb;
     int version_b;          ///< Bink version 'b'
     int first;
@@ -94,6 +93,8 @@ static av_cold int decode_init(AVCodecContext *avctx)
     if (avctx->codec->id == AV_CODEC_ID_BINKAUDIO_RDFT) {
         // audio is already interleaved for the RDFT format variant
         avctx->sample_fmt = AV_SAMPLE_FMT_FLT;
+        if (sample_rate > INT_MAX / avctx->channels)
+            return AVERROR_INVALIDDATA;
         sample_rate  *= avctx->channels;
         s->channels = 1;
         if (!s->version_b)
@@ -106,7 +107,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
     s->frame_len     = 1 << frame_len_bits;
     s->overlap_len   = s->frame_len / 16;
     s->block_size    = (s->frame_len - s->overlap_len) * s->channels;
-    sample_rate_half = (sample_rate + 1) / 2;
+    sample_rate_half = (sample_rate + 1LL) / 2;
     if (avctx->codec->id == AV_CODEC_ID_BINKAUDIO_RDFT)
         s->root = 2.0 / (sqrt(s->frame_len) * 32768.0);
     else
@@ -303,10 +304,10 @@ static int decode_frame(AVCodecContext *avctx, void *data,
             av_log(avctx, AV_LOG_ERROR, "Packet is too small\n");
             return AVERROR_INVALIDDATA;
         }
-        buf = av_realloc(s->packet_buffer, avpkt->size + FF_INPUT_BUFFER_PADDING_SIZE);
+        buf = av_realloc(s->packet_buffer, avpkt->size + AV_INPUT_BUFFER_PADDING_SIZE);
         if (!buf)
             return AVERROR(ENOMEM);
-        memset(buf + avpkt->size, 0, FF_INPUT_BUFFER_PADDING_SIZE);
+        memset(buf + avpkt->size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
         s->packet_buffer = buf;
         memcpy(s->packet_buffer, avpkt->data, avpkt->size);
         if ((ret = init_get_bits8(gb, s->packet_buffer, avpkt->size)) < 0)
@@ -344,7 +345,7 @@ AVCodec ff_binkaudio_rdft_decoder = {
     .init           = decode_init,
     .close          = decode_end,
     .decode         = decode_frame,
-    .capabilities   = CODEC_CAP_DELAY | CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_DR1,
 };
 
 AVCodec ff_binkaudio_dct_decoder = {
@@ -356,5 +357,5 @@ AVCodec ff_binkaudio_dct_decoder = {
     .init           = decode_init,
     .close          = decode_end,
     .decode         = decode_frame,
-    .capabilities   = CODEC_CAP_DELAY | CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_DR1,
 };
