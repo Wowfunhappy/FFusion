@@ -33,7 +33,7 @@ if [ "$MACOSX_DEPLOYMENT_TARGET" = "" ]; then
 	MACOSX_DEPLOYMENT_TARGET="10.6"
 fi
 
-configureflags="--cc=$CC --disable-amd3dnow --disable-doc --enable-encoders \
+configureflags="--cc=$CC --disable-amd3dnow --disable-doc --disable-encoders \
      --enable-ffprobe --disable-ffserver --enable-muxers --disable-network --enable-libopenjpeg \
 	--extra-cflags=-I/opt/local/include --extra-ldflags=-L/opt/local/lib \
      --enable-swscale --enable-avfilter --disable-avdevice --enable-ffmpeg --disable-ffplay --target-os=darwin"

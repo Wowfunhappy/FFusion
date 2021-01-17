@@ -275,42 +275,6 @@ bail:
     return pix_fmt;
 }
 
-/*static enum AVPixelFormat FindPixFmtFromVideo(AVCodec *codec, AVCodecContext *avctx, Ptr data, int bufferSize)
-{
-	AVCodecContext tmpContext;
-	AVFrame tmpFrame;
-	int got_picture = 0;
-	enum AVPixelFormat pix_fmt;
-	AVPacket pkt;
-	
-	avcodec_get_context_defaults3(&tmpContext, AVMEDIA_TYPE_VIDEO);
-	avcodec_get_frame_defaults(&tmpFrame);
-	tmpContext.width = avctx->width;
-	tmpContext.height = avctx->height;
-	tmpContext.flags = avctx->flags;
-	tmpContext.bits_per_coded_sample = avctx->bits_per_coded_sample;
-	tmpContext.codec_tag = avctx->codec_tag;
-	tmpContext.codec_id  = avctx->codec_id;
-	tmpContext.extradata = avctx->extradata;
-	tmpContext.extradata_size = avctx->extradata_size;
-	
-	avcodec_open2(&tmpContext, codec, NULL);
-	av_init_packet(&pkt);
-	pkt.data = (UInt8*)data;
-	pkt.size = bufferSize;
-	avcodec_decode_video2(&tmpContext, &tmpFrame, &got_picture, &pkt);
-	pix_fmt = tmpContext.pix_fmt;
-	avcodec_close(&tmpContext);
-	if( got_picture ){
-		// 		ffCodecprintf( stderr, "Found picture number %d, fmt=%d", tmpFrame.display_picture_number, pix_fmt );
-	}
-	else{
-		ffCodecprintf( stderr, "Found no picture, fmt=%d", pix_fmt );
-	}
-	
-	return pix_fmt;
-}*/
-
 static void SetupMultithreadedDecoding(AVCodecContext *s, enum AVCodecID codecID)
 {
 	int nthreads = 1;
@@ -340,11 +304,7 @@ static void SetupMultithreadedDecoding(AVCodecContext *s, enum AVCodecID codecID
 static void SetSkipLoopFilter(FFusionGlobals glob, AVCodecContext *avctx)
 {
 	Boolean keyExists = FALSE;
-#if TARGET_OS_MAC
 	int loopFilterSkip = CFPreferencesGetAppIntegerValue(CFSTR("SkipLoopFilter"), FFUSION_PREF_DOMAIN, &keyExists);
-#else
-	int loopFilterSkip = 0;
-#endif
 	if(keyExists)
 	{
 		enum AVDiscard loopFilterValue = AVDISCARD_DEFAULT;
@@ -622,7 +582,7 @@ pascal ComponentResult FFusionCodecInitialize(FFusionGlobals glob, ImageSubCodec
     // support asynchronous decompression.
 	
     cap->decompressRecordSize = sizeof(FFusionDecompressRecord) + 12;
-    cap->canAsync = true;
+    //cap->canAsync = true;
 	
 	// QT 7
 	if(cap->recordSize > offsetof(ImageSubCodecDecompressCapabilities, baseCodecShouldCallDecodeBandForAllFrames))
@@ -708,10 +668,17 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 		{
 			asl_log(NULL, NULL, ASL_LEVEL_ERR, "ComponentType: %s", FourCCString(glob->componentType));
 			asl_log(NULL, NULL, ASL_LEVEL_ERR, "Warning! Unknown codec type! Using MPEG4 by default.\n");
-			codecID = CODEC_ID_MPEG4;
+			codecID = AV_CODEC_ID_MPEG4;
 		}
 		
-		glob->avCodec = avcodec_find_decoder(codecID);
+		if (codecID == AV_CODEC_ID_VP9) {
+			glob->avCodec = avcodec_find_decoder_by_name("libvpx-vp9");
+		}
+		else {
+			glob->avCodec = avcodec_find_decoder(codecID);
+		}
+		
+		asl_log(NULL, NULL, ASL_LEVEL_ERR, "Testing: %s", glob->avCodec->long_name);
 		//		if(glob->packedType != PACKED_QUICKTIME_KNOWS_ORDER)
 		glob->begin.parser = ffusionParserInit(codecID);
 		
