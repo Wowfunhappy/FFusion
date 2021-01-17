@@ -679,6 +679,7 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 		}
 		
 		asl_log(NULL, NULL, ASL_LEVEL_ERR, "Testing: %s", glob->avCodec->long_name);
+		
 		//		if(glob->packedType != PACKED_QUICKTIME_KNOWS_ORDER)
 		glob->begin.parser = ffusionParserInit(codecID);
 		

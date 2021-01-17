@@ -222,12 +222,6 @@ int getCodecID(OSType componentType)
 			codecID = AV_CODEC_ID_THEORA;
 			break;
 
-		// RJVB
-		case 'mjp2':
-		case '2pjm':
-			codecID = AV_CODEC_ID_JPEG2000;
-			break;
-
 		case kSubFormatVobSub:
 			codecID = AV_CODEC_ID_DVD_SUBTITLE;
 			break;
@@ -380,13 +374,6 @@ pascal ComponentResult getFFusionCodecInfo(ComponentInstance self, OSType compon
 				err = GetComponentResource((Component)self, codecInfoResourceType, kXVIDCodecInfoResID, (Handle *)&tempCodecInfo);
 				break;
 
-			// RJVB
-			case 'mjp2':
-			case '2pjm':
-
-				err = GetComponentResource((Component)self, codecInfoResourceType, kMJP2CodecInfoResID, (Handle *)&tempCodecInfo);
-				break;
-
 			case 'RMP4':
 			case 'SEDG':
 			case 'WV1F':
@@ -535,7 +522,6 @@ pascal ComponentResult getFFusionCodecInfo(ComponentInstance self, OSType compon
 			case 'hevc':
 			case 'hvc1':
 			case 'hev1':
-				
 				err = GetComponentResource((Component)self, codecInfoResourceType, kHEVCCodecInfoResID, (Handle *)&tempCodecInfo);
 				break;
 

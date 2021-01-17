@@ -224,31 +224,6 @@ resource 'dlle' (kDivX1CodecInfoResID) {
 #define kCodecSubType 'avc1'
 #include "Resources/FFusionResourceInc.r"
 
-#define kCodecVersion kFFusionCodecVersion
-#define kCodecManufacturer kFFusionCodecManufacturer
-#define kCodecInfoResID kHEVCCodecInfoResID
-#define kCodecName "H.265"
-
-#define kCodecDescription "FFusion decompresses video stored in H.265 format."
-#define kCodecSubType 'H265'
-#include "Resources/FFusionResourceInc.r"
-#define kCodecSubType 'h265'
-#include "Resources/FFusionResourceInc.r"
-#define kCodecSubType 'X265'
-#include "Resources/FFusionResourceInc.r"
-#define kCodecSubType 'x265'
-#include "Resources/FFusionResourceInc.r"
-#define kCodecSubType 'HEV1'
-#include "Resources/FFusionResourceInc.r"
-#define kCodecSubType 'hev1'
-#include "Resources/FFusionResourceInc.r"
-#define kCodecSubType 'HEVC'
-#include "Resources/FFusionResourceInc.r"
-#define kCodecSubType 'hevc'
-#include "Resources/FFusionResourceInc.r"
-#define kCodecSubType 'hvc1'
-#include "Resources/FFusionResourceInc.r"
-
 #define kCodecInfoResID kFLV1CodecInfoResID
 #define kCodecName "Sorenson H.263"
 
@@ -275,7 +250,6 @@ resource 'dlle' (kDivX1CodecInfoResID) {
 #include "Resources/FFusionResourceInc.r"  
 
 #define kCodecInfoResID kVP6CodecInfoResID
-
 
 #define kCodecDescription "FFusion decompresses video stored in On2 VP6 format."
 #define kCodecSubType 'VP6F'
@@ -426,6 +400,32 @@ resource 'dlle' (kDivX1CodecInfoResID) {
 #define kCodecSubType 'VP90'
 #include "Resources/FFusionResourceInc.r"
 #define kCodecSubType 'vp09'
+#include "Resources/FFusionResourceInc.r"
+
+
+
+
+#define kCodecInfoResID kHEVCCodecInfoResID
+#define kCodecName "High Efficiency Video Coding"
+
+#define kCodecDescription "FFusion decompresses video stored in HEVC format."
+#define kCodecSubType 'H265'
+#include "Resources/FFusionResourceInc.r"
+#define kCodecSubType 'h265'
+#include "Resources/FFusionResourceInc.r"
+#define kCodecSubType 'X265'
+#include "Resources/FFusionResourceInc.r"
+#define kCodecSubType 'x265'
+#include "Resources/FFusionResourceInc.r"
+#define kCodecSubType 'HEV1'
+#include "Resources/FFusionResourceInc.r"
+#define kCodecSubType 'hev1'
+#include "Resources/FFusionResourceInc.r"
+#define kCodecSubType 'HEVC'
+#include "Resources/FFusionResourceInc.r"
+#define kCodecSubType 'hevc'
+#include "Resources/FFusionResourceInc.r"
+#define kCodecSubType 'hvc1'
 #include "Resources/FFusionResourceInc.r"
 
 #define kCodecInfoResID kFFv1CodecInfoResID

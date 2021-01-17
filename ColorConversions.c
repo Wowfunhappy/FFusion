@@ -641,8 +641,8 @@ OSType ColorConversionDstForPixFmt(enum AVCodecID codecID, enum AVPixelFormat ff
 			// QT only seems to know indexed grayscale, so we use RGB with 3 identical colour values...
 			return k24RGBPixelFormat;
 		default:
-			return k2vuyPixelFormat; //FIXME
-			//return 0; // error
+			//return k2vuyPixelFormat; //Just guess the right format
+			return 0;
 	}
 }
 
