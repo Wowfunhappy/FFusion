@@ -8,7 +8,7 @@ If you have youtube-dl installed, run:
 
 Snow Leopard, Lion, and Mountain Lion ship with QuickTime Player 10.0, 10.1, and 10.2 respectively. Mavericks comes with QuickTime 10.3, but can be downgraded to [this modified version](https://github.com/Wowfunhappy/QuickTime-Fixer/releases/tag/2021.01.19) which I created. Ugly flat versions of macOS are out of luck, sorry!
 
-Notably absent from this project is HEVC support. Please see http://ffmpeg.org/pipermail/libav-user/2021-January/012644.html, and get in touch if you have any ideas!
+**Notably absent from this project is HEVC support. Please see http://ffmpeg.org/pipermail/libav-user/2021-January/012644.html, and get in touch if you have any ideas!**
 
 ---
 
