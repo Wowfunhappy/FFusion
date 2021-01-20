@@ -9,7 +9,7 @@ If your video is available in 4K, the downloaded copy should be playable in Quic
 
 Snow Leopard, Lion, and Mountain Lion ship with QuickTime 10.0, 10.1, and 10.2 respectively. On Mavericks, you'll need to downgrade your copy of QuickTime to [this modified version](https://github.com/Wowfunhappy/QuickTime-Fixer/releases/tag/2021.01.19). (Newer versions of macOS are out of luck. Sorry!)
 
-Notably absent from this project is HEVC support. It is supported by our version of FFmpeg, but avcodec_decode_video2 always returns AVERROR_INVALIDDATA. Please get in touch if you have any ideas!
+Notably absent from this project is HEVC support. Please see http://ffmpeg.org/pipermail/libav-user/2021-January/012644.html, and get in touch if you have any ideas!
 
 ---
 
