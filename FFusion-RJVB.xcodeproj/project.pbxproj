@@ -10,7 +10,6 @@
 		AB2FE86A25B3A29C00C96D74 /* CoreMedia.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AB2FE86925B3A29C00C96D74 /* CoreMedia.framework */; };
 		AB2FE86C25B3A2C800C96D74 /* VideoToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AB2FE86B25B3A2C800C96D74 /* VideoToolbox.framework */; };
 		ABAC75C125B4A00E00B55ABF /* libavcodec.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 11D4EFA10A3CE8C10066D45F /* libavcodec.a */; };
-		ABAC75C225B4A00E00B55ABF /* libavfilter.a in Frameworks */ = {isa = PBXBuildFile; fileRef = AB38B78125B3848700DBBE4A /* libavfilter.a */; };
 		ABAC75C325B4A00E00B55ABF /* libavformat.a in Frameworks */ = {isa = PBXBuildFile; fileRef = AB38B78225B3848700DBBE4A /* libavformat.a */; };
 		ABAC75C425B4A00E00B55ABF /* libavutil.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 11D4EFA20A3CE8C10066D45F /* libavutil.a */; };
 		ABAC75C525B4A00E00B55ABF /* libswresample.a in Frameworks */ = {isa = PBXBuildFile; fileRef = AB38B78325B3848700DBBE4A /* libswresample.a */; };
@@ -2286,7 +2285,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				ABAC75C125B4A00E00B55ABF /* libavcodec.a in Frameworks */,
-				ABAC75C225B4A00E00B55ABF /* libavfilter.a in Frameworks */,
 				ABAC75C325B4A00E00B55ABF /* libavformat.a in Frameworks */,
 				ABAC75C425B4A00E00B55ABF /* libavutil.a in Frameworks */,
 				ABAC75C525B4A00E00B55ABF /* libswresample.a in Frameworks */,

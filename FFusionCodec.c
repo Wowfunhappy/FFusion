@@ -813,7 +813,7 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 		
 
 
-		//glob->avContext->flags2 |= CODEC_FLAG2_FAST;
+		glob->avContext->flags2 |= CODEC_FLAG2_FAST;
 
 
 		

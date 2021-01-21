@@ -91,7 +91,7 @@ static uint8_t *createBuffer(FFusionData *data, int dataSize)
 	if(data->ringWrite >= data->ringRead)
 	{
 		//Write is after read
-		if(data->ringWrite + dataSize + FF_INPUT_BUFFER_PADDING_SIZE < data->ringSize)
+		if(data->ringWrite + dataSize + AV_INPUT_BUFFER_PADDING_SIZE < data->ringSize)
 		{
 			//Found at end
 			int offset = data->ringWrite;
@@ -102,7 +102,7 @@ static uint8_t *createBuffer(FFusionData *data, int dataSize)
 			//Can't fit at end, loop
 			data->ringWrite = 0;
 	}
-	if(data->ringWrite + dataSize + FF_INPUT_BUFFER_PADDING_SIZE < data->ringRead)
+	if(data->ringWrite + dataSize + AV_INPUT_BUFFER_PADDING_SIZE < data->ringRead)
 	{
 		//Found at write
 		int offset = data->ringWrite;
@@ -122,7 +122,7 @@ static uint8_t *insertIntoBuffer(FFusionData *data, uint8_t *buffer, int dataSiz
 {
 	uint8_t *ret = createBuffer(data, dataSize);
 	memcpy(ret, buffer, dataSize);
-	memset(ret + dataSize, 0, FF_INPUT_BUFFER_PADDING_SIZE);
+	memset(ret + dataSize, 0, AV_INPUT_BUFFER_PADDING_SIZE);
 	return ret;
 }
 
