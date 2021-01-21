@@ -582,7 +582,7 @@ pascal ComponentResult FFusionCodecInitialize(FFusionGlobals glob, ImageSubCodec
     // support asynchronous decompression.
 	
     cap->decompressRecordSize = sizeof(FFusionDecompressRecord) + 12;
-    //cap->canAsync = true;
+    cap->canAsync = true;
 	
 	// QT 7
 	if(cap->recordSize > offsetof(ImageSubCodecDecompressCapabilities, baseCodecShouldCallDecodeBandForAllFrames))
@@ -591,7 +591,7 @@ pascal ComponentResult FFusionCodecInitialize(FFusionGlobals glob, ImageSubCodec
 		cap->subCodecSupportsOutOfOrderDisplayTimes = true;
 		cap->baseCodecShouldCallDecodeBandForAllFrames = !doExperimentalFlags;
 		cap->subCodecSupportsScheduledBackwardsPlaybackWithDifferenceFrames = true;
-		cap->subCodecSupportsDrawInDecodeOrder = doExperimentalFlags;
+		cap->subCodecSupportsDrawInDecodeOrder = true;
 		cap->subCodecSupportsDecodeSmoothing = true;
 	}
 	
@@ -670,8 +670,7 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 			//asl_log(NULL, NULL, ASL_LEVEL_ERR, "Warning! Unknown codec type! Using MPEG4 by default.\n");
 			codecID = AV_CODEC_ID_MPEG4;
 		}
-		
-		if (codecID == AV_CODEC_ID_VP9) {
+		else if (codecID == AV_CODEC_ID_VP9) {
 			glob->avCodec = avcodec_find_decoder_by_name("libvpx-vp9");
 		}
 		else {
@@ -694,7 +693,7 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
         glob->avContext = avcodec_alloc_context3(glob->avCodec);
 		
 		// Use low delay
-		glob->avContext->flags |= CODEC_FLAG_LOW_DELAY;
+		glob->avContext->flags |= AV_CODEC_FLAG_LOW_DELAY;
 		
         // Image size is mandatory for DivX-like codecs
 		
@@ -811,12 +810,9 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 		// deblock skipping for h264
 		SetSkipLoopFilter(glob, glob->avContext);
 		
+		glob->avContext->flags2 |= AV_CODEC_FLAG2_FAST;
 
 
-		glob->avContext->flags2 |= CODEC_FLAG2_FAST;
-
-
-		
         // Finally we open the avcodec
 		
         if (avcodec_open2(glob->avContext, glob->avCodec, NULL))
