@@ -166,7 +166,7 @@ static OSErr FFusionDecompress(FFusionGlobals glob, AVCodecContext *context, UIn
 static int FFusionGetBuffer(AVCodecContext *s, AVFrame *pic);
 static void FFusionReleaseBuffer(AVCodecContext *s, AVFrame *pic);
 static FFusionBuffer *retainBuffer(FFusionGlobals glob, FFusionBuffer *buf);
-static void releaseBuffer(AVCodecContext *s, AVFrame *pic);
+static void releaseBuffer(AVCodecContext *s, FFusionBuffer *buf);
 
 int GetPPUserPreference();
 void SetPPUserPreference(int value);
@@ -354,7 +354,7 @@ void setFutureFrame(FFusionGlobals glob, FFusionBuffer *newFuture)
 		retainBuffer(glob, newFuture);
 	glob->decode.futureBuffer = newFuture;
 	if(temp != NULL)
-		releaseBuffer(glob->avContext, temp->frame);
+		releaseBuffer(glob->avContext, temp);
 }
 
 //---------------------------------------------------------------------------
@@ -1388,8 +1388,10 @@ pascal ComponentResult FFusionCodecEndBand(FFusionGlobals glob, ImageSubCodecDec
 	FFusionBuffer *buf = myDrp->buffer;
 	
 	glob->stats.type[drp->frameType].end_calls++;
-	if(buf && buf->frame)
-		releaseBuffer(glob->avContext, buf->frame);
+	if(buf && buf->frame) {
+		asl_log(NULL, NULL, ASL_LEVEL_ERR, "%p Test: %p, %p, retain count: %d", glob, buf, buf->frame->opaque, buf->retainCount);
+		releaseBuffer(glob->avContext, buf);
+	}
 	
 	//	//asl_log(NULL, NULL, ASL_LEVEL_ERR, "%p EndBand #%d.\n", glob, myDrp->frameNumber);
 #if TARGET_OS_WIN32
@@ -1449,7 +1451,7 @@ static int FFusionGetBuffer(AVCodecContext *s, AVFrame *pic)
 	if (ret >= 0) {
 		for (i = 0; i < FFUSION_MAX_BUFFERS; i++) {
 			if (!glob->buffers[i].retainCount) {
-				//				//asl_log(NULL, NULL, ASL_LEVEL_ERR, "%p Starting Buffer %p.\n", glob, &glob->buffers[i]);
+				asl_log(NULL, NULL, ASL_LEVEL_ERR, "%p Starting Buffer %p.\n", glob, &glob->buffers[i]);
 				pic->opaque = &glob->buffers[i];
 				glob->buffers[i].frame = pic;
 				memcpy(&glob->buffers[i].picture, pic, sizeof(AVPicture));
@@ -1467,21 +1469,21 @@ static FFusionBuffer *retainBuffer(FFusionGlobals glob, FFusionBuffer *buf)
 {
 	buf->retainCount++;
 
-	//asl_log(NULL, NULL, ASL_LEVEL_ERR, "%p Retained Buffer %p #%d to %d.\n", glob, buf, buf->frameNumber, buf->retainCount);
+	asl_log(NULL, NULL, ASL_LEVEL_ERR, "%p Retained Buffer %p #%d to %d.\n", glob, buf, buf->frameNumber, buf->retainCount);
 	return buf;
 }
 
-static void releaseBuffer(AVCodecContext *s, AVFrame *pic)
+static void releaseBuffer(AVCodecContext *s, FFusionBuffer *buf)
 {
-	FFusionBuffer *buf = pic->opaque;
+	FFusionGlobals glob = (FFusionGlobals)s->opaque;
+	asl_log(NULL, NULL, ASL_LEVEL_ERR, "%p Asked to release buffer %p", glob, buf);
 	
 	buf->retainCount--;
-	
-	FFusionGlobals glob = (FFusionGlobals)s->opaque;
-	//asl_log(NULL, NULL, ASL_LEVEL_ERR, "%p Released Buffer %p #%d to %d.\n", glob, buf, buf->frameNumber, buf->retainCount);
+
+	asl_log(NULL, NULL, ASL_LEVEL_ERR, "%p Released Buffer %p #%d to %d.\n", glob, buf, buf->frameNumber, buf->retainCount);
 	if(!buf->retainCount)
 	{
-		//asl_log(NULL, NULL, ASL_LEVEL_ERR, "%p Buffer gone %p #%d", glob, buf, buf->frameNumber);
+		asl_log(NULL, NULL, ASL_LEVEL_ERR, "%p Buffer gone %p #%d", glob, buf, buf->frameNumber);
 		buf->picture.data[0] = NULL;
 	}
 }
@@ -1498,6 +1500,8 @@ OSErr FFusionDecompress(FFusionGlobals glob, AVCodecContext *context, UInt8 *dat
 	int len = 0;
 	AVPacket pkt;
 	
+	pkt.buf = NULL;
+	
 	//asl_log(NULL, NULL, ASL_LEVEL_ERR, "%p Decompress %d bytes.\n", glob, length);
 	avcodec_get_frame_defaults(picture);
 	av_frame_unref(picture);
@@ -1508,7 +1512,7 @@ OSErr FFusionDecompress(FFusionGlobals glob, AVCodecContext *context, UInt8 *dat
 	len = avcodec_decode_video2(context, picture, &got_picture, &pkt);
 	if( !got_picture ){
 		// RJVB 20131016
-		memset( picture, 0, sizeof(*picture) );
+		//memset( picture, 0, sizeof(*picture) );
 		//asl_log(NULL, NULL, ASL_LEVEL_ERR, "Found no picture, len=%d", len );
 	}
 	
