@@ -656,9 +656,6 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
     { OSType componentType = glob->componentType;
 		enum AVCodecID codecID = getCodecID(componentType);
 		
-#if TARGET_OS_MAC
-		SwitchCocoaToMultiThreadedMode();
-#endif
 		FFInitFFmpeg();
 		initFFusionParsers();
 		

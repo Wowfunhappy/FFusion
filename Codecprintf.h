@@ -30,7 +30,7 @@
 #endif
 #ifdef __MACH__
 #	include <QuickTime/QuickTime.h>
-#	include "Logging/NSLoggerClient.h"
+//#	include "Logging/NSLoggerClient.h"
 #else
 #	include <ConditionalMacros.h>
 #	include <Endian.h>
