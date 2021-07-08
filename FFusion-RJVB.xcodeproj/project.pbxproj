@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		AB2FE86A25B3A29C00C96D74 /* CoreMedia.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AB2FE86925B3A29C00C96D74 /* CoreMedia.framework */; };
 		AB2FE86C25B3A2C800C96D74 /* VideoToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AB2FE86B25B3A2C800C96D74 /* VideoToolbox.framework */; };
+		AB9E325326975B1E0047DE6E /* FFusion.component in CopyFiles */ = {isa = PBXBuildFile; fileRef = D67BC4B216B166FF00E26386 /* FFusion.component */; };
 		ABAC75C125B4A00E00B55ABF /* libavcodec.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 11D4EFA10A3CE8C10066D45F /* libavcodec.a */; };
 		ABAC75C325B4A00E00B55ABF /* libavformat.a in Frameworks */ = {isa = PBXBuildFile; fileRef = AB38B78225B3848700DBBE4A /* libavformat.a */; };
 		ABAC75C425B4A00E00B55ABF /* libavutil.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 11D4EFA20A3CE8C10066D45F /* libavutil.a */; };
@@ -66,6 +67,19 @@
 			script = "RAGEL=${PROJECT_DIR}/Binaries/ragel\nRLCODEGEN=${PROJECT_DIR}/Binaries/rlgen-cd\n[ ${INPUT_FILE_PATH} -nt ${DERIVED_FILES_DIR}/${INPUT_FILE_BASE} ] || exit 0\n${RAGEL} ${INPUT_FILE_PATH} | ${RLCODEGEN} -T0 -o ${DERIVED_FILES_DIR}/${INPUT_FILE_BASE}\n";
 		};
 /* End PBXBuildRule section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		AB9E325226975ACF0047DE6E /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "~/Library/QuickTime";
+			dstSubfolderSpec = 0;
+			files = (
+				AB9E325326975B1E0047DE6E /* FFusion.component in CopyFiles */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		113F58980A6B091600509987 /* Codecprintf.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = Codecprintf.h; sourceTree = "<group>"; };
@@ -4966,6 +4980,7 @@
 				D67BC47416B166FF00E26386 /* Sources */,
 				D67BC49816B166FF00E26386 /* Frameworks */,
 				D67BC58016B195C900E26386 /* Rez */,
+				AB9E325226975ACF0047DE6E /* CopyFiles */,
 			);
 			buildRules = (
 				D67BC4AC16B166FF00E26386 /* PBXBuildRule */,
