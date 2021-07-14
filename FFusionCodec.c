@@ -269,11 +269,11 @@ static enum AVPixelFormat FindPixFmtFromVideo(AVCodec *codec, AVCodecContext *av
 	int len = avcodec_decode_video2(tmpContext, tmpFrame, &got_picture, &pkt);
 	//asl_log(NULL, NULL, ASL_LEVEL_ERR, "Decoded frame to find pix_fmt, got %d", len);
 	
-	/*if (len == -1094995529) {
+	if (len == -1094995529) {
 		//Wowfunhappy: AVERROR_INVALIDDATA. Let's just guess the pixel format.
 		//(This video probably won't work anyway, but worth a try?)
 		return 0;
-	}*/
+	}
 	
     pix_fmt = tmpContext->pix_fmt;
 	//asl_log(NULL, NULL, ASL_LEVEL_ERR, "Normally found pix_fmt is: %d", pix_fmt);
@@ -647,8 +647,11 @@ static inline int shouldDecode(FFusionGlobals glob, enum AVCodecID codecID)
 // fields if necessary.
 //-----------------------------------------------------------------
 
+int i = 0;
 pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompressParams *p)
 {
+	i = 0;
+	
     OSType *pos;
     int index;
     CodecCapabilities *capabilities = p->capabilities;
@@ -796,8 +799,6 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 				DisposeHandle(imgDescExt);
 			}
 			
-			//asl_log(NULL, NULL, ASL_LEVEL_ERR, "What about: %d", isImageDescriptionExtensionPresent(p->imageDescription, 'h265'));
-			
 		} else {
 			count = isImageDescriptionExtensionPresent(p->imageDescription, 'strf');
 			
@@ -846,8 +847,6 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 		SetSkipLoopFilter(glob, glob->avContext);
 		
 		glob->avContext->flags2 |= CODEC_FLAG2_FAST;
-		//glob->avContext->thread_type = FF_THREAD_SLICE;
-
 
         // Finally we open the avcodec
 		
@@ -889,6 +888,8 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 	
     //capabilities->wantedPixelSize = 0;
 	capabilities->wantedPixelSize = (**p->imageDescription).depth;
+	
+	//asl_log(NULL, NULL, ASL_LEVEL_ERR, "capabilities->wantedPixelSize: %d", capabilities->wantedPixelSize);
 	
     pos = *((OSType **)glob->pixelTypes);
 	
@@ -1322,7 +1323,6 @@ pascal ComponentResult FFusionCodecDecodeBand(FFusionGlobals glob, ImageSubCodec
 		return err;
 	}
 	if(tempFrame.data[0] == NULL) {
-		//asl_log(NULL, NULL, ASL_LEVEL_ERR, "temp frame is null!");
 		myDrp->buffer = NULL;
 	}
 	else
@@ -1398,10 +1398,13 @@ pascal ComponentResult FFusionCodecDrawBand(FFusionGlobals glob, ImageSubCodecDe
 	if (!glob->colorConv.convert) {
 		err = ColorConversionFindFor( &glob->colorConv, glob->avCodec->id, glob->avContext->pix_fmt,
 									 picture, myDrp->pixelFormat, drp->baseAddr, drp->rowBytes, myDrp->width, myDrp->height );
+		//asl_log(NULL, NULL, ASL_LEVEL_ERR, "We're here");
+		//asl_log(NULL, NULL, ASL_LEVEL_ERR, "err: %d", err);
 		if (err) goto err;
 	}
 	
 	glob->colorConv.convert(picture, (UInt8*)drp->baseAddr, drp->rowBytes, myDrp->width, myDrp->height);
+	//asl_log(NULL, NULL, ASL_LEVEL_ERR, "i = %d", i++);
 	
 err:
     return err;

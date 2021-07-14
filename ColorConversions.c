@@ -640,6 +640,10 @@ OSType ColorConversionDstForPixFmt(enum AVCodecID codecID, enum AVPixelFormat ff
 		case AV_PIX_FMT_GRAY8:
 			// QT only seems to know indexed grayscale, so we use RGB with 3 identical colour values...
 			return k24RGBPixelFormat;
+		//Wowfunhappy
+		case AV_PIX_FMT_YUV420P10LE:
+			//Todo: fix
+			return k24RGBPixelFormat;
 		default:
 			//return k2vuyPixelFormat; //Just guess the right format
 			return 0;
@@ -744,6 +748,11 @@ int ColorConversionFindFor( ColorConversionFuncs *funcs, enum AVCodecID codecID,
 		case AV_PIX_FMT_YUVA420P:
 			funcs->clear = ClearV408;
 			funcs->convert = YA420toV408;
+			break;
+		case AV_PIX_FMT_YUV420P10LE:
+			asl_log(NULL, NULL, ASL_LEVEL_ERR, "10 bit, not implemented, colors will be wrong.");
+			funcs->clear = ClearGRAY8;
+			funcs->convert = GRAY8toRGB24;
 			break;
 		default:
 			return paramErr;
