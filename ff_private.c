@@ -653,7 +653,7 @@ OSStatus prepare_movie(ff_global_ptr storage, Movie theMovie, Handle dataRef, OS
 		map[j].str = st;
 		map[j].duration = -1;
 
-		if(st->codec->codec_type == CODEC_TYPE_VIDEO) {
+		if(st->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
 			Fixed width, height;
 
 			get_track_dimensions_for_codec(st, &width, &height);
@@ -670,7 +670,7 @@ OSStatus prepare_movie(ff_global_ptr storage, Movie theMovie, Handle dataRef, OS
 		}
 // RJVB
 #ifndef FFUSION_CODEC_ONLY
-		else if (st->codec->codec_type == CODEC_TYPE_AUDIO) {
+		else if (st->codec->codec_type == AVMEDIA_TYPE_AUDIO) {
 			if (st->codec->sample_rate > 0) {
 				track = NewMovieTrack(theMovie, 0, 0, kFullVolume);
 				err = initialize_audio_map(&map[j], track, dataRef, dataRefType, storage->firstFrames + j);
@@ -837,7 +837,7 @@ int import_using_index(ff_global_ptr storage, int *hadIndex, TimeValue *addedDur
 			}
 
 			/* switch for the remaining fields */
-			if(codec->codec_type == CODEC_TYPE_VIDEO) {
+			if(codec->codec_type == AVMEDIA_TYPE_VIDEO) {
 
 				/* Calculate the frame duration */
 				duration = 1;
@@ -856,7 +856,7 @@ int import_using_index(ff_global_ptr storage, int *hadIndex, TimeValue *addedDur
 			}
 // RJVB
 #ifndef FFUSION_CODEC_ONLY
-			else if(codec->codec_type == CODEC_TYPE_AUDIO) {
+			else if(codec->codec_type == AVMEDIA_TYPE_AUDIO) {
 
 				/* FIXME: check if that's really the right thing to do here */
 				if(ncstr->vbr) {
@@ -1026,7 +1026,7 @@ ComponentResult import_with_idle(ff_global_ptr storage, long inFlags, long *outF
 
 		if(IS_NUV(storage->componentType) && codecContext->codec_id == CODEC_ID_MP3) trustPacketDuration = false;
 		if(IS_FLV(storage->componentType) && codecContext->codec_id == CODEC_ID_H264) trustPacketDuration = false;
-		if(IS_FLV(storage->componentType) && codecContext->codec_type == CODEC_TYPE_AUDIO) trustPacketDuration = false;
+		if(IS_FLV(storage->componentType) && codecContext->codec_type == AVMEDIA_TYPE_AUDIO) trustPacketDuration = false;
 
 		memset(&sampleRec, 0, sizeof(sampleRec));
 		sampleRec.dataOffset.hi = packet.pos >> 32;
@@ -1047,7 +1047,7 @@ ComponentResult import_with_idle(ff_global_ptr storage, long inFlags, long *outF
 		if(sampleRec.dataSize <= 0)
 			continue;
 
-		if(codecContext->codec_type == CODEC_TYPE_AUDIO && !ncstream->vbr)
+		if(codecContext->codec_type == AVMEDIA_TYPE_AUDIO && !ncstream->vbr)
 			sampleRec.numberOfSamples = (packet.size * ncstream->asbd.mFramesPerPacket) / ncstream->asbd.mBytesPerPacket;
 		else
 			sampleRec.numberOfSamples = 1; //packet.duration;
@@ -1074,7 +1074,7 @@ ComponentResult import_with_idle(ff_global_ptr storage, long inFlags, long *outF
 		} else {
 			ncstream->lastSample.numberOfSamples = 0;
 
-			if(codecContext->codec_type == CODEC_TYPE_AUDIO && !ncstream->vbr)
+			if(codecContext->codec_type == AVMEDIA_TYPE_AUDIO && !ncstream->vbr)
 				sampleRec.durationPerSample = 1;
 			else
 				sampleRec.durationPerSample = ncstream->base.num * packet.duration;

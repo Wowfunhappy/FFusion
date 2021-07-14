@@ -676,7 +676,7 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 			glob->avCodec = avcodec_find_decoder(codecID);
 		}
 		
-		asl_log(NULL, NULL, ASL_LEVEL_ERR, "Testing: %s", glob->avCodec->long_name);
+		asl_log(NULL, NULL, ASL_LEVEL_ERR, "Codec Long Name: %s", glob->avCodec->long_name);
 		
 		if(glob->packedType != PACKED_QUICKTIME_KNOWS_ORDER) {
 			glob->begin.parser = ffusionParserInit(codecID);
@@ -757,6 +757,20 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 			if (count >= 1) {
 				imgDescExt = NewHandle(0);
 				GetImageDescriptionExtension(p->imageDescription, &imgDescExt, kVideoFormatTheora, 1);
+				
+				glob->avContext->extradata = calloc(1, GetHandleSize(imgDescExt) + FF_INPUT_BUFFER_PADDING_SIZE);
+				memcpy(glob->avContext->extradata, *imgDescExt, GetHandleSize(imgDescExt));
+				glob->avContext->extradata_size = GetHandleSize(imgDescExt);
+				
+				DisposeHandle(imgDescExt);
+			}
+		} else if (glob->componentType == 'hev1') {
+			asl_log(NULL, NULL, ASL_LEVEL_ERR, "Testing: %d", isImageDescriptionExtensionPresent(p->imageDescription, 'hvcC'));
+			count = isImageDescriptionExtensionPresent(p->imageDescription, 'hvcC');
+			
+			if (count >= 1) {
+				imgDescExt = NewHandle(0);
+				GetImageDescriptionExtension(p->imageDescription, &imgDescExt, 'hvcC', 1);
 				
 				glob->avContext->extradata = calloc(1, GetHandleSize(imgDescExt) + FF_INPUT_BUFFER_PADDING_SIZE);
 				memcpy(glob->avContext->extradata, *imgDescExt, GetHandleSize(imgDescExt));
@@ -1302,6 +1316,8 @@ pascal ComponentResult FFusionCodecDecodeBand(FFusionGlobals glob, ImageSubCodec
 		// RJVB 20131016
 		//memset( picture, 0, sizeof(*picture) );
 		asl_log(NULL, NULL, ASL_LEVEL_ERR, "Found no picture, len=%d", len);
+	} else {
+		asl_log(NULL, NULL, ASL_LEVEL_ERR, "Wait, we got a picture!, len=%d", len);
 	}
 	
 	
@@ -1326,6 +1342,7 @@ pascal ComponentResult FFusionCodecDecodeBand(FFusionGlobals glob, ImageSubCodec
 		return err;
 	}
 	if(tempFrame.data[0] == NULL) {
+		asl_log(NULL, NULL, ASL_LEVEL_ERR, "temp frame is null??");
 		myDrp->buffer = NULL;
 	}
 	else
