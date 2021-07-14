@@ -269,11 +269,11 @@ static enum AVPixelFormat FindPixFmtFromVideo(AVCodec *codec, AVCodecContext *av
 	int len = avcodec_decode_video2(tmpContext, tmpFrame, &got_picture, &pkt);
 	asl_log(NULL, NULL, ASL_LEVEL_ERR, "Decoded frame to find pix_fmt, got %d", len);
 	
-	if (len == -1094995529) {
+	/*if (len == -1094995529) {
 		//Wowfunhappy: AVERROR_INVALIDDATA. Let's just guess the pixel format.
 		//(This video probably won't work anyway, but worth a try?)
 		return 0;
-	}
+	}*/
 	
     pix_fmt = tmpContext->pix_fmt;
 	asl_log(NULL, NULL, ASL_LEVEL_ERR, "Normally found pix_fmt is: %d", pix_fmt);
@@ -351,6 +351,7 @@ FFusionPacked DefaultPackedTypeForCodec(OSType codec)
 		case kH264CodecType:
 		case 'vp09':
 		case 'hev1':
+		case 'hvc1':
 			return PACKED_QUICKTIME_KNOWS_ORDER;
 		default:
 			return PACKED_ALL_IN_FIRST_FRAME;
@@ -773,7 +774,7 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 				
 				DisposeHandle(imgDescExt);
 			}
-		} else if (glob->componentType == 'hev1') {
+		} else if (glob->avContext->codec_id == AV_CODEC_ID_HEVC) {
 			
 			/* Wowfunhappy:
 			 * This magical code fixes HEVC. I don't know why.
@@ -781,7 +782,7 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 			 * I guess this is some kind of header offset?
 			 */
 			
-			asl_log(NULL, NULL, ASL_LEVEL_ERR, "Does hev1 video have mysterious hvcC image Description? %d", isImageDescriptionExtensionPresent(p->imageDescription, 'hvcC'));
+			asl_log(NULL, NULL, ASL_LEVEL_ERR, "Does hevc video have mysterious hvcC image Description? %d", isImageDescriptionExtensionPresent(p->imageDescription, 'hvcC'));
 			count = isImageDescriptionExtensionPresent(p->imageDescription, 'hvcC');
 			
 			if (count >= 1) {
@@ -794,6 +795,9 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 				
 				DisposeHandle(imgDescExt);
 			}
+			
+			asl_log(NULL, NULL, ASL_LEVEL_ERR, "What about: %d", isImageDescriptionExtensionPresent(p->imageDescription, 'h265'));
+			
 		} else {
 			count = isImageDescriptionExtensionPresent(p->imageDescription, 'strf');
 			
@@ -1306,48 +1310,8 @@ pascal ComponentResult FFusionCodecDecodeBand(FFusionGlobals glob, ImageSubCodec
 	//		}
 	//	}
 	
-	asl_log(NULL, NULL, ASL_LEVEL_ERR, "About to use new inlined FFusionDecompress from FFusionCodecDecodeBand");
-	//err = FFusionDecompress(glob, glob->avContext, dataPtr, myDrp->width, myDrp->height, &tempFrame, dataSize);
-	
-	
-	
-	
-	
-	
-	
-	
-	int got_picture = false;
-	int len = 0;
-	
-	AVPacket pkt;
-	
-	av_init_packet(&pkt);
-	pkt.data = dataPtr;
-	pkt.size = dataSize;
-	
-	len = avcodec_decode_video2(glob->avContext, &tempFrame, &got_picture, &pkt);
-	
-	
-	if( !got_picture ){
-		// RJVB 20131016
-		//memset( picture, 0, sizeof(*picture) );
-		asl_log(NULL, NULL, ASL_LEVEL_ERR, "Found no picture, len=%d", len);
-	} else {
-		asl_log(NULL, NULL, ASL_LEVEL_ERR, "Wait, we got a picture!, len=%d", len);
-	}
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
+	asl_log(NULL, NULL, ASL_LEVEL_ERR, "About to use FFusionDecompress from FFusionCodecDecodeBand");
+	err = FFusionDecompress(glob, glob->avContext, dataPtr, myDrp->width, myDrp->height, &tempFrame, dataSize);
 	
 	if (glob->packedType == PACKED_QUICKTIME_KNOWS_ORDER) {
 		myDrp->buffer = &glob->buffers[glob->lastAllocatedBuffer];
@@ -1358,7 +1322,7 @@ pascal ComponentResult FFusionCodecDecodeBand(FFusionGlobals glob, ImageSubCodec
 		return err;
 	}
 	if(tempFrame.data[0] == NULL) {
-		asl_log(NULL, NULL, ASL_LEVEL_ERR, "temp frame is null??");
+		asl_log(NULL, NULL, ASL_LEVEL_ERR, "temp frame is null!");
 		myDrp->buffer = NULL;
 	}
 	else
@@ -1587,7 +1551,7 @@ OSErr FFusionDecompress(FFusionGlobals glob, AVCodecContext *context, UInt8 *dat
 	if( !got_picture ){
 		// RJVB 20131016
 		//memset( picture, 0, sizeof(*picture) );
-		asl_log(NULL, NULL, ASL_LEVEL_ERR, "Found no picture, returnLen=%d, origLen=%d", len, length );
+		asl_log(NULL, NULL, ASL_LEVEL_ERR, "Found no picture, len=%d", len );
 	}
 	
 	if (len < 0)
