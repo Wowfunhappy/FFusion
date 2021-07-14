@@ -20,7 +20,6 @@
  */
 #include "avcodec.h"
 #include "get_bits.h"
-#include "internal.h"
 
 /* Parser (mostly) copied from dvdsub.c */
 
@@ -52,18 +51,18 @@ static int dvbsub_parse(AVCodecParserContext *s,
     uint8_t *p, *p_end;
     int i, len, buf_pos = 0;
 
-    ff_dlog(avctx, "DVB parse packet pts=%"PRIx64", lpts=%"PRIx64", cpts=%"PRIx64":\n",
+    av_dlog(avctx, "DVB parse packet pts=%"PRIx64", lpts=%"PRIx64", cpts=%"PRIx64":\n",
             s->pts, s->last_pts, s->cur_frame_pts[s->cur_frame_start_index]);
 
     for (i=0; i < buf_size; i++)
     {
-        ff_dlog(avctx, "%02x ", buf[i]);
+        av_dlog(avctx, "%02x ", buf[i]);
         if (i % 16 == 15)
-            ff_dlog(avctx, "\n");
+            av_dlog(avctx, "\n");
     }
 
     if (i % 16 != 0)
-        ff_dlog(avctx, "\n");
+        av_dlog(avctx, "\n");
 
     *poutbuf = NULL;
     *poutbuf_size = 0;
@@ -74,7 +73,7 @@ static int dvbsub_parse(AVCodecParserContext *s,
     {
         if (pc->packet_index != pc->packet_start)
         {
-            ff_dlog(avctx, "Discarding %d bytes\n",
+            av_dlog(avctx, "Discarding %d bytes\n",
                     pc->packet_index - pc->packet_start);
         }
 
@@ -82,7 +81,7 @@ static int dvbsub_parse(AVCodecParserContext *s,
         pc->packet_index = 0;
 
         if (buf_size < 2 || buf[0] != 0x20 || buf[1] != 0x00) {
-            ff_dlog(avctx, "Bad packet header\n");
+            av_dlog(avctx, "Bad packet header\n");
             return -1;
         }
 
@@ -123,11 +122,11 @@ static int dvbsub_parse(AVCodecParserContext *s,
     {
         if (*p == 0x0f)
         {
-            if (6 <= p_end - p)
+            if (p + 6 <= p_end)
             {
                 len = AV_RB16(p + 4);
 
-                if (len + 6 <= p_end - p)
+                if (p + len + 6 <= p_end)
                 {
                     *poutbuf_size += len + 6;
 
@@ -137,9 +136,9 @@ static int dvbsub_parse(AVCodecParserContext *s,
             } else
                 break;
         } else if (*p == 0xff) {
-            if (1 < p_end - p)
+            if (p + 1 < p_end)
             {
-                ff_dlog(avctx, "Junk at end of packet\n");
+                av_dlog(avctx, "Junk at end of packet\n");
             }
             pc->packet_index = p - pc->packet_buf;
             pc->in_packet = 0;

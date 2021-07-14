@@ -100,7 +100,7 @@ size_t av_strlcat(char *dst, const char *src, size_t size)
 
 size_t av_strlcatf(char *dst, size_t size, const char *fmt, ...)
 {
-    size_t len = strlen(dst);
+    int len = strlen(dst);
     va_list vl;
 
     va_start(vl, fmt);
@@ -222,13 +222,12 @@ int av_strcasecmp(const char *a, const char *b)
 
 int av_strncasecmp(const char *a, const char *b, size_t n)
 {
+    const char *end = a + n;
     uint8_t c1, c2;
-    if (n <= 0)
-        return 0;
     do {
         c1 = av_tolower(*a++);
         c2 = av_tolower(*b++);
-    } while (--n && c1 && c1 == c2);
+    } while (a < end && c1 && c1 == c2);
     return c1 - c2;
 }
 
@@ -268,37 +267,6 @@ const char *av_dirname(char *path)
     *p = '\0';
 
     return path;
-}
-
-char *av_append_path_component(const char *path, const char *component)
-{
-    size_t p_len, c_len;
-    char *fullpath;
-
-    if (!path)
-        return av_strdup(component);
-    if (!component)
-        return av_strdup(path);
-
-    p_len = strlen(path);
-    c_len = strlen(component);
-    if (p_len > SIZE_MAX - c_len || p_len + c_len > SIZE_MAX - 2)
-        return NULL;
-    fullpath = av_malloc(p_len + c_len + 2);
-    if (fullpath) {
-        if (p_len) {
-            av_strlcpy(fullpath, path, p_len + 1);
-            if (c_len) {
-                if (fullpath[p_len - 1] != '/' && component[0] != '/')
-                    fullpath[p_len++] = '/';
-                else if (fullpath[p_len - 1] == '/' && component[0] == '/')
-                    p_len--;
-            }
-        }
-        av_strlcpy(&fullpath[p_len], component, c_len + 1);
-        fullpath[p_len + c_len] = 0;
-    }
-    return fullpath;
 }
 
 int av_escape(char **dst, const char *src, const char *special_chars,
@@ -409,7 +377,7 @@ int av_utf8_decode(int32_t *codep, const uint8_t **bufp, const uint8_t *buf_end,
         goto end;
     }
 
-    if (code >= 1U<<31) {
+    if (code >= 1<<31) {
         ret = AVERROR(EILSEQ);  /* out-of-range value */
         goto end;
     }
@@ -459,7 +427,6 @@ int av_match_list(const char *name, const char *list, char separator)
 int main(void)
 {
     int i;
-    char *fullpath;
     static const char * const strings[] = {
         "''",
         "",
@@ -500,19 +467,6 @@ int main(void)
         av_free(q);
     }
 
-    printf("Testing av_append_path_component()\n");
-    #define TEST_APPEND_PATH_COMPONENT(path, component, expected) \
-        fullpath = av_append_path_component((path), (component)); \
-        printf("%s = %s\n", fullpath ? fullpath : "(null)", expected); \
-        av_free(fullpath);
-    TEST_APPEND_PATH_COMPONENT(NULL, NULL, "(null)")
-    TEST_APPEND_PATH_COMPONENT("path", NULL, "path");
-    TEST_APPEND_PATH_COMPONENT(NULL, "comp", "comp");
-    TEST_APPEND_PATH_COMPONENT("path", "comp", "path/comp");
-    TEST_APPEND_PATH_COMPONENT("path/", "comp", "path/comp");
-    TEST_APPEND_PATH_COMPONENT("path", "/comp", "path/comp");
-    TEST_APPEND_PATH_COMPONENT("path/", "/comp", "path/comp");
-    TEST_APPEND_PATH_COMPONENT("path/path2/", "/comp/comp2", "path/path2/comp/comp2");
     return 0;
 }
 

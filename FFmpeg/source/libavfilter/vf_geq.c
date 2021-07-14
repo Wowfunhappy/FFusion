@@ -26,7 +26,6 @@
  * ported by Clément Bœsch for FFmpeg.
  */
 
-#include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
 #include "libavutil/eval.h"
 #include "libavutil/opt.h"
@@ -81,8 +80,8 @@ static inline double getpix(void *priv, double x, double y, int plane)
     if (!src)
         return 0;
 
-    xi = x = av_clipd(x, 0, w - 2);
-    yi = y = av_clipd(y, 0, h - 2);
+    xi = x = av_clipf(x, 0, w - 2);
+    yi = y = av_clipf(y, 0, h - 2);
 
     x -= xi;
     y -= yi;
@@ -166,34 +165,28 @@ end:
 static int geq_query_formats(AVFilterContext *ctx)
 {
     GEQContext *geq = ctx->priv;
-    static const enum AVPixelFormat yuv_pix_fmts[] = {
+    static const enum PixelFormat yuv_pix_fmts[] = {
         AV_PIX_FMT_YUV444P,  AV_PIX_FMT_YUV422P,  AV_PIX_FMT_YUV420P,
         AV_PIX_FMT_YUV411P,  AV_PIX_FMT_YUV410P,  AV_PIX_FMT_YUV440P,
         AV_PIX_FMT_YUVA444P, AV_PIX_FMT_YUVA422P, AV_PIX_FMT_YUVA420P,
         AV_PIX_FMT_GRAY8,
         AV_PIX_FMT_NONE
     };
-    static const enum AVPixelFormat rgb_pix_fmts[] = {
+    static const enum PixelFormat rgb_pix_fmts[] = {
         AV_PIX_FMT_GBRP, AV_PIX_FMT_GBRAP,
         AV_PIX_FMT_NONE
     };
-    AVFilterFormats *fmts_list;
-
     if (geq->is_rgb) {
-        fmts_list = ff_make_format_list(rgb_pix_fmts);
+        ff_set_common_formats(ctx, ff_make_format_list(rgb_pix_fmts));
     } else
-        fmts_list = ff_make_format_list(yuv_pix_fmts);
-    if (!fmts_list)
-        return AVERROR(ENOMEM);
-    return ff_set_common_formats(ctx, fmts_list);
+        ff_set_common_formats(ctx, ff_make_format_list(yuv_pix_fmts));
+    return 0;
 }
 
 static int geq_config_props(AVFilterLink *inlink)
 {
     GEQContext *geq = inlink->dst->priv;
     const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(inlink->format);
-
-    av_assert0(desc);
 
     geq->hsub = desc->log2_chroma_w;
     geq->vsub = desc->log2_chroma_h;

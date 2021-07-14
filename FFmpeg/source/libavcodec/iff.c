@@ -41,7 +41,7 @@ typedef enum {
     MASK_LASSO
 } mask_type;
 
-typedef struct IffContext {
+typedef struct {
     AVFrame *frame;
     int planesize;
     uint8_t * planebuf;
@@ -102,23 +102,23 @@ static const uint64_t plane8_lut[8][256] = {
     LUT8(4), LUT8(5), LUT8(6), LUT8(7),
 };
 
-#define LUT32(plane) {                                    \
-              0,           0,           0,           0,   \
-              0,           0,           0, 1U << plane,   \
-              0,           0, 1U << plane,           0,   \
-              0,           0, 1U << plane, 1U << plane,   \
-              0, 1U << plane,           0,           0,   \
-              0, 1U << plane,           0, 1U << plane,   \
-              0, 1U << plane, 1U << plane,           0,   \
-              0, 1U << plane, 1U << plane, 1U << plane,   \
-    1U << plane,           0,           0,           0,   \
-    1U << plane,           0,           0, 1U << plane,   \
-    1U << plane,           0, 1U << plane,           0,   \
-    1U << plane,           0, 1U << plane, 1U << plane,   \
-    1U << plane, 1U << plane,           0,           0,   \
-    1U << plane, 1U << plane,           0, 1U << plane,   \
-    1U << plane, 1U << plane, 1U << plane,           0,   \
-    1U << plane, 1U << plane, 1U << plane, 1U << plane,   \
+#define LUT32(plane) {                                \
+             0,          0,          0,          0,   \
+             0,          0,          0, 1 << plane,   \
+             0,          0, 1 << plane,          0,   \
+             0,          0, 1 << plane, 1 << plane,   \
+             0, 1 << plane,          0,          0,   \
+             0, 1 << plane,          0, 1 << plane,   \
+             0, 1 << plane, 1 << plane,          0,   \
+             0, 1 << plane, 1 << plane, 1 << plane,   \
+    1 << plane,          0,          0,          0,   \
+    1 << plane,          0,          0, 1 << plane,   \
+    1 << plane,          0, 1 << plane,          0,   \
+    1 << plane,          0, 1 << plane, 1 << plane,   \
+    1 << plane, 1 << plane,          0,          0,   \
+    1 << plane, 1 << plane,          0, 1 << plane,   \
+    1 << plane, 1 << plane, 1 << plane,          0,   \
+    1 << plane, 1 << plane, 1 << plane, 1 << plane,   \
 }
 
 // 32 planes * 4-bit mask * 4 lookup tables each
@@ -171,10 +171,6 @@ static int cmap_read_palette(AVCodecContext *avctx, uint32_t *pal)
             pal[i] = 0xFF000000 | gray2rgb((i * 255) >> avctx->bits_per_coded_sample);
     }
     if (s->masking == MASK_HAS_MASK) {
-        if ((1 << avctx->bits_per_coded_sample) < count) {
-            avpriv_request_sample(avctx, "overlapping mask");
-            return AVERROR_PATCHWELCOME;
-        }
         memcpy(pal + (1 << avctx->bits_per_coded_sample), pal, count * 4);
         for (i = 0; i < count; i++)
             pal[i] &= 0xFFFFFF;
@@ -239,22 +235,12 @@ static int extract_header(AVCodecContext *const avctx,
         for (i = 0; i < 16; i++)
             s->tvdc[i] = bytestream_get_be16(&buf);
 
-        if (s->ham) {
-            if (s->bpp > 8) {
-                av_log(avctx, AV_LOG_ERROR, "Invalid number of hold bits for HAM: %u\n", s->ham);
-                return AVERROR_INVALIDDATA;
-            } if (s->ham != (s->bpp > 6 ? 6 : 4)) {
-                av_log(avctx, AV_LOG_ERROR, "Invalid number of hold bits for HAM: %u, BPP: %u\n", s->ham, s->bpp);
-                return AVERROR_INVALIDDATA;
-            }
-        }
-
         if (s->masking == MASK_HAS_MASK) {
             if (s->bpp >= 8 && !s->ham) {
                 avctx->pix_fmt = AV_PIX_FMT_RGB32;
                 av_freep(&s->mask_buf);
                 av_freep(&s->mask_palbuf);
-                s->mask_buf = av_malloc((s->planesize * 32) + AV_INPUT_BUFFER_PADDING_SIZE);
+                s->mask_buf = av_malloc((s->planesize * 32) + FF_INPUT_BUFFER_PADDING_SIZE);
                 if (!s->mask_buf)
                     return AVERROR(ENOMEM);
                 if (s->bpp > 16) {
@@ -262,7 +248,7 @@ static int extract_header(AVCodecContext *const avctx,
                     av_freep(&s->mask_buf);
                     return AVERROR(ENOMEM);
                 }
-                s->mask_palbuf = av_malloc((2 << s->bpp) * sizeof(uint32_t) + AV_INPUT_BUFFER_PADDING_SIZE);
+                s->mask_palbuf = av_malloc((2 << s->bpp) * sizeof(uint32_t) + FF_INPUT_BUFFER_PADDING_SIZE);
                 if (!s->mask_palbuf) {
                     av_freep(&s->mask_buf);
                     return AVERROR(ENOMEM);
@@ -276,6 +262,9 @@ static int extract_header(AVCodecContext *const avctx,
         if (!s->bpp || s->bpp > 32) {
             av_log(avctx, AV_LOG_ERROR, "Invalid number of bitplanes: %u\n", s->bpp);
             return AVERROR_INVALIDDATA;
+        } else if (s->ham >= 8) {
+            av_log(avctx, AV_LOG_ERROR, "Invalid number of hold bits for HAM: %u\n", s->ham);
+            return AVERROR_INVALIDDATA;
         }
 
         av_freep(&s->ham_buf);
@@ -285,17 +274,13 @@ static int extract_header(AVCodecContext *const avctx,
             int i, count = FFMIN(palette_size / 3, 1 << s->ham);
             int ham_count;
             const uint8_t *const palette = avctx->extradata + AV_RB16(avctx->extradata);
-            int extra_space = 1;
 
-            if (avctx->codec_tag == MKTAG('P', 'B', 'M', ' ') && s->ham == 4)
-                extra_space = 4;
-
-            s->ham_buf = av_malloc((s->planesize * 8) + AV_INPUT_BUFFER_PADDING_SIZE);
+            s->ham_buf = av_malloc((s->planesize * 8) + FF_INPUT_BUFFER_PADDING_SIZE);
             if (!s->ham_buf)
                 return AVERROR(ENOMEM);
 
             ham_count = 8 * (1 << s->ham);
-            s->ham_palbuf = av_malloc(extra_space * (ham_count << !!(s->masking == MASK_HAS_MASK)) * sizeof (uint32_t) + AV_INPUT_BUFFER_PADDING_SIZE);
+            s->ham_palbuf = av_malloc((ham_count << !!(s->masking == MASK_HAS_MASK)) * sizeof (uint32_t) + FF_INPUT_BUFFER_PADDING_SIZE);
             if (!s->ham_palbuf) {
                 av_freep(&s->ham_buf);
                 return AVERROR(ENOMEM);
@@ -381,7 +366,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
     if ((err = av_image_check_size(avctx->width, avctx->height, 0, avctx)))
         return err;
     s->planesize = FFALIGN(avctx->width, 16) >> 3; // Align plane size in bits to word-boundary
-    s->planebuf  = av_malloc(s->planesize + AV_INPUT_BUFFER_PADDING_SIZE);
+    s->planebuf  = av_malloc(s->planesize + FF_INPUT_BUFFER_PADDING_SIZE);
     if (!s->planebuf)
         return AVERROR(ENOMEM);
 
@@ -407,12 +392,11 @@ static av_cold int decode_init(AVCodecContext *avctx)
  */
 static void decodeplane8(uint8_t *dst, const uint8_t *buf, int buf_size, int plane)
 {
-    const uint64_t *lut;
+    const uint64_t *lut = plane8_lut[plane];
     if (plane >= 8) {
         av_log(NULL, AV_LOG_WARNING, "Ignoring extra planes beyond 8\n");
         return;
     }
-    lut = plane8_lut[plane];
     do {
         uint64_t v = AV_RN64A(dst) | lut[*buf++];
         AV_WN64A(dst, v);
@@ -590,15 +574,13 @@ static void decode_deep_rle32(uint8_t *dst, const uint8_t *src, int src_size, in
 {
     const uint8_t *src_end = src + src_size;
     int x = 0, y = 0, i;
-    while (src_end - src >= 5) {
+    while (src + 5 <= src_end) {
         int opcode;
         opcode = *(int8_t *)src++;
         if (opcode >= 0) {
             int size = opcode + 1;
             for (i = 0; i < size; i++) {
-                int length = FFMIN(size - i, width - x);
-                if (src_end - src < length * 4)
-                    return;
+                int length = FFMIN(size - i, width);
                 memcpy(dst + y*linesize + x * 4, src, length * 4);
                 src += length * 4;
                 x += length;
@@ -704,7 +686,7 @@ static int decode_frame(AVCodecContext *avctx,
 
     desc = av_pix_fmt_desc_get(avctx->pix_fmt);
 
-    if (!s->init && avctx->bits_per_coded_sample <= 8 - (s->masking == MASK_HAS_MASK) &&
+    if (!s->init && avctx->bits_per_coded_sample <= 8 &&
         avctx->pix_fmt == AV_PIX_FMT_PAL8) {
         if ((res = cmap_read_palette(avctx, (uint32_t *)s->frame->data[1])) < 0)
             return res;
@@ -905,7 +887,7 @@ AVCodec ff_iff_ilbm_decoder = {
     .init           = decode_init,
     .close          = decode_end,
     .decode         = decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_DR1,
 };
 #endif
 #if CONFIG_IFF_BYTERUN1_DECODER
@@ -918,6 +900,6 @@ AVCodec ff_iff_byterun1_decoder = {
     .init           = decode_init,
     .close          = decode_end,
     .decode         = decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_DR1,
 };
 #endif

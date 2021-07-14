@@ -139,19 +139,21 @@ static void hds_free(AVFormatContext *s)
         return;
     for (i = 0; i < s->nb_streams; i++) {
         OutputStream *os = &c->streams[i];
-        avio_closep(&os->out);
+        if (os->out)
+            avio_close(os->out);
+        os->out = NULL;
         if (os->ctx && os->ctx_inited)
             av_write_trailer(os->ctx);
-        if (os->ctx)
-            av_freep(&os->ctx->pb);
+        if (os->ctx && os->ctx->pb)
+            av_free(os->ctx->pb);
         if (os->ctx)
             avformat_free_context(os->ctx);
-        av_freep(&os->metadata);
+        av_free(os->metadata);
         for (j = 0; j < os->nb_extra_packets; j++)
-            av_freep(&os->extra_packets[j]);
+            av_free(os->extra_packets[j]);
         for (j = 0; j < os->nb_fragments; j++)
-            av_freep(&os->fragments[j]);
-        av_freep(&os->fragments);
+            av_free(os->fragments[j]);
+        av_free(os->fragments);
     }
     av_freep(&c->streams);
 }
@@ -162,7 +164,7 @@ static int write_manifest(AVFormatContext *s, int final)
     AVIOContext *out;
     char filename[1024], temp_filename[1024];
     int ret, i;
-    double duration = 0;
+    float duration = 0;
 
     if (c->nb_streams > 0)
         duration = c->streams[0].last_ts * av_q2d(s->streams[0]->time_base);
@@ -309,7 +311,8 @@ static void close_file(OutputStream *os)
     avio_seek(os->out, 0, SEEK_SET);
     avio_wb32(os->out, pos);
     avio_flush(os->out);
-    avio_closep(&os->out);
+    avio_close(os->out);
+    os->out = NULL;
 }
 
 static int hds_write_header(AVFormatContext *s)
@@ -496,7 +499,7 @@ static int hds_flush(AVFormatContext *s, OutputStream *os, int final,
         if (remove > 0) {
             for (i = 0; i < remove; i++) {
                 unlink(os->fragments[i]->file);
-                av_freep(&os->fragments[i]);
+                av_free(os->fragments[i]);
             }
             os->nb_fragments -= remove;
             memmove(os->fragments, os->fragments + remove,

@@ -163,10 +163,9 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_YUVJ444P, AV_PIX_FMT_YUVJ440P, AV_PIX_FMT_NONE
     };
 
-    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
-    if (!fmts_list)
-        return AVERROR(ENOMEM);
-    return ff_set_common_formats(ctx, fmts_list);
+    ff_set_common_formats(ctx, ff_make_format_list(pix_fmts));
+
+    return 0;
 }
 
 static int init_filter_param(AVFilterContext *ctx, UnsharpFilterParam *fp, const char *effect_type, int width)
@@ -216,7 +215,7 @@ static void free_filter_param(UnsharpFilterParam *fp)
     int z;
 
     for (z = 0; z < 2 * fp->steps_y; z++)
-        av_freep(&fp->sc[z]);
+        av_free(fp->sc[z]);
 }
 
 static av_cold void uninit(AVFilterContext *ctx)

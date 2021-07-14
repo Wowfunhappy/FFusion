@@ -170,21 +170,12 @@ static av_cold int rl2_read_header(AVFormatContext *s)
     }
 
     /** read offset and size tables */
-    for(i=0; i < frame_count;i++) {
-        if (avio_feof(pb))
-            return AVERROR_INVALIDDATA;
+    for(i=0; i < frame_count;i++)
         chunk_size[i] = avio_rl32(pb);
-    }
-    for(i=0; i < frame_count;i++) {
-        if (avio_feof(pb))
-            return AVERROR_INVALIDDATA;
+    for(i=0; i < frame_count;i++)
         chunk_offset[i] = avio_rl32(pb);
-    }
-    for(i=0; i < frame_count;i++) {
-        if (avio_feof(pb))
-            return AVERROR_INVALIDDATA;
+    for(i=0; i < frame_count;i++)
         audio_size[i] = avio_rl32(pb) & 0xFFFF;
-    }
 
     /** build the sample index */
     for(i=0;i<frame_count;i++){

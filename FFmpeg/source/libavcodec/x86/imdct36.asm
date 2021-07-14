@@ -72,7 +72,7 @@ costabs:  times 4 dd  0.98480773
           times 4 dd  5.73685646
 
 %define SBLIMIT 32
-SECTION .text
+SECTION_TEXT
 
 %macro PSHUFD 3
 %if cpuflag(sse2) && notcpuflag(avx)

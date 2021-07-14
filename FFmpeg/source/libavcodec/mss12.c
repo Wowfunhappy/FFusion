@@ -161,8 +161,6 @@ static av_always_inline int decode_pixel(ArithCoder *acoder, PixContext *pctx,
 {
     int i, val, pix;
 
-    if (acoder->overread > MAX_OVERREAD)
-        return AVERROR_INVALIDDATA;
     val = acoder->get_model_sym(acoder, &pctx->cache_model);
     if (val < pctx->num_syms) {
         if (any_ngb) {
@@ -307,8 +305,6 @@ static int decode_region(ArithCoder *acoder, uint8_t *dst, uint8_t *rgb_pic,
             else
                 p = decode_pixel_in_context(acoder, pctx, dst + i, stride,
                                             i, j, width - i - 1);
-            if (p < 0)
-                return p;
             dst[i] = p;
 
             if (rgb_pic)
@@ -401,8 +397,6 @@ static int decode_region_masked(MSS12Context const *c, ArithCoder *acoder,
                 else
                     p = decode_pixel_in_context(acoder, pctx, dst + i, stride,
                                                 i, j, width - i - 1);
-                if (p < 0)
-                    return p;
                 dst[i] = p;
                 if (c->rgb_pic)
                     AV_WB24(rgb_dst + i * 3, c->pal[p]);
@@ -478,8 +472,6 @@ static int decode_region_intra(SliceContext *sc, ArithCoder *acoder,
         uint8_t *rgb_dst = c->rgb_pic + x * 3 + y * rgb_stride;
 
         pix     = decode_pixel(acoder, &sc->intra_pix_ctx, NULL, 0, 0);
-        if (pix < 0)
-            return pix;
         rgb_pix = c->pal[pix];
         for (i = 0; i < height; i++, dst += stride, rgb_dst += rgb_stride) {
             memset(dst, pix, width);
@@ -506,8 +498,6 @@ static int decode_region_inter(SliceContext *sc, ArithCoder *acoder,
 
     if (!mode) {
         mode = decode_pixel(acoder, &sc->inter_pix_ctx, NULL, 0, 0);
-        if (mode < 0)
-            return mode;
 
         if (c->avctx->err_recognition & AV_EF_EXPLODE &&
             ( c->rgb_pic && mode != 0x01 && mode != 0x02 && mode != 0x04 ||
@@ -539,8 +529,6 @@ int ff_mss12_decode_rect(SliceContext *sc, ArithCoder *acoder,
                          int x, int y, int width, int height)
 {
     int mode, pivot;
-    if (acoder->overread > MAX_OVERREAD)
-        return AVERROR_INVALIDDATA;
 
     mode = acoder->get_model_sym(acoder, &sc->split_mode);
 
@@ -668,7 +656,7 @@ av_cold int ff_mss12_decode_init(MSS12Context *c, int version,
                             (version ? 8 : 0) + i * 3);
 
     c->mask_stride = FFALIGN(avctx->width, 16);
-    c->mask        = av_malloc_array(c->mask_stride, avctx->height);
+    c->mask        = av_malloc(c->mask_stride * avctx->height);
     if (!c->mask) {
         av_log(avctx, AV_LOG_ERROR, "Cannot allocate mask plane\n");
         return AVERROR(ENOMEM);

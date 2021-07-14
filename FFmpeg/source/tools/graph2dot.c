@@ -79,8 +79,7 @@ static void print_digraph(FILE *outfile, AVFilterGraph *graph)
 
                 fprintf(outfile, "\"%s\" -> \"%s\" [ label= \"inpad:%s -> outpad:%s\\n",
                         filter_ctx_label, dst_filter_ctx_label,
-                        avfilter_pad_get_name(link->srcpad, 0),
-                        avfilter_pad_get_name(link->dstpad, 0));
+                        link->srcpad->name, link->dstpad->name);
 
                 if (link->type == AVMEDIA_TYPE_VIDEO) {
                     const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(link->format);
@@ -154,21 +153,13 @@ int main(int argc, char **argv)
 
     /* read from infile and put it in a buffer */
     {
-        int64_t count = 0;
+        unsigned int count = 0;
         struct line *line, *last_line, *first_line;
         char *p;
         last_line = first_line = av_malloc(sizeof(struct line));
-        if (!last_line) {
-            fprintf(stderr, "Memory allocation failure\n");
-            return 1;
-        }
 
         while (fgets(last_line->data, sizeof(last_line->data), infile)) {
             struct line *new_line = av_malloc(sizeof(struct line));
-            if (!new_line) {
-                fprintf(stderr, "Memory allocation failure\n");
-                return 1;
-            }
             count += strlen(last_line->data);
             last_line->next = new_line;
             last_line       = new_line;
@@ -176,13 +167,9 @@ int main(int argc, char **argv)
         last_line->next = NULL;
 
         graph_string = av_malloc(count + 1);
-        if (!graph_string) {
-            fprintf(stderr, "Memory allocation failure\n");
-            return 1;
-        }
         p = graph_string;
         for (line = first_line; line->next; line = line->next) {
-            size_t l = strlen(line->data);
+            unsigned int l = strlen(line->data);
             memcpy(p, line->data, l);
             p += l;
         }

@@ -20,9 +20,7 @@
 
 #include "flv.h"
 #include "h263.h"
-#include "h263data.h"
 #include "mpegvideo.h"
-#include "mpegvideodata.h"
 
 void ff_flv_encode_picture_header(MpegEncContext *s, int picture_number)
 {
@@ -91,12 +89,7 @@ void ff_flv2_encode_ac_esc(PutBitContext *pb, int slevel, int level,
     }
 }
 
-static const AVClass flv_class = {
-    .class_name = "flv encoder",
-    .item_name  = av_default_item_name,
-    .option     = ff_mpv_generic_options,
-    .version    = LIBAVUTIL_VERSION_INT,
-};
+FF_MPV_GENERIC_CLASS(flv)
 
 AVCodec ff_flv_encoder = {
     .name           = "flv",

@@ -391,28 +391,28 @@ resource 'dlle' (kDivX1CodecInfoResID) {
 #define kCodecSubType 'vp09'
 #include "Resources/FFusionResourceInc.r"
 
-//#define kCodecInfoResID kHEVCCodecInfoResID
-//#define kCodecName "High Efficiency Video Coding (FFusion)"
-//
-//#define kCodecDescription "FFusion decompresses video stored in HEVC format."
-//#define kCodecSubType 'H265'
-//#include "Resources/FFusionResourceInc.r"
-//#define kCodecSubType 'h265'
-//#include "Resources/FFusionResourceInc.r"
-//#define kCodecSubType 'X265'
-//#include "Resources/FFusionResourceInc.r"
-//#define kCodecSubType 'x265'
-//#include "Resources/FFusionResourceInc.r"
-//#define kCodecSubType 'HEV1'
-//#include "Resources/FFusionResourceInc.r"
-//#define kCodecSubType 'hev1'
-//#include "Resources/FFusionResourceInc.r"
-//#define kCodecSubType 'HEVC'
-//#include "Resources/FFusionResourceInc.r"
-//#define kCodecSubType 'hevc'
-//#include "Resources/FFusionResourceInc.r"
-//#define kCodecSubType 'hvc1'
-//#include "Resources/FFusionResourceInc.r"
+#define kCodecInfoResID kHEVCCodecInfoResID
+#define kCodecName "High Efficiency Video Coding (FFusion)"
+
+#define kCodecDescription "FFusion decompresses video stored in HEVC format."
+#define kCodecSubType 'H265'
+#include "Resources/FFusionResourceInc.r"
+#define kCodecSubType 'h265'
+#include "Resources/FFusionResourceInc.r"
+#define kCodecSubType 'X265'
+#include "Resources/FFusionResourceInc.r"
+#define kCodecSubType 'x265'
+#include "Resources/FFusionResourceInc.r"
+#define kCodecSubType 'HEV1'
+#include "Resources/FFusionResourceInc.r"
+#define kCodecSubType 'hev1'
+#include "Resources/FFusionResourceInc.r"
+#define kCodecSubType 'HEVC'
+#include "Resources/FFusionResourceInc.r"
+#define kCodecSubType 'hevc'
+#include "Resources/FFusionResourceInc.r"
+#define kCodecSubType 'hvc1'
+#include "Resources/FFusionResourceInc.r"
 
 #define kCodecInfoResID kFFv1CodecInfoResID
 #define kCodecName "FFv1 (FFusion)"

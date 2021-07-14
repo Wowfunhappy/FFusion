@@ -61,7 +61,7 @@ static int realloc_buffer(LAMEContext *s)
     if (!s->buffer || s->buffer_size - s->buffer_index < BUFFER_SIZE) {
         int new_size = s->buffer_index + 2 * BUFFER_SIZE, err;
 
-        ff_dlog(s->avctx, "resizing output buffer: %d -> %d\n", s->buffer_size,
+        av_dlog(s->avctx, "resizing output buffer: %d -> %d\n", s->buffer_size,
                 new_size);
         if ((err = av_reallocp(&s->buffer, new_size)) < 0) {
             s->buffer_size = s->buffer_index = 0;
@@ -111,7 +111,7 @@ static av_cold int mp3lame_encode_init(AVCodecContext *avctx)
         lame_set_quality(s->gfp, avctx->compression_level);
 
     /* rate control */
-    if (avctx->flags & AV_CODEC_FLAG_QSCALE) { // VBR
+    if (avctx->flags & CODEC_FLAG_QSCALE) { // VBR
         lame_set_VBR(s->gfp, vbr_default);
         lame_set_VBR_quality(s->gfp, avctx->global_quality / (float)FF_QP2LAMBDA);
     } else {
@@ -146,7 +146,7 @@ static av_cold int mp3lame_encode_init(AVCodecContext *avctx)
     if (avctx->sample_fmt == AV_SAMPLE_FMT_FLTP) {
         int ch;
         for (ch = 0; ch < avctx->channels; ch++) {
-            s->samples_flt[ch] = av_malloc_array(avctx->frame_size,
+            s->samples_flt[ch] = av_malloc(avctx->frame_size *
                                            sizeof(*s->samples_flt[ch]));
             if (!s->samples_flt[ch]) {
                 ret = AVERROR(ENOMEM);
@@ -159,7 +159,7 @@ static av_cold int mp3lame_encode_init(AVCodecContext *avctx)
     if (ret < 0)
         goto error;
 
-    s->fdsp = avpriv_float_dsp_alloc(avctx->flags & AV_CODEC_FLAG_BITEXACT);
+    s->fdsp = avpriv_float_dsp_alloc(avctx->flags & CODEC_FLAG_BITEXACT);
     if (!s->fdsp) {
         ret = AVERROR(ENOMEM);
         goto error;
@@ -255,10 +255,10 @@ static int mp3lame_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
         return -1;
     }
     len = hdr.frame_size;
-    ff_dlog(avctx, "in:%d packet-len:%d index:%d\n", avctx->frame_size, len,
+    av_dlog(avctx, "in:%d packet-len:%d index:%d\n", avctx->frame_size, len,
             s->buffer_index);
     if (len <= s->buffer_index) {
-        if ((ret = ff_alloc_packet2(avctx, avpkt, len, 0)) < 0)
+        if ((ret = ff_alloc_packet2(avctx, avpkt, len)) < 0)
             return ret;
         memcpy(avpkt->data, s->buffer, len);
         s->buffer_index -= len;
@@ -308,7 +308,7 @@ AVCodec ff_libmp3lame_encoder = {
     .init                  = mp3lame_encode_init,
     .encode2               = mp3lame_encode_frame,
     .close                 = mp3lame_encode_close,
-    .capabilities          = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_SMALL_LAST_FRAME,
+    .capabilities          = CODEC_CAP_DELAY | CODEC_CAP_SMALL_LAST_FRAME,
     .sample_fmts           = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S32P,
                                                              AV_SAMPLE_FMT_FLTP,
                                                              AV_SAMPLE_FMT_S16P,

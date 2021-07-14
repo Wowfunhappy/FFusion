@@ -38,10 +38,9 @@ typedef struct {
     int first_field;
     char *pattern;
     unsigned int pattern_pos;
-    int64_t start_time;
 
     AVRational pts;
-    AVRational ts_unit;
+    double ts_unit;
     int out_cnt;
     int occupied;
 
@@ -70,31 +69,29 @@ AVFILTER_DEFINE_CLASS(telecine);
 
 static av_cold int init(AVFilterContext *ctx)
 {
-    TelecineContext *s = ctx->priv;
+    TelecineContext *tc = ctx->priv;
     const char *p;
     int max = 0;
 
-    if (!strlen(s->pattern)) {
+    if (!strlen(tc->pattern)) {
         av_log(ctx, AV_LOG_ERROR, "No pattern provided.\n");
         return AVERROR_INVALIDDATA;
     }
 
-    for (p = s->pattern; *p; p++) {
+    for (p = tc->pattern; *p; p++) {
         if (!av_isdigit(*p)) {
             av_log(ctx, AV_LOG_ERROR, "Provided pattern includes non-numeric characters.\n");
             return AVERROR_INVALIDDATA;
         }
 
         max = FFMAX(*p - '0', max);
-        s->pts.num += 2;
-        s->pts.den += *p - '0';
+        tc->pts.num += 2;
+        tc->pts.den += *p - '0';
     }
 
-    s->start_time = AV_NOPTS_VALUE;
-
-    s->out_cnt = (max + 1) / 2;
+    tc->out_cnt = (max + 1) / 2;
     av_log(ctx, AV_LOG_INFO, "Telecine pattern %s yields up to %d frames per frame, pts advance factor: %d/%d\n",
-           s->pattern, s->out_cnt, s->pts.num, s->pts.den);
+           tc->pattern, tc->out_cnt, tc->pts.num, tc->pts.den);
 
     return 0;
 }
@@ -112,31 +109,32 @@ static int query_formats(AVFilterContext *ctx)
             ff_add_format(&pix_fmts, fmt);
     }
 
-    return ff_set_common_formats(ctx, pix_fmts);
+    ff_set_common_formats(ctx, pix_fmts);
+    return 0;
 }
 
 static int config_input(AVFilterLink *inlink)
 {
-    TelecineContext *s = inlink->dst->priv;
+    TelecineContext *tc = inlink->dst->priv;
     const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(inlink->format);
     int i, ret;
 
-    s->temp = ff_get_video_buffer(inlink, inlink->w, inlink->h);
-    if (!s->temp)
+    tc->temp = ff_get_video_buffer(inlink, inlink->w, inlink->h);
+    if (!tc->temp)
         return AVERROR(ENOMEM);
-    for (i = 0; i < s->out_cnt; i++) {
-        s->frame[i] = ff_get_video_buffer(inlink, inlink->w, inlink->h);
-        if (!s->frame[i])
+    for (i = 0; i < tc->out_cnt; i++) {
+        tc->frame[i] = ff_get_video_buffer(inlink, inlink->w, inlink->h);
+        if (!tc->frame[i])
             return AVERROR(ENOMEM);
     }
 
-    if ((ret = av_image_fill_linesizes(s->stride, inlink->format, inlink->w)) < 0)
+    if ((ret = av_image_fill_linesizes(tc->stride, inlink->format, inlink->w)) < 0)
         return ret;
 
-    s->planeheight[1] = s->planeheight[2] = FF_CEIL_RSHIFT(inlink->h, desc->log2_chroma_h);
-    s->planeheight[0] = s->planeheight[3] = inlink->h;
+    tc->planeheight[1] = tc->planeheight[2] = FF_CEIL_RSHIFT(inlink->h, desc->log2_chroma_h);
+    tc->planeheight[0] = tc->planeheight[3] = inlink->h;
 
-    s->nb_planes = av_pix_fmt_count_planes(inlink->format);
+    tc->nb_planes = av_pix_fmt_count_planes(inlink->format);
 
     return 0;
 }
@@ -144,7 +142,7 @@ static int config_input(AVFilterLink *inlink)
 static int config_output(AVFilterLink *outlink)
 {
     AVFilterContext *ctx = outlink->src;
-    TelecineContext *s = ctx->priv;
+    TelecineContext *tc = ctx->priv;
     const AVFilterLink *inlink = ctx->inputs[0];
     AVRational fps = inlink->frame_rate;
 
@@ -153,17 +151,17 @@ static int config_output(AVFilterLink *outlink)
                "current rate of %d/%d is invalid\n", fps.num, fps.den);
         return AVERROR(EINVAL);
     }
-    fps = av_mul_q(fps, av_inv_q(s->pts));
+    fps = av_mul_q(fps, av_inv_q(tc->pts));
     av_log(ctx, AV_LOG_VERBOSE, "FPS: %d/%d -> %d/%d\n",
            inlink->frame_rate.num, inlink->frame_rate.den, fps.num, fps.den);
 
     outlink->flags |= FF_LINK_FLAG_REQUEST_LOOP;
     outlink->frame_rate = fps;
-    outlink->time_base = av_mul_q(inlink->time_base, s->pts);
+    outlink->time_base = av_mul_q(inlink->time_base, tc->pts);
     av_log(ctx, AV_LOG_VERBOSE, "TB: %d/%d -> %d/%d\n",
            inlink->time_base.num, inlink->time_base.den, outlink->time_base.num, outlink->time_base.den);
 
-    s->ts_unit = av_inv_q(av_mul_q(fps, outlink->time_base));
+    tc->ts_unit = av_q2d(av_inv_q(av_mul_q(fps, outlink->time_base)));
 
     return 0;
 }
@@ -172,80 +170,72 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *inpicref)
 {
     AVFilterContext *ctx = inlink->dst;
     AVFilterLink *outlink = ctx->outputs[0];
-    TelecineContext *s = ctx->priv;
+    TelecineContext *tc = ctx->priv;
     int i, len, ret = 0, nout = 0;
 
-    if (s->start_time == AV_NOPTS_VALUE)
-        s->start_time = inpicref->pts;
+    len = tc->pattern[tc->pattern_pos] - '0';
 
-    len = s->pattern[s->pattern_pos] - '0';
-
-    s->pattern_pos++;
-    if (!s->pattern[s->pattern_pos])
-        s->pattern_pos = 0;
+    tc->pattern_pos++;
+    if (!tc->pattern[tc->pattern_pos])
+        tc->pattern_pos = 0;
 
     if (!len) { // do not output any field from this frame
         av_frame_free(&inpicref);
         return 0;
     }
 
-    if (s->occupied) {
-        av_frame_make_writable(s->frame[nout]);
-        for (i = 0; i < s->nb_planes; i++) {
+    if (tc->occupied) {
+        for (i = 0; i < tc->nb_planes; i++) {
             // fill in the EARLIER field from the buffered pic
-            av_image_copy_plane(s->frame[nout]->data[i] + s->frame[nout]->linesize[i] * s->first_field,
-                                s->frame[nout]->linesize[i] * 2,
-                                s->temp->data[i] + s->temp->linesize[i] * s->first_field,
-                                s->temp->linesize[i] * 2,
-                                s->stride[i],
-                                (s->planeheight[i] - s->first_field + 1) / 2);
+            av_image_copy_plane(tc->frame[nout]->data[i] + tc->frame[nout]->linesize[i] * tc->first_field,
+                                tc->frame[nout]->linesize[i] * 2,
+                                tc->temp->data[i] + tc->temp->linesize[i] * tc->first_field,
+                                tc->temp->linesize[i] * 2,
+                                tc->stride[i],
+                                (tc->planeheight[i] - tc->first_field + 1) / 2);
             // fill in the LATER field from the new pic
-            av_image_copy_plane(s->frame[nout]->data[i] + s->frame[nout]->linesize[i] * !s->first_field,
-                                s->frame[nout]->linesize[i] * 2,
-                                inpicref->data[i] + inpicref->linesize[i] * !s->first_field,
+            av_image_copy_plane(tc->frame[nout]->data[i] + tc->frame[nout]->linesize[i] * !tc->first_field,
+                                tc->frame[nout]->linesize[i] * 2,
+                                inpicref->data[i] + inpicref->linesize[i] * !tc->first_field,
                                 inpicref->linesize[i] * 2,
-                                s->stride[i],
-                                (s->planeheight[i] - !s->first_field + 1) / 2);
+                                tc->stride[i],
+                                (tc->planeheight[i] - !tc->first_field + 1) / 2);
         }
         nout++;
         len--;
-        s->occupied = 0;
+        tc->occupied = 0;
     }
 
     while (len >= 2) {
         // output THIS image as-is
-        av_frame_make_writable(s->frame[nout]);
-        for (i = 0; i < s->nb_planes; i++)
-            av_image_copy_plane(s->frame[nout]->data[i], s->frame[nout]->linesize[i],
+        for (i = 0; i < tc->nb_planes; i++)
+            av_image_copy_plane(tc->frame[nout]->data[i], tc->frame[nout]->linesize[i],
                                 inpicref->data[i], inpicref->linesize[i],
-                                s->stride[i],
-                                s->planeheight[i]);
+                                tc->stride[i],
+                                tc->planeheight[i]);
         nout++;
         len -= 2;
     }
 
     if (len >= 1) {
         // copy THIS image to the buffer, we need it later
-        for (i = 0; i < s->nb_planes; i++)
-            av_image_copy_plane(s->temp->data[i], s->temp->linesize[i],
+        for (i = 0; i < tc->nb_planes; i++)
+            av_image_copy_plane(tc->temp->data[i], tc->temp->linesize[i],
                                 inpicref->data[i], inpicref->linesize[i],
-                                s->stride[i],
-                                s->planeheight[i]);
-        s->occupied = 1;
+                                tc->stride[i],
+                                tc->planeheight[i]);
+        tc->occupied = 1;
     }
 
     for (i = 0; i < nout; i++) {
-        AVFrame *frame = av_frame_clone(s->frame[i]);
+        AVFrame *frame = av_frame_clone(tc->frame[i]);
 
         if (!frame) {
             av_frame_free(&inpicref);
             return AVERROR(ENOMEM);
         }
 
-        av_frame_copy_props(frame, inpicref);
-        frame->pts = ((s->start_time == AV_NOPTS_VALUE) ? 0 : s->start_time) +
-                     av_rescale(outlink->frame_count, s->ts_unit.num,
-                                s->ts_unit.den);
+        frame->pts = outlink->frame_count * tc->ts_unit;
         ret = ff_filter_frame(outlink, frame);
     }
     av_frame_free(&inpicref);
@@ -255,12 +245,12 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *inpicref)
 
 static av_cold void uninit(AVFilterContext *ctx)
 {
-    TelecineContext *s = ctx->priv;
+    TelecineContext *tc = ctx->priv;
     int i;
 
-    av_frame_free(&s->temp);
-    for (i = 0; i < s->out_cnt; i++)
-        av_frame_free(&s->frame[i]);
+    av_frame_free(&tc->temp);
+    for (i = 0; i < tc->out_cnt; i++)
+        av_frame_free(&tc->frame[i]);
 }
 
 static const AVFilterPad telecine_inputs[] = {

@@ -49,8 +49,7 @@ static int flac_read_header(AVFormatContext *s)
 
     /* process metadata blocks */
     while (!avio_feof(s->pb) && !metadata_last) {
-        if (avio_read(s->pb, header, 4) != 4)
-            return AVERROR(AVERROR_INVALIDDATA);
+        avio_read(s->pb, header, 4);
         flac_parse_block_header(header, &metadata_last, &metadata_type,
                                    &metadata_size);
         switch (metadata_type) {
@@ -59,7 +58,7 @@ static int flac_read_header(AVFormatContext *s)
         case FLAC_METADATA_TYPE_CUESHEET:
         case FLAC_METADATA_TYPE_PICTURE:
         case FLAC_METADATA_TYPE_VORBIS_COMMENT:
-            buffer = av_mallocz(metadata_size + AV_INPUT_BUFFER_PADDING_SIZE);
+            buffer = av_mallocz(metadata_size + FF_INPUT_BUFFER_PADDING_SIZE);
             if (!buffer) {
                 return AVERROR(ENOMEM);
             }
@@ -177,26 +176,8 @@ fail:
     return ret;
 }
 
-static int raw_flac_probe(AVProbeData *p)
-{
-    if ((p->buf[2] & 0xF0) == 0)    // blocksize code invalid
-        return 0;
-    if ((p->buf[2] & 0x0F) == 0x0F) // sample rate code invalid
-        return 0;
-    if ((p->buf[3] & 0xF0) >= FLAC_MAX_CHANNELS + FLAC_CHMODE_MID_SIDE << 4)
-        // channel mode invalid
-        return 0;
-    if ((p->buf[3] & 0x06) == 0x06) // bits per sample code invalid
-        return 0;
-    if ((p->buf[3] & 0x01) == 0x01) // reserved bit set
-        return 0;
-    return AVPROBE_SCORE_EXTENSION / 4 + 1;
-}
-
 static int flac_probe(AVProbeData *p)
 {
-    if ((AV_RB16(p->buf) & 0xFFFE) == 0xFFF8)
-        return raw_flac_probe(p);
     if (p->buf_size < 4 || memcmp(p->buf, "fLaC", 4))
         return 0;
     return AVPROBE_SCORE_EXTENSION;

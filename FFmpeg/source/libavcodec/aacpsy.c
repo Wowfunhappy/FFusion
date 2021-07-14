@@ -162,7 +162,7 @@ typedef struct AacPsyContext{
 /**
  * LAME psy model preset struct
  */
-typedef struct PsyLamePreset {
+typedef struct {
     int   quality;  ///< Quality to map the rest of the vaules to.
      /* This is overloaded to be both kbps per channel in ABR mode, and
       * requested quality in constant quality mode.
@@ -262,7 +262,7 @@ static av_cold void lame_window_init(AacPsyContext *ctx, AVCodecContext *avctx)
     for (i = 0; i < avctx->channels; i++) {
         AacPsyChannel *pch = &ctx->ch[i];
 
-        if (avctx->flags & AV_CODEC_FLAG_QSCALE)
+        if (avctx->flags & CODEC_FLAG_QSCALE)
             pch->attack_threshold = psy_vbr_map[avctx->global_quality / FF_QP2LAMBDA].st_lrm;
         else
             pch->attack_threshold = lame_calc_attack_threshold(avctx->bit_rate / avctx->channels / 1000);
@@ -304,8 +304,6 @@ static av_cold int psy_3gpp_init(FFPsyContext *ctx) {
     const float num_bark   = calc_bark((float)bandwidth);
 
     ctx->model_priv_data = av_mallocz(sizeof(AacPsyContext));
-    if (!ctx->model_priv_data)
-        return AVERROR(ENOMEM);
     pctx = (AacPsyContext*) ctx->model_priv_data;
 
     pctx->chan_bitrate = chan_bitrate;
@@ -315,7 +313,7 @@ static av_cold int psy_3gpp_init(FFPsyContext *ctx) {
     ctx->bitres.size   = 6144 - pctx->frame_bits;
     ctx->bitres.size  -= ctx->bitres.size % 8;
     pctx->fill_level   = ctx->bitres.size;
-    minath = ath(3410 - 0.733 * ATH_ADD, ATH_ADD);
+    minath = ath(3410, ATH_ADD);
     for (j = 0; j < 2; j++) {
         AacPsyCoeffs *coeffs = pctx->psy_coef[j];
         const uint8_t *band_sizes = ctx->bands[j];
@@ -357,10 +355,6 @@ static av_cold int psy_3gpp_init(FFPsyContext *ctx) {
     }
 
     pctx->ch = av_mallocz_array(ctx->avctx->channels, sizeof(AacPsyChannel));
-    if (!pctx->ch) {
-        av_freep(&ctx->model_priv_data);
-        return AVERROR(ENOMEM);
-    }
 
     lame_window_init(pctx, ctx->avctx);
 
@@ -723,7 +717,7 @@ static void psy_3gpp_analyze_channel(FFPsyContext *ctx, int channel,
             }
             desired_pe_no_ah = FFMAX(desired_pe - (pe - pe_no_ah), 0.0f);
             if (active_lines > 0.0f)
-                reduction = calc_reduction_3gpp(a, desired_pe_no_ah, pe_no_ah, active_lines);
+                reduction += calc_reduction_3gpp(a, desired_pe_no_ah, pe_no_ah, active_lines);
 
             pe = 0.0f;
             for (w = 0; w < wi->num_windows*16; w += 16) {
@@ -733,10 +727,7 @@ static void psy_3gpp_analyze_channel(FFPsyContext *ctx, int channel,
                     if (active_lines > 0.0f)
                         band->thr = calc_reduced_thr_3gpp(band, coeffs[g].min_snr, reduction);
                     pe += calc_pe_3gpp(band);
-                    if (band->thr > 0.0f)
-                        band->norm_fac = band->active_lines / band->thr;
-                    else
-                        band->norm_fac = 0.0f;
+                    band->norm_fac = band->active_lines / band->thr;
                     norm_fac += band->norm_fac;
                 }
             }
@@ -787,7 +778,6 @@ static void psy_3gpp_analyze_channel(FFPsyContext *ctx, int channel,
 
             psy_band->threshold = band->thr;
             psy_band->energy    = band->energy;
-            psy_band->spread    = band->active_lines * 2.0f / band_sizes[g];
         }
     }
 
@@ -837,7 +827,6 @@ static FFPsyWindowInfo psy_lame_window(FFPsyContext *ctx, const float *audio,
     int grouping     = 0;
     int uselongblock = 1;
     int attacks[AAC_NUM_BLOCKS_SHORT + 1] = { 0 };
-    float clippings[AAC_NUM_BLOCKS_SHORT];
     int i;
     FFPsyWindowInfo wi = { { 0 } };
 
@@ -927,35 +916,14 @@ static FFPsyWindowInfo psy_lame_window(FFPsyContext *ctx, const float *audio,
 
     lame_apply_block_type(pch, &wi, uselongblock);
 
-    /* Calculate input sample maximums and evaluate clipping risk */
-    if (audio) {
-        for (i = 0; i < AAC_NUM_BLOCKS_SHORT; i++) {
-            const float *wbuf = audio + i * AAC_BLOCK_SIZE_SHORT;
-            float max = 0;
-            int j;
-            for (j = 0; j < AAC_BLOCK_SIZE_SHORT; j++)
-                max = FFMAX(max, fabsf(wbuf[j]));
-            clippings[i] = max;
-        }
-    } else {
-        for (i = 0; i < 8; i++)
-            clippings[i] = 0;
-    }
-
     wi.window_type[1] = prev_type;
     if (wi.window_type[0] != EIGHT_SHORT_SEQUENCE) {
-        float clipping = 0.0f;
-
         wi.num_windows  = 1;
         wi.grouping[0]  = 1;
         if (wi.window_type[0] == LONG_START_SEQUENCE)
             wi.window_shape = 0;
         else
             wi.window_shape = 1;
-
-        for (i = 0; i < 8; i++)
-            clipping = FFMAX(clipping, clippings[i]);
-        wi.clipping[0] = clipping;
     } else {
         int lastgrp = 0;
 
@@ -965,14 +933,6 @@ static FFPsyWindowInfo psy_lame_window(FFPsyContext *ctx, const float *audio,
             if (!((pch->next_grouping >> i) & 1))
                 lastgrp = i;
             wi.grouping[lastgrp]++;
-        }
-
-        for (i = 0; i < 8; i += wi.grouping[i]) {
-            int w;
-            float clipping = 0.0f;
-            for (w = 0; w < wi.grouping[i] && !clipping; w++)
-                clipping = FFMAX(clipping, clippings[i+w]);
-            wi.clipping[i] = clipping;
         }
     }
 

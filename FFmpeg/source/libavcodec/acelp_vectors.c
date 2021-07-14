@@ -22,7 +22,6 @@
 
 #include <inttypes.h>
 
-#include "libavutil/avassert.h"
 #include "libavutil/common.h"
 #include "libavutil/float_dsp.h"
 #include "avcodec.h"
@@ -241,7 +240,6 @@ void ff_set_fixed_vector(float *out, const AMRFixed *in, float scale, int size)
         float y = in->y[i] * scale;
 
         if (in->pitch_lag > 0)
-            av_assert0(x < size);
             do {
                 out[x] += y;
                 y *= in->pitch_fac;

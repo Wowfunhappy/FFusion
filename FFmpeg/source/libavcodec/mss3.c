@@ -298,10 +298,6 @@ static void rac_normalise(RangeCoder *c)
             c->got_error = 1;
             c->low = 1;
         }
-        if (c->low > c->range) {
-            c->got_error = 1;
-            c->low = 1;
-        }
         if (c->range >= RAC_BOTTOM)
             return;
     }
@@ -360,9 +356,8 @@ static int rac_get_model2_sym(RangeCoder *c, Model2 *m)
 
 static int rac_get_model_sym(RangeCoder *c, Model *m)
 {
-    int val;
+    int prob, prob2, helper, val;
     int end, end2;
-    unsigned prob, prob2, helper;
 
     prob       = 0;
     prob2      = c->range;
@@ -874,5 +869,5 @@ AVCodec ff_msa1_decoder = {
     .init           = mss3_decode_init,
     .close          = mss3_decode_end,
     .decode         = mss3_decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_DR1,
 };

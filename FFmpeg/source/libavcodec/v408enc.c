@@ -26,6 +26,12 @@
 
 static av_cold int v408_encode_init(AVCodecContext *avctx)
 {
+    avctx->coded_frame = av_frame_alloc();
+
+    if (!avctx->coded_frame) {
+        av_log(avctx, AV_LOG_ERROR, "Could not allocate frame.\n");
+        return AVERROR(ENOMEM);
+    }
 
     return 0;
 }
@@ -37,9 +43,12 @@ static int v408_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     uint8_t *y, *u, *v, *a;
     int i, j, ret;
 
-    if ((ret = ff_alloc_packet2(avctx, pkt, avctx->width * avctx->height * 4, 0)) < 0)
+    if ((ret = ff_alloc_packet2(avctx, pkt, avctx->width * avctx->height * 4)) < 0)
         return ret;
     dst = pkt->data;
+
+    avctx->coded_frame->key_frame = 1;
+    avctx->coded_frame->pict_type = AV_PICTURE_TYPE_I;
 
     y = pic->data[0];
     u = pic->data[1];
@@ -73,6 +82,8 @@ static int v408_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
 
 static av_cold int v408_encode_close(AVCodecContext *avctx)
 {
+    av_freep(&avctx->coded_frame);
+
     return 0;
 }
 
@@ -86,7 +97,6 @@ AVCodec ff_ayuv_encoder = {
     .encode2      = v408_encode_frame,
     .close        = v408_encode_close,
     .pix_fmts     = (const enum AVPixelFormat[]){ AV_PIX_FMT_YUVA444P, AV_PIX_FMT_NONE },
-    .capabilities = AV_CODEC_CAP_INTRA_ONLY,
 };
 #endif
 #if CONFIG_V408_ENCODER
@@ -99,6 +109,5 @@ AVCodec ff_v408_encoder = {
     .encode2      = v408_encode_frame,
     .close        = v408_encode_close,
     .pix_fmts     = (const enum AVPixelFormat[]){ AV_PIX_FMT_YUVA444P, AV_PIX_FMT_NONE },
-    .capabilities = AV_CODEC_CAP_INTRA_ONLY,
 };
 #endif

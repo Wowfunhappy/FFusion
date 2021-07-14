@@ -65,6 +65,10 @@ static av_cold int dvvideo_encode_init(AVCodecContext *avctx)
         return ret;
     }
 
+    avctx->coded_frame = av_frame_alloc();
+    if (!avctx->coded_frame)
+        return AVERROR(ENOMEM);
+
     dv_vlc_map_tableinit();
 
     memset(&fdsp,0, sizeof(fdsp));
@@ -172,7 +176,7 @@ static av_always_inline PutBitContext *dv_encode_ac(EncBlockInfo *bi,
             if (bits_left) {
                 size -= bits_left;
                 put_bits(pb, bits_left, vlc >> size);
-                vlc = av_mod_uintp2(vlc, size);
+                vlc = vlc & ((1 << size) - 1);
             }
             if (pb + 1 >= pb_end) {
                 bi->partial_bit_count  = size;
@@ -204,7 +208,7 @@ static av_always_inline PutBitContext *dv_encode_ac(EncBlockInfo *bi,
 static av_always_inline int dv_guess_dct_mode(DVVideoContext *s, uint8_t *data,
                                               int linesize)
 {
-    if (s->avctx->flags & AV_CODEC_FLAG_INTERLACED_DCT) {
+    if (s->avctx->flags & CODEC_FLAG_INTERLACED_DCT) {
         int ps = s->ildct_cmp(NULL, data, NULL, linesize, 8) - 400;
         if (ps > 0) {
             int is = s->ildct_cmp(NULL, data,            NULL, linesize << 1, 4) +
@@ -228,14 +232,14 @@ static const int dv_weight_88[64] = {
     170627, 165371, 160727, 153560, 160727, 144651, 144651, 136258,
 };
 static const int dv_weight_248[64] = {
-    131072, 262144, 257107, 257107, 242189, 242189, 242189, 242189,
-    237536, 237536, 229376, 229376, 200636, 200636, 224973, 224973,
-    223754, 223754, 235923, 235923, 229376, 229376, 217965, 217965,
-    211916, 211916, 196781, 196781, 185364, 185364, 206433, 206433,
-    211916, 211916, 222935, 222935, 200636, 200636, 205964, 205964,
-    200704, 200704, 180568, 180568, 175557, 175557, 195068, 195068,
-    185364, 185364, 188995, 188995, 174606, 174606, 175557, 175557,
-    170627, 170627, 153560, 153560, 165371, 165371, 144651, 144651,
+    131072, 242189, 257107, 237536, 229376, 200636, 242189, 223754,
+    224969, 196781, 262144, 242189, 229376, 200636, 257107, 237536,
+    211916, 185364, 235923, 217965, 229376, 211916, 206433, 180568,
+    242189, 223754, 224969, 196781, 211916, 185364, 235923, 217965,
+    200704, 175557, 222935, 205965, 200636, 185364, 195068, 170627,
+    229376, 211916, 206433, 180568, 200704, 175557, 222935, 205965,
+    175557, 153560, 188995, 174609, 165371, 144651, 200636, 185364,
+    195068, 170627, 175557, 153560, 188995, 174609, 165371, 144651,
 };
 
 static av_always_inline int dv_init_enc_block(EncBlockInfo *bi, uint8_t *data,
@@ -717,17 +721,13 @@ static int dvvideo_encode_frame(AVCodecContext *c, AVPacket *pkt,
     DVVideoContext *s = c->priv_data;
     int ret;
 
-    if ((ret = ff_alloc_packet2(c, pkt, s->sys->frame_size, 0)) < 0)
+    if ((ret = ff_alloc_packet2(c, pkt, s->sys->frame_size)) < 0)
         return ret;
 
     c->pix_fmt                = s->sys->pix_fmt;
     s->frame                  = frame;
-#if FF_API_CODED_FRAME
-FF_DISABLE_DEPRECATION_WARNINGS
     c->coded_frame->key_frame = 1;
     c->coded_frame->pict_type = AV_PICTURE_TYPE_I;
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
 
     s->buf = pkt->data;
     c->execute(c, dv_encode_video_segment, s->work_chunks, NULL,
@@ -743,6 +743,12 @@ FF_ENABLE_DEPRECATION_WARNINGS
     return 0;
 }
 
+static int dvvideo_encode_close(AVCodecContext *avctx)
+{
+    av_frame_free(&avctx->coded_frame);
+    return 0;
+}
+
 AVCodec ff_dvvideo_encoder = {
     .name           = "dvvideo",
     .long_name      = NULL_IF_CONFIG_SMALL("DV (Digital Video)"),
@@ -751,7 +757,8 @@ AVCodec ff_dvvideo_encoder = {
     .priv_data_size = sizeof(DVVideoContext),
     .init           = dvvideo_encode_init,
     .encode2        = dvvideo_encode_frame,
-    .capabilities   = AV_CODEC_CAP_SLICE_THREADS | AV_CODEC_CAP_FRAME_THREADS | AV_CODEC_CAP_INTRA_ONLY,
+    .close          = dvvideo_encode_close,
+    .capabilities   = CODEC_CAP_SLICE_THREADS | CODEC_CAP_FRAME_THREADS | CODEC_CAP_INTRA_ONLY,
     .pix_fmts       = (const enum AVPixelFormat[]) {
         AV_PIX_FMT_YUV411P, AV_PIX_FMT_YUV422P,
         AV_PIX_FMT_YUV420P, AV_PIX_FMT_NONE

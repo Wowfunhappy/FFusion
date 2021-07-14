@@ -92,7 +92,7 @@ fail:
     return ret;
 }
 
-int ff_raw_data_read_header(AVFormatContext *s)
+static int ff_raw_data_read_header(AVFormatContext *s)
 {
     AVStream *st = avformat_new_stream(s, NULL);
     if (!st)
@@ -188,10 +188,10 @@ static int mjpeg_probe(AVProbeData *p)
     }
 
     if (nb_invalid*4 + 1 < nb_frames) {
-        static const char ct_jpeg[] = "\r\nContent-Type: image/jpeg\r\n";
+        static const char ct_jpeg[] = "\r\nContent-Type: image/jpeg\r\n\r\n";
         int i;
 
-        for (i=0; i<FFMIN(p->buf_size - (int)sizeof(ct_jpeg), 100); i++)
+        for (i=0; i<FFMIN(p->buf_size - sizeof(ct_jpeg), 100); i++)
             if (!memcmp(p->buf + i, ct_jpeg, sizeof(ct_jpeg) - 1))
                 return AVPROBE_SCORE_EXTENSION;
 

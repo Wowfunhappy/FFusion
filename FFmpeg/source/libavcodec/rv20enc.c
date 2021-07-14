@@ -26,11 +26,8 @@
  */
 
 #include "mpegvideo.h"
-#include "mpegvideodata.h"
 #include "h263.h"
-#include "h263data.h"
 #include "put_bits.h"
-#include "rv10.h"
 
 void ff_rv20_encode_picture_header(MpegEncContext *s, int picture_number){
     put_bits(&s->pb, 2, s->pict_type); //I 0 vs. 1 ?
@@ -60,12 +57,7 @@ void ff_rv20_encode_picture_header(MpegEncContext *s, int picture_number){
     }
 }
 
-static const AVClass rv20_class = {
-    .class_name = "rv20 encoder",
-    .item_name  = av_default_item_name,
-    .option     = ff_mpv_generic_options,
-    .version    = LIBAVUTIL_VERSION_INT,
-};
+FF_MPV_GENERIC_CLASS(rv20)
 
 AVCodec ff_rv20_encoder = {
     .name           = "rv20",

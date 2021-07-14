@@ -51,7 +51,7 @@ typedef struct BMVDecContext {
     const uint8_t *stream;
 } BMVDecContext;
 
-#define NEXT_BYTE(v) (v) = forward ? (v) + 1 : (v) - 1;
+#define NEXT_BYTE(v) v = forward ? v + 1 : v - 1;
 
 static int decode_bmv_frame(const uint8_t *source, int src_len, uint8_t *frame, int frame_off)
 {
@@ -107,7 +107,7 @@ static int decode_bmv_frame(const uint8_t *source, int src_len, uint8_t *frame, 
                     if (src < source || src >= source_end)
                         return AVERROR_INVALIDDATA;
                     shift += 2;
-                    val |= (unsigned)*src << shift;
+                    val |= *src << shift;
                     if (*src & 0xC)
                         break;
                 }
@@ -294,5 +294,5 @@ AVCodec ff_bmv_video_decoder = {
     .priv_data_size = sizeof(BMVDecContext),
     .init           = decode_init,
     .decode         = decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_DR1,
 };

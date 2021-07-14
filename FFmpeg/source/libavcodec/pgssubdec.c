@@ -33,7 +33,7 @@
 #include "libavutil/imgutils.h"
 #include "libavutil/opt.h"
 
-#define RGBA(r,g,b,a) (((unsigned)(a) << 24) | ((r) << 16) | ((g) << 8) | (b))
+#define RGBA(r,g,b,a) (((a) << 24) | ((r) << 16) | ((g) << 8) | (b))
 #define MAX_EPOCH_PALETTES 8   // Max 8 allowed per PGS epoch
 #define MAX_EPOCH_OBJECTS  64  // Max 64 allowed per PGS epoch
 #define MAX_OBJECT_REFS    2   // Max objects per display set
@@ -166,7 +166,7 @@ static int decode_rle(AVCodecContext *avctx, AVSubtitleRect *rect,
 
     rle_bitmap_end = buf + buf_size;
 
-    rect->pict.data[0] = av_malloc_array(rect->w, rect->h);
+    rect->pict.data[0] = av_malloc(rect->w * rect->h);
 
     if (!rect->pict.data[0])
         return AVERROR(ENOMEM);
@@ -213,7 +213,7 @@ static int decode_rle(AVCodecContext *avctx, AVSubtitleRect *rect,
         return AVERROR_INVALIDDATA;
     }
 
-    ff_dlog(avctx, "Pixel Count = %d, Area = %d\n", pixel_count, rect->w * rect->h);
+    av_dlog(avctx, "Pixel Count = %d, Area = %d\n", pixel_count, rect->w * rect->h);
 
     return 0;
 }
@@ -300,11 +300,8 @@ static int parse_object_segment(AVCodecContext *avctx,
 
     av_fast_padded_malloc(&object->rle, &object->rle_buffer_size, rle_bitmap_len);
 
-    if (!object->rle) {
-        object->rle_data_len = 0;
-        object->rle_remaining_len = 0;
+    if (!object->rle)
         return AVERROR(ENOMEM);
-    }
 
     memcpy(object->rle, buf, buf_size);
     object->rle_data_len = buf_size;
@@ -357,16 +354,10 @@ static int parse_palette_segment(AVCodecContext *avctx,
         cb        = bytestream_get_byte(&buf);
         alpha     = bytestream_get_byte(&buf);
 
-        /* Default to BT.709 colorimetry. In case of <= 576 height use BT.601 */
-        if (avctx->height <= 0 || avctx->height > 576) {
-            YUV_TO_RGB1_CCIR_BT709(cb, cr);
-        } else {
-            YUV_TO_RGB1_CCIR(cb, cr);
-        }
+        YUV_TO_RGB1(cb, cr);
+        YUV_TO_RGB2(r, g, b, y);
 
-        YUV_TO_RGB2_CCIR(r, g, b, y);
-
-        ff_dlog(avctx, "Color %d := (%d,%d,%d,%d)\n", color_id, r, g, b, alpha);
+        av_dlog(avctx, "Color %d := (%d,%d,%d,%d)\n", color_id, r, g, b, alpha);
 
         /* Store color in palette */
         palette->clut[color_id] = RGBA(r,g,b,alpha);
@@ -399,7 +390,7 @@ static int parse_presentation_segment(AVCodecContext *avctx,
 
     ctx->presentation.pts = pts;
 
-    ff_dlog(avctx, "Video Dimensions %dx%d\n",
+    av_dlog(avctx, "Video Dimensions %dx%d\n",
             w, h);
     ret = ff_set_dimensions(avctx, w, h);
     if (ret < 0)
@@ -465,7 +456,7 @@ static int parse_presentation_segment(AVCodecContext *avctx,
             ctx->presentation.objects[i].crop_h = bytestream_get_be16(&buf);
         }
 
-        ff_dlog(avctx, "Subtitle Placement x=%d, y=%d\n",
+        av_dlog(avctx, "Subtitle Placement x=%d, y=%d\n",
                 ctx->presentation.objects[i].x, ctx->presentation.objects[i].y);
 
         if (ctx->presentation.objects[i].x > avctx->width ||
@@ -518,7 +509,7 @@ static int display_end_segment(AVCodecContext *avctx, void *data,
     // Blank if last object_count was 0.
     if (!ctx->presentation.object_count)
         return 1;
-    sub->rects = av_mallocz_array(ctx->presentation.object_count, sizeof(*sub->rects));
+    sub->rects = av_mallocz(sizeof(*sub->rects) * ctx->presentation.object_count);
     if (!sub->rects) {
         return AVERROR(ENOMEM);
     }
@@ -611,16 +602,16 @@ static int decode(AVCodecContext *avctx, void *data, int *data_size,
     int           segment_length;
     int i, ret;
 
-    ff_dlog(avctx, "PGS sub packet:\n");
+    av_dlog(avctx, "PGS sub packet:\n");
 
     for (i = 0; i < buf_size; i++) {
-        ff_dlog(avctx, "%02x ", buf[i]);
+        av_dlog(avctx, "%02x ", buf[i]);
         if (i % 16 == 15)
-            ff_dlog(avctx, "\n");
+            av_dlog(avctx, "\n");
     }
 
     if (i & 15)
-        ff_dlog(avctx, "\n");
+        av_dlog(avctx, "\n");
 
     *data_size = 0;
 
@@ -635,7 +626,7 @@ static int decode(AVCodecContext *avctx, void *data, int *data_size,
         segment_type   = bytestream_get_byte(&buf);
         segment_length = bytestream_get_be16(&buf);
 
-        ff_dlog(avctx, "Segment Length %d, Segment Type %x\n", segment_length, segment_type);
+        av_dlog(avctx, "Segment Length %d, Segment Type %x\n", segment_length, segment_type);
 
         if (segment_type != DISPLAY_SEGMENT && segment_length > buf_end - buf)
             break;
@@ -662,11 +653,6 @@ static int decode(AVCodecContext *avctx, void *data, int *data_size,
              */
             break;
         case DISPLAY_SEGMENT:
-            if (*data_size) {
-                av_log(avctx, AV_LOG_ERROR, "Duplicate display segment\n");
-                ret = AVERROR_INVALIDDATA;
-                break;
-            }
             ret = display_end_segment(avctx, data, buf, segment_length);
             if (ret >= 0)
                 *data_size = ret;
@@ -677,11 +663,8 @@ static int decode(AVCodecContext *avctx, void *data, int *data_size,
             ret = AVERROR_INVALIDDATA;
             break;
         }
-        if (ret < 0 && (avctx->err_recognition & AV_EF_EXPLODE)) {
-            avsubtitle_free(data);
-            *data_size = 0;
+        if (ret < 0 && (avctx->err_recognition & AV_EF_EXPLODE))
             return ret;
-        }
 
         buf += segment_length;
     }

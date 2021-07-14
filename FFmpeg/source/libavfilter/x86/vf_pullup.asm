@@ -20,7 +20,7 @@
 
 %include "libavutil/x86/x86util.asm"
 
-SECTION .text
+SECTION_TEXT
 
 INIT_MMX mmx
 cglobal pullup_filter_diff, 3, 5, 8, first, second, size

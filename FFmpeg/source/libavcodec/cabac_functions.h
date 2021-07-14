@@ -74,8 +74,7 @@ static inline void renorm_cabac_decoder_once(CABACContext *c){
 
 #ifndef get_cabac_inline
 static void refill2(CABACContext *c){
-    int i;
-    unsigned x;
+    int i, x;
 
     x= c->low ^ (c->low-1);
     i= 7 - ff_h264_norm_shift[x>>(CABAC_BITS-1)];
@@ -191,8 +190,7 @@ static av_unused const uint8_t* skip_bytes(CABACContext *c, int n) {
 #endif
     if ((int) (c->bytestream_end - ptr) < n)
         return NULL;
-    if (ff_init_cabac_decoder(c, ptr + n, c->bytestream_end - ptr - n) < 0)
-        return NULL;
+    ff_init_cabac_decoder(c, ptr + n, c->bytestream_end - ptr - n);
 
     return ptr;
 }

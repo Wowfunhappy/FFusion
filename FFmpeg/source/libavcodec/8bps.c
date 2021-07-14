@@ -120,15 +120,12 @@ static int decode_frame(AVCodecContext *avctx, void *data,
     }
 
     if (avctx->bits_per_coded_sample <= 8) {
-        int size;
         const uint8_t *pal = av_packet_get_side_data(avpkt,
                                                      AV_PKT_DATA_PALETTE,
-                                                     &size);
-        if (pal && size == AVPALETTE_SIZE) {
+                                                     NULL);
+        if (pal) {
             frame->palette_has_changed = 1;
             memcpy(c->pal, pal, AVPALETTE_SIZE);
-        } else if (pal) {
-            av_log(avctx, AV_LOG_ERROR, "Palette size %d is wrong\n", size);
         }
 
         memcpy (frame->data[1], c->pal, AVPALETTE_SIZE);
@@ -187,5 +184,5 @@ AVCodec ff_eightbps_decoder = {
     .priv_data_size = sizeof(EightBpsContext),
     .init           = decode_init,
     .decode         = decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_DR1,
 };

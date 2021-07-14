@@ -94,7 +94,7 @@ typedef struct Indeo3DecodeContext {
 
     int16_t         width, height;
     uint32_t        frame_num;      ///< current frame number (zero-based)
-    int             data_size;      ///< size of the frame data in bytes
+    uint32_t        data_size;      ///< size of the frame data in bytes
     uint16_t        frame_flags;    ///< frame properties
     uint8_t         cb_offset;      ///< needed for selecting VQ tables
     uint8_t         buf_sel;        ///< active frame buffer: 0 - primary, 1 -secondary
@@ -899,8 +899,7 @@ static int decode_frame_headers(Indeo3DecodeContext *ctx, AVCodecContext *avctx,
     GetByteContext gb;
     const uint8_t   *bs_hdr;
     uint32_t        frame_num, word2, check_sum, data_size;
-    int             y_offset, u_offset, v_offset;
-    uint32_t        starts[3], ends[3];
+    uint32_t        y_offset, u_offset, v_offset, starts[3], ends[3];
     uint16_t        height, width;
     int             i, j;
 
@@ -945,7 +944,7 @@ static int decode_frame_headers(Indeo3DecodeContext *ctx, AVCodecContext *avctx,
     if (width != ctx->width || height != ctx->height) {
         int res;
 
-        ff_dlog(avctx, "Frame dimensions changed!\n");
+        av_dlog(avctx, "Frame dimensions changed!\n");
 
         if (width  < 16 || width  > 640 ||
             height < 16 || height > 480 ||
@@ -982,8 +981,7 @@ static int decode_frame_headers(Indeo3DecodeContext *ctx, AVCodecContext *avctx,
     ctx->y_data_size = ends[0] - starts[0];
     ctx->v_data_size = ends[1] - starts[1];
     ctx->u_data_size = ends[2] - starts[2];
-    if (FFMIN3(y_offset, v_offset, u_offset) < 0 ||
-        FFMAX3(y_offset, v_offset, u_offset) >= ctx->data_size - 16 ||
+    if (FFMAX3(y_offset, v_offset, u_offset) >= ctx->data_size - 16 ||
         FFMIN3(y_offset, v_offset, u_offset) < gb.buffer - bs_hdr + 16 ||
         FFMIN3(ctx->y_data_size, ctx->v_data_size, ctx->u_data_size) <= 0) {
         av_log(avctx, AV_LOG_ERROR, "One of the y/u/v offsets is invalid\n");
@@ -1142,5 +1140,5 @@ AVCodec ff_indeo3_decoder = {
     .init           = decode_init,
     .close          = decode_close,
     .decode         = decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_DR1,
 };

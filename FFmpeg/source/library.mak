@@ -22,11 +22,7 @@ $(SUBDIR)%-test.i: $(SUBDIR)%-test.c
 $(SUBDIR)%-test.i: $(SUBDIR)%.c
 	$(CC) $(CCFLAGS) $(CC_E) $<
 
-$(SUBDIR)x86/%$(DEFAULT_YASMD).asm: $(SUBDIR)x86/%.asm
-	$(DEPYASM) $(YASMFLAGS) -I $(<D)/ -M -o $@ $< > $(@:.asm=.d)
-	$(YASM) $(YASMFLAGS) -I $(<D)/ -e $< | sed '/^%/d;/^$$/d;' > $@
-
-$(SUBDIR)x86/%.o: $(SUBDIR)x86/%$(YASMD).asm
+$(SUBDIR)x86/%.o: $(SUBDIR)x86/%.asm
 	$(DEPYASM) $(YASMFLAGS) -I $(<D)/ -M -o $@ $< > $(@:.o=.d)
 	$(YASM) $(YASMFLAGS) -I $(<D)/ -o $@ $<
 	-$(if $(ASMSTRIPFLAGS), $(STRIP) $(ASMSTRIPFLAGS) $@)
@@ -34,7 +30,6 @@ $(SUBDIR)x86/%.o: $(SUBDIR)x86/%$(YASMD).asm
 LIBOBJS := $(OBJS) $(SUBDIR)%.h.o $(TESTOBJS)
 $(LIBOBJS) $(LIBOBJS:.o=.s) $(LIBOBJS:.o=.i):   CPPFLAGS += -DHAVE_AV_CONFIG_H
 $(TESTOBJS) $(TESTOBJS:.o=.i): CPPFLAGS += -DTEST
-$(TESTOBJS) $(TESTOBJS:.o=.i): CFLAGS += -Umain
 
 $(SUBDIR)$(LIBNAME): $(OBJS)
 	$(RM) $@
@@ -58,7 +53,7 @@ $(SUBDIR)$(SLIBNAME): $(SUBDIR)$(SLIBNAME_WITH_MAJOR)
 
 $(SUBDIR)$(SLIBNAME_WITH_MAJOR): $(OBJS) $(SLIBOBJS) $(SUBDIR)lib$(NAME).ver
 	$(SLIB_CREATE_DEF_CMD)
-	$$(LD) $(SHFLAGS) $(LDFLAGS) $(LDLIBFLAGS) $$(LD_O) $$(filter %.o,$$^) $(FFEXTRALIBS)
+	$$(LD) $(SHFLAGS) $(LDFLAGS) $$(LD_O) $$(filter %.o,$$^) $(FFEXTRALIBS)
 	$(SLIB_EXTRA_CMD)
 
 ifdef SUBDIR
@@ -91,8 +86,8 @@ install-lib$(NAME)-headers: $(addprefix $(SUBDIR),$(HEADERS) $(BUILT_HEADERS))
 	$$(INSTALL) -m 644 $$^ "$(INCINSTDIR)"
 
 install-lib$(NAME)-pkgconfig: $(SUBDIR)lib$(FULLNAME).pc
-	$(Q)mkdir -p "$(PKGCONFIGDIR)"
-	$$(INSTALL) -m 644 $$^ "$(PKGCONFIGDIR)"
+	$(Q)mkdir -p "$(LIBDIR)/pkgconfig"
+	$$(INSTALL) -m 644 $$^ "$(LIBDIR)/pkgconfig"
 
 uninstall-libs::
 	-$(RM) "$(SHLIBDIR)/$(SLIBNAME_WITH_MAJOR)" \
@@ -104,7 +99,7 @@ uninstall-libs::
 
 uninstall-headers::
 	$(RM) $(addprefix "$(INCINSTDIR)/",$(HEADERS) $(BUILT_HEADERS))
-	$(RM) "$(PKGCONFIGDIR)/lib$(FULLNAME).pc"
+	$(RM) "$(LIBDIR)/pkgconfig/lib$(FULLNAME).pc"
 	-rmdir "$(INCINSTDIR)"
 endef
 

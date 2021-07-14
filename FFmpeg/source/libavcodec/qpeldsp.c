@@ -811,6 +811,4 @@ av_cold void ff_qpeldsp_init(QpelDSPContext *c)
 
     if (ARCH_X86)
         ff_qpeldsp_init_x86(c);
-    if (ARCH_MIPS)
-        ff_qpeldsp_init_mips(c);
 }

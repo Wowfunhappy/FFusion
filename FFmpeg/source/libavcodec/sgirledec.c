@@ -156,5 +156,5 @@ AVCodec ff_sgirle_decoder = {
     .init           = sgirle_decode_init,
     .close          = sgirle_decode_end,
     .decode         = sgirle_decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_DR1,
 };

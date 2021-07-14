@@ -269,7 +269,7 @@ static av_cold int libopus_encode_init(AVCodecContext *avctx)
     }
 
     header_size = 19 + (avctx->channels > 2 ? 2 + avctx->channels : 0);
-    avctx->extradata = av_malloc(header_size + AV_INPUT_BUFFER_PADDING_SIZE);
+    avctx->extradata = av_malloc(header_size + FF_INPUT_BUFFER_PADDING_SIZE);
     if (!avctx->extradata) {
         av_log(avctx, AV_LOG_ERROR, "Failed to allocate extradata.\n");
         ret = AVERROR(ENOMEM);
@@ -277,7 +277,7 @@ static av_cold int libopus_encode_init(AVCodecContext *avctx)
     }
     avctx->extradata_size = header_size;
 
-    opus->samples = av_mallocz_array(frame_size, avctx->channels *
+    opus->samples = av_mallocz(frame_size * avctx->channels *
                                av_get_bytes_per_sample(avctx->sample_fmt));
     if (!opus->samples) {
         av_log(avctx, AV_LOG_ERROR, "Failed to allocate samples buffer.\n");
@@ -326,7 +326,7 @@ static int libopus_encode(AVCodecContext *avctx, AVPacket *avpkt,
         } else
             audio = frame->data[0];
     } else {
-        if (!opus->afq.remaining_samples || (!opus->afq.frame_alloc && !opus->afq.frame_count))
+        if (!opus->afq.remaining_samples)
             return 0;
         audio = opus->samples;
         memset(audio, 0, opus->opts.packet_size * sample_size);
@@ -335,7 +335,7 @@ static int libopus_encode(AVCodecContext *avctx, AVPacket *avpkt,
     /* Maximum packet size taken from opusenc in opus-tools. 60ms packets
      * consist of 3 frames in one packet. The maximum frame size is 1275
      * bytes along with the largest possible packet header of 7 bytes. */
-    if ((ret = ff_alloc_packet2(avctx, avpkt, (1275 * 3 + 7) * opus->stream_count, 0)) < 0)
+    if ((ret = ff_alloc_packet2(avctx, avpkt, (1275 * 3 + 7) * opus->stream_count)) < 0)
         return ret;
 
     if (avctx->sample_fmt == AV_SAMPLE_FMT_FLT)
@@ -362,6 +362,7 @@ static int libopus_encode(AVCodecContext *avctx, AVPacket *avpkt,
     // Check if subtraction resulted in an overflow
     if ((discard_padding < opus->opts.packet_size) != (avpkt->duration > 0)) {
         av_free_packet(avpkt);
+        av_free(avpkt);
         return AVERROR(EINVAL);
     }
     if (discard_padding > 0) {
@@ -370,6 +371,7 @@ static int libopus_encode(AVCodecContext *avctx, AVPacket *avpkt,
                                                      10);
         if(!side_data) {
             av_free_packet(avpkt);
+            av_free(avpkt);
             return AVERROR(ENOMEM);
         }
         AV_WL32(side_data + 4, discard_padding);
@@ -436,7 +438,7 @@ AVCodec ff_libopus_encoder = {
     .init            = libopus_encode_init,
     .encode2         = libopus_encode,
     .close           = libopus_encode_close,
-    .capabilities    = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_SMALL_LAST_FRAME,
+    .capabilities    = CODEC_CAP_DELAY | CODEC_CAP_SMALL_LAST_FRAME,
     .sample_fmts     = (const enum AVSampleFormat[]){ AV_SAMPLE_FMT_S16,
                                                       AV_SAMPLE_FMT_FLT,
                                                       AV_SAMPLE_FMT_NONE },

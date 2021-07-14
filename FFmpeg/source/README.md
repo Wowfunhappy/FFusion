@@ -1,42 +1,47 @@
-FFmpeg README
+Personal FFMPEG fork
+====================
+
+This fork contains the following extensions to ffmpeg (each in its own branch):
+1. **nlmeans** - Non-Local Means noise reduction filter.
+2. **fieldshift** - Horizontally shift fields of interlaced images against each other (useful e.g. for VHS video recovery).
+3. **libde265** - Integration of libde265 HEVC video decoder.
+
+
+
+Documentation
 =============
 
-FFmpeg is a collection of libraries and tools to process multimedia content
-such as audio, video, subtitles and related metadata.
+nlmeans
+-------
+Parameters:
+* h - averaging weight decay parameter (larger values give smoother videos)
+* range - spatial search range (default=3), should be odd number.
+* temporal - number of frames to include into search (default=2)
+* patchsize - pixel context region width (default=7, little need to change), should be odd number.
 
-## Libraries
+The defaults (h=8, range=3, temporal=2) is a good starting point for the
+restoration of very noisy video (old VHS tapes). You may also try 10/5/3
+for really noisy inputs or 6/3/1 for good quality inputs.
 
-* `libavcodec` provides implementation of a wider range of codecs.
-* `libavformat` implements streaming protocols, container formats and basic I/O access.
-* `libavutil` includes hashers, decompressors and miscellaneous utility functions.
-* `libavfilter` provides a mean to alter decoded Audio and Video through chain of filters.
-* `libavdevice` provides an abstraction to access capture and playback devices.
-* `libswresample` implements audio mixing and resampling routines.
-* `libswscale` implements color conversion and scaling routines.
+The NLMeans filter is under GPL, so be sure to configure with `--enable-gpl`.
 
-## Tools
 
-* [ffmpeg](http://ffmpeg.org/ffmpeg.html) is a command line toolbox to
-  manipulate, convert and stream multimedia content.
-* [ffplay](http://ffmpeg.org/ffplay.html) is a minimalistic multimedia player.
-* [ffprobe](http://ffmpeg.org/ffprobe.html) is a simple analysis tool to inspect
-  multimedia content.
-* [ffserver](http://ffmpeg.org/ffserver.html) is a multimedia streaming server
-  for live broadcasts.
-* Additional small tools such as `aviocat`, `ismindex` and `qt-faststart`.
+fieldshift
+----------
 
-## Documentation
+* offset - pixel offset between successive rows
 
-The offline documentation is available in the **doc/** directory.
 
-The online documentation is available in the main [website](http://ffmpeg.org)
-and in the [wiki](http://trac.ffmpeg.org).
+libde265
+--------
 
-### Examples
+Get and install the latest version of libde265 from here: https://github.com/strukturag/libde265
 
-Coding examples are available in the **doc/examples** directory.
+Configure this ffmpeg fork with at least these options:
 
-## License
+    ./configure --enable-libde265 --enable-decoder=libde265 --enable-gpl
 
-FFmpeg codebase is mainly LGPL-licensed with optional components licensed under
-GPL. Please refer to the LICENSE file for detailed information.
+The patched ffmpeg can play MKVs containing H.265 streams encoded with
+the DIVX HEVC encoder. You can download an example stream from their
+webpage:
+    http://labs.divx.com/node/127909

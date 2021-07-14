@@ -126,7 +126,5 @@ void ff_h264dsp_init_ppc(H264DSPContext *c, const int bit_depth,
                          const int chroma_format_idc);
 void ff_h264dsp_init_x86(H264DSPContext *c, const int bit_depth,
                          const int chroma_format_idc);
-void ff_h264dsp_init_mips(H264DSPContext *c, const int bit_depth,
-                          const int chroma_format_idc);
 
 #endif /* AVCODEC_H264DSP_H */

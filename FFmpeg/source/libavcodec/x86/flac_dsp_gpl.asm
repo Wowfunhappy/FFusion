@@ -22,7 +22,7 @@
 
 %include "libavutil/x86/x86util.asm"
 
-SECTION .text
+SECTION_TEXT
 
 INIT_XMM sse4
 %if ARCH_X86_64

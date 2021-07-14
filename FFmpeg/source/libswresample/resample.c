@@ -171,14 +171,6 @@ static int build_filter(ResampleContext *c, void *filter, double factor, int tap
     return 0;
 }
 
-static void resample_free(ResampleContext **cc){
-    ResampleContext *c = *cc;
-    if(!c)
-        return;
-    av_freep(&c->filter_bank);
-    av_freep(cc);
-}
-
 static ResampleContext *resample_init(ResampleContext *c, int out_rate, int in_rate, int filter_size, int phase_shift, int linear,
                                     double cutoff0, enum AVSampleFormat format, enum SwrFilterType filter_type, int kaiser_beta,
                                     double precision, int cheby)
@@ -190,7 +182,6 @@ static ResampleContext *resample_init(ResampleContext *c, int out_rate, int in_r
     if (!c || c->phase_shift != phase_shift || c->linear!=linear || c->factor != factor
            || c->filter_length != FFMAX((int)ceil(filter_size/factor), 1) || c->format != format
            || c->filter_type != filter_type || c->kaiser_beta != kaiser_beta) {
-        resample_free(&c);
         c = av_mallocz(sizeof(*c));
         if (!c)
             return NULL;
@@ -240,10 +231,6 @@ static ResampleContext *resample_init(ResampleContext *c, int out_rate, int in_r
     c->compensation_distance= 0;
     if(!av_reduce(&c->src_incr, &c->dst_incr, out_rate, in_rate * (int64_t)phase_count, INT32_MAX/2))
         goto error;
-    while (c->dst_incr < (1<<20) && c->src_incr < (1<<20)) {
-        c->dst_incr *= 2;
-        c->src_incr *= 2;
-    }
     c->ideal_dst_incr = c->dst_incr;
     c->dst_incr_div   = c->dst_incr / c->src_incr;
     c->dst_incr_mod   = c->dst_incr % c->src_incr;
@@ -258,6 +245,13 @@ error:
     av_freep(&c->filter_bank);
     av_free(c);
     return NULL;
+}
+
+static void resample_free(ResampleContext **c){
+    if(!*c)
+        return;
+    av_freep(&(*c)->filter_bank);
+    av_freep(c);
 }
 
 static int set_compensation(ResampleContext *c, int sample_delta, int compensation_distance){
@@ -344,30 +338,11 @@ static int multiple_resample(ResampleContext *c, AudioData *dst, int dst_size, A
 static int64_t get_delay(struct SwrContext *s, int64_t base){
     ResampleContext *c = s->resample;
     int64_t num = s->in_buffer_count - (c->filter_length-1)/2;
-    num *= 1 << c->phase_shift;
+    num <<= c->phase_shift;
     num -= c->index;
     num *= c->src_incr;
     num -= c->frac;
     return av_rescale(num, base, s->in_sample_rate*(int64_t)c->src_incr << c->phase_shift);
-}
-
-static int64_t get_out_samples(struct SwrContext *s, int in_samples) {
-    ResampleContext *c = s->resample;
-    // The + 2 are added to allow implementations to be slightly inaccurate, they should not be needed currently.
-    // They also make it easier to proof that changes and optimizations do not
-    // break the upper bound.
-    int64_t num = s->in_buffer_count + 2LL + in_samples;
-    num *= 1 << c->phase_shift;
-    num -= c->index;
-    num = av_rescale_rnd(num, s->out_sample_rate, ((int64_t)s->in_sample_rate) << c->phase_shift, AV_ROUND_UP) + 2;
-
-    if (c->compensation_distance) {
-        if (num > INT_MAX)
-            return AVERROR(EINVAL);
-
-        num = FFMAX(num, (num * c->ideal_dst_incr - 1) / c->dst_incr + 1);
-    }
-    return num;
 }
 
 static int resample_flush(struct SwrContext *s) {
@@ -439,5 +414,4 @@ struct Resampler const swri_resampler={
   set_compensation,
   get_delay,
   invert_initial_buffer,
-  get_out_samples,
 };

@@ -63,7 +63,6 @@ enum {
 
 };
 
-#if FF_API_AVFILTERBUFFER
 /**
  * Add buffer data in picref to buffer_src.
  *
@@ -73,10 +72,8 @@ enum {
  * @return            >= 0 in case of success, a negative AVERROR code
  *                    in case of failure
  */
-attribute_deprecated
 int av_buffersrc_add_ref(AVFilterContext *buffer_src,
                          AVFilterBufferRef *picref, int flags);
-#endif
 
 /**
  * Get the number of failed requests.

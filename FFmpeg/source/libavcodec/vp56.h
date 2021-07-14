@@ -74,7 +74,7 @@ typedef void (*VP56ParseVectorAdjustment)(VP56Context *s,
 typedef void (*VP56Filter)(VP56Context *s, uint8_t *dst, uint8_t *src,
                            int offset1, int offset2, int stride,
                            VP56mv mv, int mask, int select, int luma);
-typedef int  (*VP56ParseCoeff)(VP56Context *s);
+typedef void (*VP56ParseCoeff)(VP56Context *s);
 typedef void (*VP56DefaultModelsInit)(VP56Context *s);
 typedef void (*VP56ParseVectorModels)(VP56Context *s);
 typedef int  (*VP56ParseCoeffModels)(VP56Context *s);
@@ -88,7 +88,6 @@ typedef struct VP56RangeCoder {
     const uint8_t *buffer;
     const uint8_t *end;
     unsigned int code_word;
-    int end_reached;
 } VP56RangeCoder;
 
 typedef struct VP56RefDc {
@@ -204,9 +203,6 @@ struct vp56_context {
     VLC runv_vlc[2];
     VLC ract_vlc[2][3][6];
     unsigned int nb_null[2][2];       /* number of consecutive NULL DC/AC */
-
-    int have_undamaged_frame;
-    int discard_frame;
 };
 
 
@@ -225,17 +221,7 @@ int ff_vp56_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
  */
 
 extern const uint8_t ff_vp56_norm_shift[256];
-int ff_vp56_init_range_decoder(VP56RangeCoder *c, const uint8_t *buf, int buf_size);
-
-/**
- * vp5689 returns 1 if the end of the stream has been reached, 0 otherwise.
- */
-static av_always_inline int vpX_rac_is_end(VP56RangeCoder *c)
-{
-    if (c->end <= c->buffer && c->bits >= 0)
-        c->end_reached ++;
-    return c->end_reached > 10;
-}
+void ff_vp56_init_range_decoder(VP56RangeCoder *c, const uint8_t *buf, int buf_size);
 
 static av_always_inline unsigned int vp56_rac_renorm(VP56RangeCoder *c)
 {

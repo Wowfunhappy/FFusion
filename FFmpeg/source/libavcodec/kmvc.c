@@ -268,8 +268,7 @@ static int decode_frame(AVCodecContext * avctx, void *data, int *got_frame,
     int i, ret;
     int header;
     int blocksize;
-    int pal_size;
-    const uint8_t *pal = av_packet_get_side_data(avpkt, AV_PKT_DATA_PALETTE, &pal_size);
+    const uint8_t *pal = av_packet_get_side_data(avpkt, AV_PKT_DATA_PALETTE, NULL);
 
     bytestream2_init(&ctx->g, avpkt->data, avpkt->size);
 
@@ -304,11 +303,9 @@ static int decode_frame(AVCodecContext * avctx, void *data, int *got_frame,
         }
     }
 
-    if (pal && pal_size == AVPALETTE_SIZE) {
+    if (pal) {
         frame->palette_has_changed = 1;
         memcpy(ctx->pal, pal, AVPALETTE_SIZE);
-    } else if (pal) {
-        av_log(avctx, AV_LOG_ERROR, "Palette size %d is wrong\n", pal_size);
     }
 
     if (ctx->setpal) {
@@ -424,5 +421,5 @@ AVCodec ff_kmvc_decoder = {
     .priv_data_size = sizeof(KmvcContext),
     .init           = decode_init,
     .decode         = decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_DR1,
 };

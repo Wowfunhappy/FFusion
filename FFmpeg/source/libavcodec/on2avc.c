@@ -119,12 +119,12 @@ static int on2avc_decode_band_types(On2AVCContext *c, GetBitContext *gb)
         run_len   = 1;
         do {
             run = get_bits(gb, bits_per_sect);
-            if (run > num_bands - band - run_len) {
-                av_log(c->avctx, AV_LOG_ERROR, "Invalid band type run\n");
-                return AVERROR_INVALIDDATA;
-            }
             run_len += run;
         } while (run == esc_val);
+        if (band + run_len > num_bands) {
+            av_log(c->avctx, AV_LOG_ERROR, "Invalid band type run\n");
+            return AVERROR_INVALIDDATA;
+        }
         for (i = band; i < band + run_len; i++) {
             c->band_type[i]    = band_type;
             c->band_run_end[i] = band + run_len;
@@ -186,7 +186,7 @@ static int on2avc_decode_band_scales(On2AVCContext *c, GetBitContext *gb)
 
 static inline float on2avc_scale(int v, float scale)
 {
-    return v * sqrtf(abs(v)) * scale;
+    return v * sqrtf(fabsf(v)) * scale;
 }
 
 // spectral data is coded completely differently - there are no unsigned codebooks
@@ -211,16 +211,9 @@ static inline int get_egolomb(GetBitContext *gb)
 {
     int v = 4;
 
-    while (get_bits1(gb)) {
-        v++;
-        if (v > 30) {
-            av_log(NULL, AV_LOG_WARNING, "Too large golomb code in get_egolomb.\n");
-            v = 30;
-            break;
-        }
-    }
+    while (get_bits1(gb)) v++;
 
-    return (1 << v) + get_bits_long(gb, v);
+    return (1 << v) + get_bits(gb, v);
 }
 
 static int on2avc_decode_pairs(On2AVCContext *c, GetBitContext *gb, float *dst,
@@ -802,9 +795,7 @@ static int on2avc_decode_subframe(On2AVCContext *c, const uint8_t *buf,
     GetBitContext gb;
     int i, ret;
 
-    if ((ret = init_get_bits8(&gb, buf, buf_size)) < 0)
-        return ret;
-
+    init_get_bits(&gb, buf, buf_size * 8);
     if (get_bits1(&gb)) {
         av_log(c->avctx, AV_LOG_ERROR, "enh bit set\n");
         return AVERROR_INVALIDDATA;
@@ -855,8 +846,10 @@ static int on2avc_decode_frame(AVCodecContext * avctx, void *data,
     if (c->is_av500) {
         /* get output buffer */
         frame->nb_samples = ON2AVC_SUBFRAME_SIZE;
-        if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
+        if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
+            av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
             return ret;
+        }
 
         if ((ret = on2avc_decode_subframe(c, buf, buf_size, frame, 0)) < 0)
             return ret;
@@ -879,8 +872,10 @@ static int on2avc_decode_frame(AVCodecContext * avctx, void *data,
 
         /* get output buffer */
         frame->nb_samples = ON2AVC_SUBFRAME_SIZE * num_frames;
-        if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
+        if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
+            av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
             return ret;
+        }
 
         audio_off = 0;
         bytestream2_init(&gb, buf, buf_size);
@@ -928,7 +923,6 @@ static av_cold int on2avc_decode_init(AVCodecContext *avctx)
         av_log(avctx, AV_LOG_ERROR, "0x500 version should be mono\n");
         return AVERROR_INVALIDDATA;
     }
-
     if (avctx->channels == 2)
         av_log(avctx, AV_LOG_WARNING,
                "Stereo mode support is not good, patch is welcome\n");
@@ -958,7 +952,7 @@ static av_cold int on2avc_decode_init(AVCodecContext *avctx)
     ff_fft_init(&c->fft256,  7, 0);
     ff_fft_init(&c->fft512,  8, 1);
     ff_fft_init(&c->fft1024, 9, 1);
-    c->fdsp = avpriv_float_dsp_alloc(avctx->flags & AV_CODEC_FLAG_BITEXACT);
+    c->fdsp = avpriv_float_dsp_alloc(avctx->flags & CODEC_FLAG_BITEXACT);
     if (!c->fdsp)
         return AVERROR(ENOMEM);
 
@@ -1023,7 +1017,7 @@ AVCodec ff_on2avc_decoder = {
     .init           = on2avc_decode_init,
     .decode         = on2avc_decode_frame,
     .close          = on2avc_decode_close,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_DR1,
     .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_FLTP,
                                                       AV_SAMPLE_FMT_NONE },
 };

@@ -132,18 +132,18 @@ static int decode_frame(AVCodecContext *avctx,
     h         = bytestream2_get_le16(&s->gb);
     bpp       = bytestream2_get_byte(&s->gb);
 
+    if (bytestream2_get_bytes_left(&s->gb) <= idlen) {
+        av_log(avctx, AV_LOG_ERROR,
+                "Not enough data to read header\n");
+        return AVERROR_INVALIDDATA;
+    }
+
     flags     = bytestream2_get_byte(&s->gb);
 
     if (!pal && (first_clr || colors || csize)) {
         av_log(avctx, AV_LOG_WARNING, "File without colormap has colormap information set.\n");
         // specification says we should ignore those value in this case
         first_clr = colors = csize = 0;
-    }
-
-    if (bytestream2_get_bytes_left(&s->gb) < idlen + 2*colors) {
-        av_log(avctx, AV_LOG_ERROR,
-                "Not enough data to read header\n");
-        return AVERROR_INVALIDDATA;
     }
 
     // skip identifier if any
@@ -303,5 +303,5 @@ AVCodec ff_targa_decoder = {
     .id             = AV_CODEC_ID_TARGA,
     .priv_data_size = sizeof(TargaContext),
     .decode         = decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_DR1,
 };

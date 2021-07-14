@@ -216,13 +216,6 @@ static int h261_decode_mb_skipped(H261Context *h, int mba1, int mba2)
         s->mb_skipped                  = 1;
         h->mtype                      &= ~MB_TYPE_H261_FIL;
 
-        if (s->current_picture.motion_val[0]) {
-            int b_stride = 2*s->mb_width + 1;
-            int b_xy     = 2 * s->mb_x + (2 * s->mb_y) * b_stride;
-            s->current_picture.motion_val[0][b_xy][0] = s->mv[0][0][0];
-            s->current_picture.motion_val[0][b_xy][1] = s->mv[0][0][1];
-        }
-
         ff_mpv_decode_mb(s, s->block);
     }
 
@@ -592,8 +585,10 @@ static int h261_decode_frame(AVCodecContext *avctx, void *data,
     int ret;
     AVFrame *pict = data;
 
-    ff_dlog(avctx, "*****frame %d size=%d\n", avctx->frame_number, buf_size);
-    ff_dlog(avctx, "bytes=%x %x %x %x\n", buf[0], buf[1], buf[2], buf[3]);
+    av_dlog(avctx, "*****frame %d size=%d\n", avctx->frame_number, buf_size);
+    av_dlog(avctx, "bytes=%x %x %x %x\n", buf[0], buf[1], buf[2], buf[3]);
+    s->flags  = avctx->flags;
+    s->flags2 = avctx->flags2;
 
     h->gob_start_code_skipped = 0;
 
@@ -685,6 +680,6 @@ AVCodec ff_h261_decoder = {
     .init           = h261_decode_init,
     .close          = h261_decode_end,
     .decode         = h261_decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_DR1,
     .max_lowres     = 3,
 };

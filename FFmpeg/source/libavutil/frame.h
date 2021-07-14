@@ -106,12 +106,6 @@ enum AVFrameSideDataType {
      * @endcode
      */
     AV_FRAME_DATA_SKIP_SAMPLES,
-
-    /**
-     * This side data must be associated with an audio frame and corresponds to
-     * enum AVAudioServiceType defined in avcodec.h.
-     */
-    AV_FRAME_DATA_AUDIO_SERVICE_TYPE,
 };
 
 enum AVActiveFormatDescription {
@@ -124,19 +118,11 @@ enum AVActiveFormatDescription {
     AV_AFD_SP_4_3       = 15,
 };
 
-
-/**
- * Structure to hold side data for an AVFrame.
- *
- * sizeof(AVFrameSideData) is not a part of the public ABI, so new fields may be added
- * to the end with a minor bump.
- */
 typedef struct AVFrameSideData {
     enum AVFrameSideDataType type;
     uint8_t *data;
     int      size;
     AVDictionary *metadata;
-    AVBufferRef *buf;
 } AVFrameSideData;
 
 /**
@@ -428,9 +414,7 @@ typedef struct AVFrame {
 
     /**
      * AVBuffer references backing the data for this frame. If all elements of
-     * this array are NULL, then this frame is not reference counted. This array
-     * must be filled contiguously -- if buf[i] is non-NULL then buf[j] must
-     * also be non-NULL for all j < i.
+     * this array are NULL, then this frame is not reference counted.
      *
      * There may be at most one AVBuffer per data plane, so for video this array
      * always contains all the references. For planar audio with more than
@@ -507,7 +491,7 @@ typedef struct AVFrame {
 
     /**
      * frame timestamp estimated using various heuristics, in stream time base
-     * Code outside libavutil should access this field using:
+     * Code outside libavcodec should access this field using:
      * av_frame_get_best_effort_timestamp(frame)
      * - encoding: unused
      * - decoding: set by libavcodec, read by user.
@@ -516,7 +500,7 @@ typedef struct AVFrame {
 
     /**
      * reordered pos from the last AVPacket that has been input into the decoder
-     * Code outside libavutil should access this field using:
+     * Code outside libavcodec should access this field using:
      * av_frame_get_pkt_pos(frame)
      * - encoding: unused
      * - decoding: Read by user.
@@ -526,7 +510,7 @@ typedef struct AVFrame {
     /**
      * duration of the corresponding packet, expressed in
      * AVStream->time_base units, 0 if unknown.
-     * Code outside libavutil should access this field using:
+     * Code outside libavcodec should access this field using:
      * av_frame_get_pkt_duration(frame)
      * - encoding: unused
      * - decoding: Read by user.
@@ -535,7 +519,7 @@ typedef struct AVFrame {
 
     /**
      * metadata.
-     * Code outside libavutil should access this field using:
+     * Code outside libavcodec should access this field using:
      * av_frame_get_metadata(frame)
      * - encoding: Set by user.
      * - decoding: Set by libavcodec.
@@ -546,7 +530,7 @@ typedef struct AVFrame {
      * decode error flags of the frame, set to a combination of
      * FF_DECODE_ERROR_xxx flags if the decoder produced a frame, but there
      * were errors during the decoding.
-     * Code outside libavutil should access this field using:
+     * Code outside libavcodec should access this field using:
      * av_frame_get_decode_error_flags(frame)
      * - encoding: unused
      * - decoding: set by libavcodec, read by user.
@@ -557,7 +541,7 @@ typedef struct AVFrame {
 
     /**
      * number of audio channels, only used for audio.
-     * Code outside libavutil should access this field using:
+     * Code outside libavcodec should access this field using:
      * av_frame_get_channels(frame)
      * - encoding: unused
      * - decoding: Read by user.
@@ -583,7 +567,7 @@ typedef struct AVFrame {
 /**
  * Accessors for some AVFrame fields.
  * The position of these field in the structure is not part of the ABI,
- * they should not be accessed directly outside libavutil.
+ * they should not be accessed directly outside libavcodec.
  */
 int64_t av_frame_get_best_effort_timestamp(const AVFrame *frame);
 void    av_frame_set_best_effort_timestamp(AVFrame *frame, int64_t val);
@@ -666,7 +650,7 @@ AVFrame *av_frame_clone(const AVFrame *src);
 void av_frame_unref(AVFrame *frame);
 
 /**
- * Move everything contained in src to dst and reset src.
+ * Move everythnig contained in src to dst and reset src.
  */
 void av_frame_move_ref(AVFrame *dst, AVFrame *src);
 

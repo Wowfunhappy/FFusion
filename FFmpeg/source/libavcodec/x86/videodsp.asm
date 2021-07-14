@@ -193,10 +193,10 @@ hvar_fn
     mov            valb, [srcq+%2-1]
 %elif (%2-%%off) == 2
     mov            valw, [srcq+%2-2]
+%elifidn %1, body
+    mov            vald, [srcq+%2-3]
 %else
-    mov            valb, [srcq+%2-1]
-    ror            vald, 16
-    mov            valw, [srcq+%2-3]
+    movd mm %+ %%mmx_idx, [srcq+%2-3]
 %endif
 %endif ; (%2-%%off) >= 1
 %endmacro ; READ_NUM_BYTES
@@ -249,13 +249,15 @@ hvar_fn
     mov     [dstq+%2-1], valb
 %elif (%2-%%off) == 2
     mov     [dstq+%2-2], valw
-%else
+%elifidn %1, body
     mov     [dstq+%2-3], valw
-    ror            vald, 16
+    shr            vald, 16
     mov     [dstq+%2-1], valb
-%ifnidn %1, body
-    ror            vald, 16
-%endif
+%else
+    movd           vald, mm %+ %%mmx_idx
+    mov     [dstq+%2-3], valw
+    shr            vald, 16
+    mov     [dstq+%2-1], valb
 %endif
 %endif ; (%2-%%off) >= 1
 %endmacro ; WRITE_NUM_BYTES

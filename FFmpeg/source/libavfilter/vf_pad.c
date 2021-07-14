@@ -73,7 +73,8 @@ enum var_name {
 
 static int query_formats(AVFilterContext *ctx)
 {
-    return ff_set_common_formats(ctx, ff_draw_supported_pixel_formats(0));
+    ff_set_common_formats(ctx, ff_draw_supported_pixel_formats(0));
+    return 0;
 }
 
 typedef struct PadContext {

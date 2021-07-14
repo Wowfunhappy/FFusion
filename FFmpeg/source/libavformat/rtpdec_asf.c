@@ -54,7 +54,6 @@ static int rtp_asf_fix_header(uint8_t *buf, int len)
     p += sizeof(ff_asf_guid) + 14;
     do {
         uint64_t chunksize = AV_RL64(p + sizeof(ff_asf_guid));
-        int skip = 6 * 8 + 3 * 4 + sizeof(ff_asf_guid) * 2;
         if (memcmp(p, ff_asf_file_header, sizeof(ff_asf_guid))) {
             if (chunksize > end - p)
                 return -1;
@@ -62,11 +61,9 @@ static int rtp_asf_fix_header(uint8_t *buf, int len)
             continue;
         }
 
-        if (end - p < 8 + skip)
-            break;
         /* skip most of the file header, to min_pktsize */
-        p += skip;
-        if (AV_RL32(p) == AV_RL32(p + 4)) {
+        p += 6 * 8 + 3 * 4 + sizeof(ff_asf_guid) * 2;
+        if (p + 8 <= end && AV_RL32(p) == AV_RL32(p + 4)) {
             /* and set that to zero */
             AV_WL32(p, 0);
             return 0;
@@ -101,15 +98,13 @@ int ff_wms_parse_sdp_a_line(AVFormatContext *s, const char *p)
 {
     int ret = 0;
     if (av_strstart(p, "pgmpu:data:application/vnd.ms.wms-hdr.asfv1;base64,", &p)) {
-        AVIOContext pb = { 0 };
+        AVIOContext pb;
         RTSPState *rt = s->priv_data;
         AVDictionary *opts = NULL;
         int len = strlen(p) * 6 / 8;
         char *buf = av_mallocz(len);
         AVInputFormat *iformat;
 
-        if (!buf)
-            return AVERROR(ENOMEM);
         av_base64_decode(buf, p, len);
 
         if (rtp_asf_fix_header(buf, len) < 0)
@@ -119,15 +114,10 @@ int ff_wms_parse_sdp_a_line(AVFormatContext *s, const char *p)
         if (rt->asf_ctx) {
             avformat_close_input(&rt->asf_ctx);
         }
-
         if (!(iformat = av_find_input_format("asf")))
             return AVERROR_DEMUXER_NOT_FOUND;
-
-        rt->asf_ctx = avformat_alloc_context();
-        if (!rt->asf_ctx) {
-            av_free(buf);
+        if (!(rt->asf_ctx = avformat_alloc_context()))
             return AVERROR(ENOMEM);
-        }
         rt->asf_ctx->pb      = &pb;
         av_dict_set(&opts, "no_resync_search", "1", 0);
 
@@ -138,10 +128,8 @@ int ff_wms_parse_sdp_a_line(AVFormatContext *s, const char *p)
 
         ret = avformat_open_input(&rt->asf_ctx, "", iformat, &opts);
         av_dict_free(&opts);
-        if (ret < 0) {
-            av_free(buf);
+        if (ret < 0)
             return ret;
-        }
         av_dict_copy(&s->metadata, rt->asf_ctx->metadata, 0);
         rt->asf_pb_pos = avio_tell(&pb);
         av_free(buf);
@@ -217,6 +205,8 @@ static int asfrtp_parse_packet(AVFormatContext *s, PayloadContext *asf,
             int start_off = avio_tell(pb);
 
             mflags = avio_r8(pb);
+            if (mflags & 0x80)
+                flags |= RTP_FLAG_KEY;
             len_off = avio_rb24(pb);
             if (mflags & 0x20)   /**< relative timestamp */
                 avio_skip(pb, 4);
@@ -234,7 +224,10 @@ static int asfrtp_parse_packet(AVFormatContext *s, PayloadContext *asf,
                  * multiple RTP packets.
                  */
                 if (asf->pktbuf && len_off != avio_tell(asf->pktbuf)) {
-                    ffio_free_dyn_buf(&asf->pktbuf);
+                    uint8_t *p;
+                    avio_close_dyn_buf(asf->pktbuf, &p);
+                    asf->pktbuf = NULL;
+                    av_free(p);
                 }
                 if (!len_off && !asf->pktbuf &&
                     (res = avio_open_dyn_buf(&asf->pktbuf)) < 0)
@@ -295,10 +288,21 @@ static int asfrtp_parse_packet(AVFormatContext *s, PayloadContext *asf,
     return res == 1 ? -1 : res;
 }
 
-static void asfrtp_close_context(PayloadContext *asf)
+static PayloadContext *asfrtp_new_context(void)
 {
-    ffio_free_dyn_buf(&asf->pktbuf);
+    return av_mallocz(sizeof(PayloadContext));
+}
+
+static void asfrtp_free_context(PayloadContext *asf)
+{
+    if (asf->pktbuf) {
+        uint8_t *p = NULL;
+        avio_close_dyn_buf(asf->pktbuf, &p);
+        asf->pktbuf = NULL;
+        av_free(p);
+    }
     av_freep(&asf->buf);
+    av_free(asf);
 }
 
 #define RTP_ASF_HANDLER(n, s, t) \
@@ -306,9 +310,9 @@ RTPDynamicProtocolHandler ff_ms_rtp_ ## n ## _handler = { \
     .enc_name         = s, \
     .codec_type       = t, \
     .codec_id         = AV_CODEC_ID_NONE, \
-    .priv_data_size   = sizeof(PayloadContext), \
     .parse_sdp_a_line = asfrtp_parse_sdp_line, \
-    .close            = asfrtp_close_context, \
+    .alloc            = asfrtp_new_context, \
+    .free             = asfrtp_free_context, \
     .parse_packet     = asfrtp_parse_packet,   \
 }
 

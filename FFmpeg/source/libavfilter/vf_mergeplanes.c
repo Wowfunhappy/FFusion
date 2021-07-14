@@ -46,6 +46,7 @@ typedef struct MergePlanesContext {
     const AVPixFmtDescriptor *outdesc;
 
     FFFrameSync fs;
+    FFFrameSyncIn fsin[3]; /* must be immediately after fs */
 } MergePlanesContext;
 
 #define OFFSET(x) offsetof(MergePlanesContext, x)
@@ -173,11 +174,9 @@ static int config_output(AVFilterLink *outlink)
     MergePlanesContext *s = ctx->priv;
     InputParam inputsp[4];
     FFFrameSyncIn *in;
-    int i, ret;
+    int i;
 
-    if ((ret = ff_framesync_init(&s->fs, ctx, s->nb_inputs)) < 0)
-        return ret;
-
+    ff_framesync_init(&s->fs, ctx, s->nb_inputs);
     in = s->fs.in;
     s->fs.opaque = s;
     s->fs.on_event = process_frame;

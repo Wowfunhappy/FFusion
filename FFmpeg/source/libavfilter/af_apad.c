@@ -57,15 +57,15 @@ AVFILTER_DEFINE_CLASS(apad);
 
 static av_cold int init(AVFilterContext *ctx)
 {
-    APadContext *s = ctx->priv;
+    APadContext *apad = ctx->priv;
 
-    s->next_pts = AV_NOPTS_VALUE;
-    if (s->whole_len >= 0 && s->pad_len >= 0) {
+    apad->next_pts = AV_NOPTS_VALUE;
+    if (apad->whole_len >= 0 && apad->pad_len >= 0) {
         av_log(ctx, AV_LOG_ERROR, "Both whole and pad length are set, this is not possible\n");
         return AVERROR(EINVAL);
     }
-    s->pad_len_left   = s->pad_len;
-    s->whole_len_left = s->whole_len;
+    apad->pad_len_left   = apad->pad_len;
+    apad->whole_len_left = apad->whole_len;
 
     return 0;
 }
@@ -73,38 +73,38 @@ static av_cold int init(AVFilterContext *ctx)
 static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
 {
     AVFilterContext *ctx = inlink->dst;
-    APadContext *s = ctx->priv;
+    APadContext *apad = ctx->priv;
 
-    if (s->whole_len >= 0) {
-        s->whole_len_left = FFMAX(s->whole_len_left - frame->nb_samples, 0);
+    if (apad->whole_len >= 0) {
+        apad->whole_len_left = FFMAX(apad->whole_len_left - frame->nb_samples, 0);
         av_log(ctx, AV_LOG_DEBUG,
-               "n_out:%d whole_len_left:%"PRId64"\n", frame->nb_samples, s->whole_len_left);
+               "n_out:%d whole_len_left:%"PRId64"\n", frame->nb_samples, apad->whole_len_left);
     }
 
-    s->next_pts = frame->pts + av_rescale_q(frame->nb_samples, (AVRational){1, inlink->sample_rate}, inlink->time_base);
+    apad->next_pts = frame->pts + av_rescale_q(frame->nb_samples, (AVRational){1, inlink->sample_rate}, inlink->time_base);
     return ff_filter_frame(ctx->outputs[0], frame);
 }
 
 static int request_frame(AVFilterLink *outlink)
 {
     AVFilterContext *ctx = outlink->src;
-    APadContext *s = ctx->priv;
+    APadContext *apad = ctx->priv;
     int ret;
 
     ret = ff_request_frame(ctx->inputs[0]);
 
     if (ret == AVERROR_EOF && !ctx->is_disabled) {
-        int n_out = s->packet_size;
+        int n_out = apad->packet_size;
         AVFrame *outsamplesref;
 
-        if (s->whole_len >= 0 && s->pad_len < 0) {
-            s->pad_len = s->pad_len_left = s->whole_len_left;
+        if (apad->whole_len >= 0 && apad->pad_len < 0) {
+            apad->pad_len = apad->pad_len_left = apad->whole_len_left;
         }
-        if (s->pad_len >=0 || s->whole_len >= 0) {
-            n_out = FFMIN(n_out, s->pad_len_left);
-            s->pad_len_left -= n_out;
+        if (apad->pad_len >=0 || apad->whole_len >= 0) {
+            n_out = FFMIN(n_out, apad->pad_len_left);
+            apad->pad_len_left -= n_out;
             av_log(ctx, AV_LOG_DEBUG,
-                   "padding n_out:%d pad_len_left:%"PRId64"\n", n_out, s->pad_len_left);
+                   "padding n_out:%d pad_len_left:%"PRId64"\n", n_out, apad->pad_len_left);
         }
 
         if (!n_out)
@@ -122,9 +122,9 @@ static int request_frame(AVFilterLink *outlink)
                                av_frame_get_channels(outsamplesref),
                                outsamplesref->format);
 
-        outsamplesref->pts = s->next_pts;
-        if (s->next_pts != AV_NOPTS_VALUE)
-            s->next_pts += av_rescale_q(n_out, (AVRational){1, outlink->sample_rate}, outlink->time_base);
+        outsamplesref->pts = apad->next_pts;
+        if (apad->next_pts != AV_NOPTS_VALUE)
+            apad->next_pts += av_rescale_q(n_out, (AVRational){1, outlink->sample_rate}, outlink->time_base);
 
         return ff_filter_frame(outlink, outsamplesref);
     }

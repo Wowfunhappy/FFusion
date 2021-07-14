@@ -30,10 +30,9 @@
 #define BITSTREAM_READER_LE
 #include "avcodec.h"
 #include "get_bits.h"
-#include "ivi.h"
 #include "ivi_dsp.h"
+#include "ivi_common.h"
 #include "indeo4data.h"
-#include "internal.h"
 
 #define IVI4_PIC_SIZE_ESC   7
 
@@ -141,7 +140,7 @@ static int decode_pic_hdr(IVI45DecContext *ctx, AVCodecContext *avctx)
 
     /* null frames don't contain anything else so we just return */
     if (ctx->frame_type >= IVI4_FRAMETYPE_NULL_FIRST) {
-        ff_dlog(avctx, "Null frame encountered!\n");
+        av_dlog(avctx, "Null frame encountered!\n");
         return 0;
     }
 
@@ -150,7 +149,7 @@ static int decode_pic_hdr(IVI45DecContext *ctx, AVCodecContext *avctx)
     /* we don't do that because Indeo 4 videos can be decoded anyway */
     if (get_bits1(&ctx->gb)) {
         skip_bits_long(&ctx->gb, 32);
-        ff_dlog(avctx, "Password-protected clip!\n");
+        av_dlog(avctx, "Password-protected clip!\n");
     }
 
     pic_size_indx = get_bits(&ctx->gb, 3);
@@ -245,9 +244,7 @@ static int decode_pic_hdr(IVI45DecContext *ctx, AVCodecContext *avctx)
 
     /* skip picture header extension if any */
     while (get_bits1(&ctx->gb)) {
-        ff_dlog(avctx, "Pic hdr extension encountered!\n");
-        if (get_bits_left(&ctx->gb) < 10)
-            return AVERROR_INVALIDDATA;
+        av_dlog(avctx, "Pic hdr extension encountered!\n");
         skip_bits(&ctx->gb, 8);
     }
 
@@ -269,14 +266,12 @@ static int decode_pic_hdr(IVI45DecContext *ctx, AVCodecContext *avctx)
  *  @param[in]     avctx     pointer to the AVCodecContext
  *  @return        result code: 0 = OK, negative number = error
  */
-static int decode_band_hdr(IVI45DecContext *ctx, IVIBandDesc *arg_band,
+static int decode_band_hdr(IVI45DecContext *ctx, IVIBandDesc *band,
                            AVCodecContext *avctx)
 {
     int plane, band_num, indx, transform_id, scan_indx;
     int i;
     int quant_mat;
-    IVIBandDesc temp_band, *band = &temp_band;
-    memcpy(&temp_band, arg_band, sizeof(temp_band));
 
     plane    = get_bits(&ctx->gb, 2);
     band_num = get_bits(&ctx->gb, 4);
@@ -410,10 +405,10 @@ static int decode_band_hdr(IVI45DecContext *ctx, IVIBandDesc *arg_band,
 
         /* decode block huffman codebook */
         if (!get_bits1(&ctx->gb))
-            arg_band->blk_vlc.tab = ctx->blk_vlc.tab;
+            band->blk_vlc.tab = ctx->blk_vlc.tab;
         else
             if (ff_ivi_dec_huff_desc(&ctx->gb, 1, IVI_BLK_HUFF,
-                                     &arg_band->blk_vlc, avctx))
+                                     &band->blk_vlc, avctx))
                 return AVERROR_INVALIDDATA;
 
         /* select appropriate rvmap table for this band */
@@ -453,9 +448,6 @@ static int decode_band_hdr(IVI45DecContext *ctx, IVIBandDesc *arg_band,
         av_log(avctx, AV_LOG_ERROR, "band->scan not set\n");
         return AVERROR_INVALIDDATA;
     }
-
-    band->blk_vlc = arg_band->blk_vlc;
-    memcpy(arg_band, band, sizeof(*arg_band));
 
     return 0;
 }
@@ -504,11 +496,6 @@ static int decode_mb_info(IVI45DecContext *ctx, IVIBandDesc *band,
             mb->buf_offs = mb_offset;
             mb->b_mv_x   =
             mb->b_mv_y   = 0;
-
-            if (get_bits_left(&ctx->gb) < 1) {
-                av_log(avctx, AV_LOG_ERROR, "Insufficient input for mb info\n");
-                return AVERROR_INVALIDDATA;
-            }
 
             if (get_bits1(&ctx->gb)) {
                 if (ctx->frame_type == IVI4_FRAMETYPE_INTRA) {
@@ -716,5 +703,5 @@ AVCodec ff_indeo4_decoder = {
     .init           = decode_init,
     .close          = ff_ivi_decode_close,
     .decode         = ff_ivi_decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_DR1,
 };

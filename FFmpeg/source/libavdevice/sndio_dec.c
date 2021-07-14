@@ -22,14 +22,12 @@
 #include <stdint.h>
 #include <sndio.h>
 
-#include "libavutil/internal.h"
+#include "libavformat/avformat.h"
+#include "libavformat/internal.h"
 #include "libavutil/opt.h"
 #include "libavutil/time.h"
 
-#include "libavformat/avformat.h"
-#include "libavformat/internal.h"
-
-#include "libavdevice/sndio.h"
+#include "sndio_common.h"
 
 static av_cold int audio_read_header(AVFormatContext *s1)
 {

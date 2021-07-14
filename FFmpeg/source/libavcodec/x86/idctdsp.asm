@@ -27,7 +27,7 @@ SECTION_RODATA
 
 cextern pb_80
 
-SECTION .text
+SECTION_TEXT
 
 ;--------------------------------------------------------------------------
 ;void ff_put_signed_pixels_clamped(const int16_t *block, uint8_t *pixels,

@@ -77,8 +77,11 @@ static av_cold int cdg_decode_init(AVCodecContext *avctx)
     if (!cc->frame)
         return AVERROR(ENOMEM);
 
+    avctx->width   = CDG_FULL_WIDTH;
+    avctx->height  = CDG_FULL_HEIGHT;
     avctx->pix_fmt = AV_PIX_FMT_PAL8;
-    return ff_set_dimensions(avctx, CDG_FULL_WIDTH, CDG_FULL_HEIGHT);
+
+    return 0;
 }
 
 static void cdg_border_preset(CDGraphicsContext *cc, uint8_t *data)
@@ -373,5 +376,5 @@ AVCodec ff_cdgraphics_decoder = {
     .init           = cdg_decode_init,
     .close          = cdg_decode_end,
     .decode         = cdg_decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_DR1,
 };

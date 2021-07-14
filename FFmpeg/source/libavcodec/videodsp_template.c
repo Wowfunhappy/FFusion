@@ -19,6 +19,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <assert.h>
+
 #include "bit_depth_template.c"
 void FUNC(ff_emulated_edge_mc)(uint8_t *buf, const uint8_t *src,
                                ptrdiff_t buf_linesize,
@@ -32,8 +34,6 @@ void FUNC(ff_emulated_edge_mc)(uint8_t *buf, const uint8_t *src,
     if (!w || !h)
         return;
 
-    av_assert2(block_w * sizeof(pixel) <= FFABS(buf_linesize));
-
     if (src_y >= h) {
         src -= src_y * src_linesize;
         src += (h - 1) * src_linesize;
@@ -44,8 +44,7 @@ void FUNC(ff_emulated_edge_mc)(uint8_t *buf, const uint8_t *src,
         src_y = 1 - block_h;
     }
     if (src_x >= w) {
-        // The subtracted expression has an unsigned type and must thus not be negative
-        src  -= (1 + src_x - w) * sizeof(pixel);
+        src  += (w - 1 - src_x) * sizeof(pixel);
         src_x = w - 1;
     } else if (src_x <= -block_w) {
         src  += (1 - block_w - src_x) * sizeof(pixel);

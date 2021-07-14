@@ -42,13 +42,9 @@ static int process_frame(FFFrameSync *fs)
 
 int ff_dualinput_init(AVFilterContext *ctx, FFDualInputContext *s)
 {
-    FFFrameSyncIn *in;
-    int ret;
+    FFFrameSyncIn *in = s->fs.in;
 
-    if ((ret = ff_framesync_init(&s->fs, ctx, 2)) < 0)
-        return ret;
-
-    in = s->fs.in;
+    ff_framesync_init(&s->fs, ctx, 2);
     s->fs.opaque = s;
     s->fs.on_event = process_frame;
     in[0].time_base = ctx->inputs[0]->time_base;

@@ -72,9 +72,6 @@ static av_cold int atrac3p_decode_close(AVCodecContext *avctx)
     av_freep(&ctx->ch_units);
     av_freep(&ctx->fdsp);
 
-    ff_mdct_end(&ctx->mdct_ctx);
-    ff_mdct_end(&ctx->ipqf_dct_ctx);
-
     return 0;
 }
 
@@ -171,7 +168,7 @@ static av_cold int atrac3p_decode_init(AVCodecContext *avctx)
     ctx->my_channel_layout = avctx->channel_layout;
 
     ctx->ch_units = av_mallocz_array(ctx->num_channel_blocks, sizeof(*ctx->ch_units));
-    ctx->fdsp = avpriv_float_dsp_alloc(avctx->flags & AV_CODEC_FLAG_BITEXACT);
+    ctx->fdsp = avpriv_float_dsp_alloc(avctx->flags & CODEC_FLAG_BITEXACT);
 
     if (!ctx->ch_units || !ctx->fdsp) {
         atrac3p_decode_close(avctx);
@@ -336,8 +333,10 @@ static int atrac3p_decode_frame(AVCodecContext *avctx, void *data,
     float **samples_p = (float **)frame->extended_data;
 
     frame->nb_samples = ATRAC3P_FRAME_SAMPLES;
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_buffer() failed\n");
         return ret;
+    }
 
     if ((ret = init_get_bits8(&ctx->gb, avpkt->data, avpkt->size)) < 0)
         return ret;
@@ -384,7 +383,7 @@ static int atrac3p_decode_frame(AVCodecContext *avctx, void *data,
 
     *got_frame_ptr = 1;
 
-    return FFMIN(avctx->block_align, avpkt->size);
+    return avctx->block_align;
 }
 
 AVCodec ff_atrac3p_decoder = {
@@ -392,7 +391,6 @@ AVCodec ff_atrac3p_decoder = {
     .long_name      = NULL_IF_CONFIG_SMALL("ATRAC3+ (Adaptive TRansform Acoustic Coding 3+)"),
     .type           = AVMEDIA_TYPE_AUDIO,
     .id             = AV_CODEC_ID_ATRAC3P,
-    .capabilities   = AV_CODEC_CAP_DR1,
     .priv_data_size = sizeof(ATRAC3PContext),
     .init           = atrac3p_decode_init,
     .close          = atrac3p_decode_close,

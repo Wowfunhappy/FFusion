@@ -43,7 +43,6 @@ typedef struct MqcState {
     unsigned int c;
     unsigned int ct;
     uint8_t cx_states[19];
-    int raw;
 } MqcState;
 
 /* encoder */
@@ -59,7 +58,6 @@ int ff_mqc_length(MqcState *mqc);
 
 /** flush the encoder [returns number of bytes encoded] */
 int ff_mqc_flush(MqcState *mqc);
-int ff_mqc_flush_to(MqcState *mqc, uint8_t *dst, int *dst_len);
 
 /* decoder */
 
@@ -67,10 +65,8 @@ int ff_mqc_flush_to(MqcState *mqc, uint8_t *dst, int *dst_len);
  * Initialize MQ-decoder.
  * @param mqc   MQ decoder state
  * @param bp    byte poiter
- * @param raw   raw mode
- * @param reset reset states
  */
-void ff_mqc_initdec(MqcState *mqc, uint8_t *bp, int raw, int reset);
+void ff_mqc_initdec(MqcState *mqc, uint8_t *bp);
 
 /**
  * MQ decoder.

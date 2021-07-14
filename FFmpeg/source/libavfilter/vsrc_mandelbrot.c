@@ -69,8 +69,8 @@ typedef struct {
     double end_scale;
     double end_pts;
     double bailout;
-    int outer;
-    int inner;
+    enum Outer outer;
+    enum Inner inner;
     int cache_allocated;
     int cache_used;
     Point *point_cache;
@@ -153,10 +153,8 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
-    if (!fmts_list)
-        return AVERROR(ENOMEM);
-    return ff_set_common_formats(ctx, fmts_list);
+    ff_set_common_formats(ctx, ff_make_format_list(pix_fmts));
+    return 0;
 }
 
 static int config_props(AVFilterLink *inlink)
@@ -356,14 +354,14 @@ static void draw_mandelbrot(AVFilterContext *ctx, uint32_t *color, int linesize,
             }
             if(!c){
                 if(mb->inner==PERIOD){
-                    int j;
-                    for(j=i-1; j; j--)
-                        if(SQR(mb->zyklus[j][0]-zr) + SQR(mb->zyklus[j][1]-zi) < epsilon*epsilon*10)
-                            break;
-                    if(j){
-                        c= i-j;
-                        c= ((c<<5)&0xE0) + ((c<<10)&0xE000) + ((c<<15)&0xE00000);
-                    }
+                int j;
+                for(j=i-1; j; j--)
+                    if(SQR(mb->zyklus[j][0]-zr) + SQR(mb->zyklus[j][1]-zi) < epsilon*epsilon*10)
+                        break;
+                if(j){
+                    c= i-j;
+                    c= ((c<<5)&0xE0) + ((c<<10)&0xE000) + ((c<<15)&0xE00000);
+                }
                 }else if(mb->inner==CONVTIME){
                     c= floor(i*255.0/mb->maxiter+dv)*0x010101;
                 } else if(mb->inner==MINCOL){

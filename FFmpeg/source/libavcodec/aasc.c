@@ -137,7 +137,7 @@ static int aasc_decode_frame(AVCodecContext *avctx,
         return ret;
 
     /* report that the buffer was completely consumed */
-    return avpkt->size;
+    return buf_size;
 }
 
 static av_cold int aasc_decode_end(AVCodecContext *avctx)
@@ -158,5 +158,5 @@ AVCodec ff_aasc_decoder = {
     .init           = aasc_decode_init,
     .close          = aasc_decode_end,
     .decode         = aasc_decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_DR1,
 };

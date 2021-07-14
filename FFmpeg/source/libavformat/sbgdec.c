@@ -197,7 +197,7 @@ static int str_to_time(const char *str, int64_t *rtime)
         if (end > cur + 1)
             cur = end;
     }
-    *rtime = (hours * 3600LL + minutes * 60LL + seconds) * AV_TIME_BASE;
+    *rtime = (hours * 3600 + minutes * 60 + seconds) * AV_TIME_BASE;
     return cur - str;
 }
 
@@ -317,7 +317,7 @@ static int lex_time(struct sbg_parser *p, int64_t *rt)
         int errcode = c; \
         if (errcode <= 0) \
             return errcode ? errcode : AVERROR_INVALIDDATA; \
-    } while (0)
+    } while(0);
 
 static int parse_immediate(struct sbg_parser *p)
 {
@@ -927,7 +927,7 @@ static void expand_timestamps(void *log, struct sbg_script *s)
         }
     }
     if (s->start_ts == AV_NOPTS_VALUE)
-        s->start_ts = (s->opt_start_at_first && s->tseq) ? s->tseq[0].ts.t : now;
+        s->start_ts = s->opt_start_at_first ? s->tseq[0].ts.t : now;
     s->end_ts = s->opt_duration ? s->start_ts + s->opt_duration :
                 AV_NOPTS_VALUE; /* may be overridden later by -E option */
     cur_ts = now;
@@ -973,8 +973,6 @@ static int expand_tseq(void *log, struct sbg_script *s, int *nb_ev_max,
     } else {
         ev = alloc_array_elem((void **)&s->events, sizeof(*ev),
                               &s->nb_events, nb_ev_max);
-        if (!ev)
-            return AVERROR(ENOMEM);
         ev->ts          = tseq->ts.t;
         ev->elements    = def->elements;
         ev->nb_elements = def->nb_elements;

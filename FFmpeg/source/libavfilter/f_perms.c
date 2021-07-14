@@ -37,7 +37,7 @@ typedef struct {
     const AVClass *class;
     AVLFG lfg;
     int64_t random_seed;
-    int mode;
+    enum mode mode;
 } PermsContext;
 
 #define OFFSET(x) offsetof(PermsContext, x)

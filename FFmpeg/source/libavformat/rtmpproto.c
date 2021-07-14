@@ -27,12 +27,12 @@
 #include "libavcodec/bytestream.h"
 #include "libavutil/avstring.h"
 #include "libavutil/base64.h"
-#include "libavutil/hmac.h"
 #include "libavutil/intfloat.h"
 #include "libavutil/lfg.h"
 #include "libavutil/md5.h"
 #include "libavutil/opt.h"
 #include "libavutil/random_seed.h"
+#include "libavutil/sha.h"
 #include "avformat.h"
 #include "internal.h"
 
@@ -49,8 +49,8 @@
 #endif
 
 #define APP_MAX_LENGTH 1024
-#define PLAYPATH_MAX_LENGTH 512
-#define TCURL_MAX_LENGTH 1024
+#define PLAYPATH_MAX_LENGTH 256
+#define TCURL_MAX_LENGTH 512
 #define FLASHVER_MAX_LENGTH 64
 #define RTMP_PKTDATA_DEFAULT_SIZE 4096
 #define RTMP_HEADER 11
@@ -217,8 +217,9 @@ static void free_tracked_methods(RTMPContext *rt)
     int i;
 
     for (i = 0; i < rt->nb_tracked_methods; i ++)
-        av_freep(&rt->tracked_methods[i].name);
-    av_freep(&rt->tracked_methods);
+        av_free(rt->tracked_methods[i].name);
+    av_free(rt->tracked_methods);
+    rt->tracked_methods      = NULL;
     rt->tracked_methods_size = 0;
     rt->nb_tracked_methods   = 0;
 }
@@ -956,22 +957,41 @@ static int gen_fcsubscribe_stream(URLContext *s, RTMPContext *rt,
 int ff_rtmp_calc_digest(const uint8_t *src, int len, int gap,
                         const uint8_t *key, int keylen, uint8_t *dst)
 {
-    AVHMAC *hmac;
+    struct AVSHA *sha;
+    uint8_t hmac_buf[64+32] = {0};
+    int i;
 
-    hmac = av_hmac_alloc(AV_HMAC_SHA256);
-    if (!hmac)
+    sha = av_sha_alloc();
+    if (!sha)
         return AVERROR(ENOMEM);
 
-    av_hmac_init(hmac, key, keylen);
-    if (gap <= 0) {
-        av_hmac_update(hmac, src, len);
-    } else { //skip 32 bytes used for storing digest
-        av_hmac_update(hmac, src, gap);
-        av_hmac_update(hmac, src + gap + 32, len - gap - 32);
+    if (keylen < 64) {
+        memcpy(hmac_buf, key, keylen);
+    } else {
+        av_sha_init(sha, 256);
+        av_sha_update(sha,key, keylen);
+        av_sha_final(sha, hmac_buf);
     }
-    av_hmac_final(hmac, dst, 32);
+    for (i = 0; i < 64; i++)
+        hmac_buf[i] ^= HMAC_IPAD_VAL;
 
-    av_hmac_free(hmac);
+    av_sha_init(sha, 256);
+    av_sha_update(sha, hmac_buf, 64);
+    if (gap <= 0) {
+        av_sha_update(sha, src, len);
+    } else { //skip 32 bytes used for storing digest
+        av_sha_update(sha, src, gap);
+        av_sha_update(sha, src + gap + 32, len - gap - 32);
+    }
+    av_sha_final(sha, hmac_buf + 64);
+
+    for (i = 0; i < 64; i++)
+        hmac_buf[i] ^= HMAC_IPAD_VAL ^ HMAC_OPAD_VAL; //reuse XORed key for opad
+    av_sha_init(sha, 256);
+    av_sha_update(sha, hmac_buf, 64+32);
+    av_sha_final(sha, dst);
+
+    av_free(sha);
 
     return 0;
 }
@@ -2296,7 +2316,7 @@ static int rtmp_parse_result(URLContext *s, RTMPContext *rt, RTMPPacket *pkt)
 
     switch (pkt->type) {
     case RTMP_PT_BYTES_READ:
-        av_log(s, AV_LOG_TRACE, "received bytes read report\n");
+        av_dlog(s, "received bytes read report\n");
         break;
     case RTMP_PT_CHUNK_SIZE:
         if ((ret = handle_chunk_size(s, pkt)) < 0)
@@ -2532,7 +2552,7 @@ static int inject_fake_duration_metadata(RTMPContext *rt)
     // Increase the size by the injected packet
     rt->flv_size += 55;
     // Delete the old FLV data
-    av_freep(&old_flv_data);
+    av_free(old_flv_data);
 
     p = rt->flv_data + 13;
     bytestream_put_byte(&p, FLV_TAG_TYPE_META);

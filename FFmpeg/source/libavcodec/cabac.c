@@ -51,7 +51,7 @@ void ff_init_cabac_encoder(CABACContext *c, uint8_t *buf, int buf_size){
  *
  * @param buf_size size of buf in bits
  */
-int ff_init_cabac_decoder(CABACContext *c, const uint8_t *buf, int buf_size){
+void ff_init_cabac_decoder(CABACContext *c, const uint8_t *buf, int buf_size){
     c->bytestream_start=
     c->bytestream= buf;
     c->bytestream_end= buf + buf_size;
@@ -64,9 +64,6 @@ int ff_init_cabac_decoder(CABACContext *c, const uint8_t *buf, int buf_size){
 #endif
     c->low+= ((*c->bytestream++)<<2) + 2;
     c->range= 0x1FE;
-    if ((c->range<<(CABAC_BITS+1)) < c->low)
-        return AVERROR_INVALIDDATA;
-    return 0;
 }
 
 void ff_init_cabac_states(void)
@@ -177,7 +174,7 @@ int main(void){
     CABACContext c;
     uint8_t b[9*SIZE];
     uint8_t r[9*SIZE];
-    int i, ret = 0;
+    int i;
     uint8_t state[10]= {0};
     AVLFG prng;
 
@@ -191,11 +188,15 @@ int main(void){
     }
 
     for(i=0; i<SIZE; i++){
+START_TIMER
         put_cabac_bypass(&c, r[i]&1);
+STOP_TIMER("put_cabac_bypass")
     }
 
     for(i=0; i<SIZE; i++){
+START_TIMER
         put_cabac(&c, state, r[i]&1);
+STOP_TIMER("put_cabac")
     }
 
     put_cabac_terminate(&c, 1);
@@ -205,24 +206,22 @@ int main(void){
     memset(state, 0, sizeof(state));
 
     for(i=0; i<SIZE; i++){
-        if( (r[i]&1) != get_cabac_bypass(&c) ) {
+START_TIMER
+        if( (r[i]&1) != get_cabac_bypass(&c) )
             av_log(NULL, AV_LOG_ERROR, "CABAC bypass failure at %d\n", i);
-            ret = 1;
-        }
+STOP_TIMER("get_cabac_bypass")
     }
 
     for(i=0; i<SIZE; i++){
-        if( (r[i]&1) != get_cabac_noinline(&c, state) ) {
+START_TIMER
+        if( (r[i]&1) != get_cabac_noinline(&c, state) )
             av_log(NULL, AV_LOG_ERROR, "CABAC failure at %d\n", i);
-            ret = 1;
-        }
+STOP_TIMER("get_cabac")
     }
-    if(!get_cabac_terminate(&c)) {
+    if(!get_cabac_terminate(&c))
         av_log(NULL, AV_LOG_ERROR, "where's the Terminator?\n");
-        ret = 1;
-    }
 
-    return ret;
+    return 0;
 }
 
 #endif /* TEST */

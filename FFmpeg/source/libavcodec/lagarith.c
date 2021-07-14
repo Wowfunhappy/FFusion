@@ -98,7 +98,7 @@ static uint32_t softfloat_mul(uint32_t x, uint64_t mantissa)
 
 static uint8_t lag_calc_zero_run(int8_t x)
 {
-    return (x * 2) ^ (x >> 7);
+    return (x << 1) ^ (x >> 7);
 }
 
 static int lag_decode_prob(GetBitContext *gb, uint32_t *value)
@@ -191,9 +191,7 @@ static int lag_read_prob_header(lag_rac *rac, GetBitContext *gb)
         }
 
         scale_factor++;
-        if (scale_factor >= 32U)
-            return AVERROR_INVALIDDATA;
-        cumulative_target = 1U << scale_factor;
+        cumulative_target = 1 << scale_factor;
 
         if (scaled_cumul_prob > cumulative_target) {
             av_log(rac->avctx, AV_LOG_ERROR,
@@ -221,9 +219,6 @@ static int lag_read_prob_header(lag_rac *rac, GetBitContext *gb)
              */
         }
     }
-
-    if (scale_factor > 23)
-        return AVERROR_INVALIDDATA;
 
     rac->scale = scale_factor;
 
@@ -753,5 +748,5 @@ AVCodec ff_lagarith_decoder = {
     .init           = lag_decode_init,
     .close          = lag_decode_end,
     .decode         = lag_decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_FRAME_THREADS,
+    .capabilities   = CODEC_CAP_DR1 | CODEC_CAP_FRAME_THREADS,
 };

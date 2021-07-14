@@ -146,7 +146,7 @@ static int cng_decode_frame(AVCodecContext *avctx, void *data,
         return ret;
     buf_out = (int16_t *)frame->data[0];
     for (i = 0; i < avctx->frame_size; i++)
-        buf_out[i] = av_clip_int16(p->filter_out[i + p->order]);
+        buf_out[i] = p->filter_out[i + p->order];
     memcpy(p->filter_out, p->filter_out + avctx->frame_size,
            p->order * sizeof(*p->filter_out));
 
@@ -167,5 +167,5 @@ AVCodec ff_comfortnoise_decoder = {
     .close          = cng_decode_close,
     .sample_fmts    = (const enum AVSampleFormat[]){ AV_SAMPLE_FMT_S16,
                                                      AV_SAMPLE_FMT_NONE },
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_DELAY | CODEC_CAP_DR1,
 };

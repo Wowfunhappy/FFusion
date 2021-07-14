@@ -90,8 +90,6 @@ static void qpeg_decode_intra(QpegContext *qctx, uint8_t *dst,
                 }
             }
         } else {
-            if (bytestream2_get_bytes_left(&qctx->buffer) < copy)
-                copy = bytestream2_get_bytes_left(&qctx->buffer);
             for(i = 0; i < copy; i++) {
                 dst[filled++] = bytestream2_get_byte(&qctx->buffer);
                 if (filled >= width) {
@@ -122,13 +120,12 @@ static void av_noinline qpeg_decode_inter(QpegContext *qctx, uint8_t *dst,
     int filled = 0;
     int orig_height;
 
-    if (refdata) {
-        /* copy prev frame */
-        for (i = 0; i < height; i++)
-            memcpy(dst + (i * stride), refdata + (i * stride), width);
-    } else {
-        refdata = dst;
-    }
+    if(!refdata)
+        refdata= dst;
+
+    /* copy prev frame */
+    for(i = 0; i < height; i++)
+        memcpy(dst + (i * stride), refdata + (i * stride), width);
 
     orig_height = height;
     height--;
@@ -262,8 +259,7 @@ static int decode_frame(AVCodecContext *avctx,
     AVFrame * const ref = a->ref;
     uint8_t* outdata;
     int delta, ret;
-    int pal_size;
-    const uint8_t *pal = av_packet_get_side_data(avpkt, AV_PKT_DATA_PALETTE, &pal_size);
+    const uint8_t *pal = av_packet_get_side_data(avpkt, AV_PKT_DATA_PALETTE, NULL);
 
     if (avpkt->size < 0x86) {
         av_log(avctx, AV_LOG_ERROR, "Packet is too small\n");
@@ -290,11 +286,9 @@ static int decode_frame(AVCodecContext *avctx,
     }
 
     /* make the palette available on the way out */
-    if (pal && pal_size == AVPALETTE_SIZE) {
+    if (pal) {
         p->palette_has_changed = 1;
         memcpy(a->pal, pal, AVPALETTE_SIZE);
-    } else if (pal) {
-        av_log(avctx, AV_LOG_ERROR, "Palette size %d is wrong\n", pal_size);
     }
     memcpy(p->data[1], a->pal, AVPALETTE_SIZE);
 
@@ -356,5 +350,5 @@ AVCodec ff_qpeg_decoder = {
     .close          = decode_end,
     .decode         = decode_frame,
     .flush          = decode_flush,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_DR1,
 };

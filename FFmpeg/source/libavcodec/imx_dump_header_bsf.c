@@ -42,9 +42,7 @@ static int imx_dump_header(AVBitStreamFilterContext *bsfc, AVCodecContext *avctx
         return 0;
     }
 
-    *poutbuf = av_malloc(buf_size + 20 + AV_INPUT_BUFFER_PADDING_SIZE);
-    if (!*poutbuf)
-        return AVERROR(ENOMEM);
+    *poutbuf = av_malloc(buf_size + 20 + FF_INPUT_BUFFER_PADDING_SIZE);
     poutbufp = *poutbuf;
     bytestream_put_buffer(&poutbufp, imx_header, 16);
     bytestream_put_byte(&poutbufp, 0x83); /* KLV BER long form */

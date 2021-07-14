@@ -29,7 +29,8 @@
 
 #include <stdint.h>
 
-#include "ivi.h"
+#include "ivi_common.h"
+#include "mathops.h"
 
 /**
  *  standard picture dimensions

@@ -55,7 +55,8 @@ static int query_formats(AVFilterContext *ctx)
             ff_add_format(&pix_fmts, fmt);
     }
 
-    return ff_set_common_formats(ctx, pix_fmts);
+    ff_set_common_formats(ctx, pix_fmts);
+    return 0;
 }
 
 static int config_props(AVFilterLink *inlink)

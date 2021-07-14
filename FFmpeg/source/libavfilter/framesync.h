@@ -201,9 +201,9 @@ typedef struct FFFrameSync {
     uint8_t eof;
 
     /**
-     * Pointer to array of inputs.
+     * Array of inputs; all inputs must be in consecutive memory
      */
-    FFFrameSyncIn *in;
+    FFFrameSyncIn in[1]; /* must be the last field */
 
 } FFFrameSync;
 
@@ -215,9 +215,8 @@ typedef struct FFFrameSync {
  * @param  fs      frame sync structure to initialize
  * @param  parent  parent object, used for logging
  * @param  nb_in   number of inputs
- * @return  >= 0 for success or a negative error code
  */
-int ff_framesync_init(FFFrameSync *fs, void *parent, unsigned nb_in);
+void ff_framesync_init(FFFrameSync *fs, void *parent, unsigned nb_in);
 
 /**
  * Configure a frame sync structure.

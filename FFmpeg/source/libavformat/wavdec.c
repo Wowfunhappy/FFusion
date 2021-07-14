@@ -57,19 +57,14 @@ typedef struct WAVDemuxContext {
     int smv_cur_pt;
     int smv_given_first;
     int unaligned; // e.g. if an odd number of bytes ID3 tag was prepended
-    int rifx; // RIFX: integer byte order for parameters is big endian
 } WAVDemuxContext;
 
 #if CONFIG_WAV_DEMUXER
 
-static int64_t next_tag(AVIOContext *pb, uint32_t *tag, int big_endian)
+static int64_t next_tag(AVIOContext *pb, uint32_t *tag)
 {
     *tag = avio_rl32(pb);
-    if (!big_endian) {
-        return avio_rl32(pb);
-    } else {
-        return avio_rb32(pb);
-    }
+    return avio_rl32(pb);
 }
 
 /* RIFF chunks are always at even offsets relative to where they start. */
@@ -89,7 +84,7 @@ static int64_t find_tag(WAVDemuxContext * wav, AVIOContext *pb, uint32_t tag1)
     for (;;) {
         if (avio_feof(pb))
             return AVERROR_EOF;
-        size = next_tag(pb, &tag, wav->rifx);
+        size = next_tag(pb, &tag);
         if (tag == tag1)
             break;
         wav_seek_tag(wav, pb, size, SEEK_CUR);
@@ -103,7 +98,7 @@ static int wav_probe(AVProbeData *p)
     if (p->buf_size <= 32)
         return 0;
     if (!memcmp(p->buf + 8, "WAVE", 4)) {
-        if (!memcmp(p->buf, "RIFF", 4) || !memcmp(p->buf, "RIFX", 4))
+        if (!memcmp(p->buf, "RIFF", 4))
             /* Since the ACT demuxer has a standard WAV header at the top of
              * its own, the returned score is decreased to avoid a probe
              * conflict between ACT and WAV. */
@@ -119,14 +114,13 @@ static void handle_stream_probing(AVStream *st)
 {
     if (st->codec->codec_id == AV_CODEC_ID_PCM_S16LE) {
         st->request_probe = AVPROBE_SCORE_EXTENSION;
-        st->probe_packets = FFMIN(st->probe_packets, 32);
+        st->probe_packets = FFMIN(st->probe_packets, 14);
     }
 }
 
 static int wav_parse_fmt_tag(AVFormatContext *s, int64_t size, AVStream **st)
 {
     AVIOContext *pb = s->pb;
-    WAVDemuxContext *wav = s->priv_data;
     int ret;
 
     /* parse fmt header */
@@ -134,7 +128,7 @@ static int wav_parse_fmt_tag(AVFormatContext *s, int64_t size, AVStream **st)
     if (!*st)
         return AVERROR(ENOMEM);
 
-    ret = ff_get_wav_header(s, pb, (*st)->codec, size, wav->rifx);
+    ret = ff_get_wav_header(pb, (*st)->codec, size);
     if (ret < 0)
         return ret;
     handle_stream_probing(*st);
@@ -152,9 +146,9 @@ static inline int wav_parse_bext_string(AVFormatContext *s, const char *key,
     char temp[257];
     int ret;
 
-    av_assert0(length < sizeof(temp));
-    if ((ret = avio_read(s->pb, temp, length)) != length)
-        return ret < 0 ? ret : AVERROR_INVALIDDATA;
+    av_assert0(length <= sizeof(temp));
+    if ((ret = avio_read(s->pb, temp, length)) < 0)
+        return ret;
 
     temp[length] = 0;
 
@@ -223,10 +217,8 @@ static int wav_parse_bext_tag(AVFormatContext *s, int64_t size)
         if (!(coding_history = av_malloc(size + 1)))
             return AVERROR(ENOMEM);
 
-        if ((ret = avio_read(s->pb, coding_history, size)) != size) {
-            av_free(coding_history);
-            return ret < 0 ? ret : AVERROR_INVALIDDATA;
-        }
+        if ((ret = avio_read(s->pb, coding_history, size)) < 0)
+            return ret;
 
         coding_history[size] = 0;
         if ((ret = av_dict_set(&s->metadata, "coding_history", coding_history,
@@ -250,8 +242,7 @@ static int wav_read_header(AVFormatContext *s)
 {
     int64_t size, av_uninit(data_size);
     int64_t sample_count = 0;
-    int rf64 = 0;
-    char start_code[32];
+    int rf64;
     uint32_t tag;
     AVIOContext *pb      = s->pb;
     AVStream *st         = NULL;
@@ -263,31 +254,16 @@ static int wav_read_header(AVFormatContext *s)
 
     wav->smv_data_ofs = -1;
 
-    /* read chunk ID */
+    /* check RIFF header */
     tag = avio_rl32(pb);
-    switch (tag) {
-    case MKTAG('R', 'I', 'F', 'F'):
-        break;
-    case MKTAG('R', 'I', 'F', 'X'):
-        wav->rifx = 1;
-        break;
-    case MKTAG('R', 'F', '6', '4'):
-        rf64 = 1;
-        break;
-    default:
-        av_get_codec_tag_string(start_code, sizeof(start_code), tag);
-        av_log(s, AV_LOG_ERROR, "invalid start code %s in RIFF header\n", start_code);
-        return AVERROR_INVALIDDATA;
-    }
 
-    /* read chunk size */
-    avio_rl32(pb);
-
-    /* read format */
-    if (avio_rl32(pb) != MKTAG('W', 'A', 'V', 'E')) {
-        av_log(s, AV_LOG_ERROR, "invalid format in RIFF header\n");
+    rf64 = tag == MKTAG('R', 'F', '6', '4');
+    if (!rf64 && tag != MKTAG('R', 'I', 'F', 'F'))
         return AVERROR_INVALIDDATA;
-    }
+    avio_rl32(pb); /* file size */
+    tag = avio_rl32(pb);
+    if (tag != MKTAG('W', 'A', 'V', 'E'))
+        return AVERROR_INVALIDDATA;
 
     if (rf64) {
         if (avio_rl32(pb) != MKTAG('d', 's', '6', '4'))
@@ -312,7 +288,7 @@ static int wav_read_header(AVFormatContext *s)
 
     for (;;) {
         AVStream *vst;
-        size         = next_tag(pb, &tag, wav->rifx);
+        size         = next_tag(pb, &tag);
         next_tag_ofs = avio_tell(pb) + size;
 
         if (avio_feof(pb))
@@ -337,14 +313,9 @@ static int wav_read_header(AVFormatContext *s)
 
             if (rf64) {
                 next_tag_ofs = wav->data_end = avio_tell(pb) + data_size;
-            } else if (size != 0xFFFFFFFF) {
+            } else {
                 data_size    = size;
                 next_tag_ofs = wav->data_end = size ? next_tag_ofs : INT64_MAX;
-            } else {
-                av_log(s, AV_LOG_WARNING, "Ignoring maximum wav data size, "
-                       "file may be invalid\n");
-                data_size    = 0;
-                next_tag_ofs = wav->data_end = INT64_MAX;
             }
 
             data_ofs = avio_tell(pb);
@@ -357,7 +328,7 @@ static int wav_read_header(AVFormatContext *s)
             break;
         case MKTAG('f', 'a', 'c', 't'):
             if (!sample_count)
-                sample_count = (!wav->rifx ? avio_rl32(pb) : avio_rb32(pb));
+                sample_count = avio_rl32(pb);
             break;
         case MKTAG('b', 'e', 'x', 't'):
             if ((ret = wav_parse_bext_tag(s, size)) < 0)
@@ -431,29 +402,8 @@ break_loop:
 
     avio_seek(pb, data_ofs, SEEK_SET);
 
-    if (data_size > (INT64_MAX>>3)) {
-        av_log(s, AV_LOG_WARNING, "Data size %"PRId64" is too large\n", data_size);
-        data_size = 0;
-    }
-
-    if (   st->codec->bit_rate > 0 && data_size > 0
-        && st->codec->sample_rate > 0
-        && sample_count > 0 && st->codec->channels > 1
-        && sample_count % st->codec->channels == 0) {
-        if (fabs(8.0 * data_size * st->codec->channels * st->codec->sample_rate /
-            sample_count /st->codec->bit_rate - 1.0) < 0.3)
-            sample_count /= st->codec->channels;
-    }
-
     if (   data_size > 0 && sample_count && st->codec->channels
-        && (data_size << 3) / sample_count / st->codec->channels > st->codec->bits_per_coded_sample  + 1) {
-        av_log(s, AV_LOG_WARNING, "ignoring wrong sample_count %"PRId64"\n", sample_count);
-        sample_count = 0;
-    }
-
-    /* G.729 hack (for Ticket4577)
-     * FIXME: Come up with cleaner, more general solution */
-    if (st->codec->codec_id == AV_CODEC_ID_G729 && sample_count && (data_size << 3) > sample_count) {
+        && data_size / sample_count / st->codec->channels > 8) {
         av_log(s, AV_LOG_WARNING, "ignoring wrong sample_count %"PRId64"\n", sample_count);
         sample_count = 0;
     }
@@ -712,7 +662,7 @@ static int w64_read_header(AVFormatContext *s)
 
         if (!memcmp(guid, ff_w64_guid_fmt, 16)) {
             /* subtract chunk header size - normal wav file doesn't count it */
-            ret = ff_get_wav_header(s, pb, st->codec, size - 24, 0);
+            ret = ff_get_wav_header(pb, st->codec, size - 24);
             if (ret < 0)
                 return ret;
             avio_skip(pb, FFALIGN(size, INT64_C(8)) - size);
@@ -749,8 +699,6 @@ static int w64_read_header(AVFormatContext *s)
                 chunk_key[4] = 0;
                 avio_read(pb, chunk_key, 4);
                 chunk_size = avio_rl32(pb);
-                if (chunk_size == UINT32_MAX)
-                    return AVERROR_INVALIDDATA;
 
                 value = av_mallocz(chunk_size + 1);
                 if (!value)

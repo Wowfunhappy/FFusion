@@ -74,11 +74,12 @@ static int unix_open(URLContext *h, const char *filename, int flags)
         return ff_neterrno();
 
     if (s->listen) {
-        ret = ff_listen_bind(fd, (struct sockaddr *)&s->addr,
-                             sizeof(s->addr), s->timeout, h);
-        if (ret < 0)
+        fd = ff_listen_bind(fd, (struct sockaddr *)&s->addr,
+                            sizeof(s->addr), s->timeout, h);
+        if (fd < 0) {
+            ret = fd;
             goto fail;
-        fd = ret;
+        }
     } else {
         ret = ff_listen_connect(fd, (struct sockaddr *)&s->addr,
                                 sizeof(s->addr), s->timeout, h, 0);

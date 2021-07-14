@@ -29,7 +29,7 @@
 
 #define MAX_EXTRADATA_SIZE 1024
 
-typedef struct LATMContext {
+typedef struct {
     AVClass *av_class;
     int off;
     int channel_conf;
@@ -124,8 +124,7 @@ static void latm_write_frame_header(AVFormatContext *s, PutBitContext *bs)
 
             if (!ctx->channel_conf) {
                 GetBitContext gb;
-                int ret = init_get_bits8(&gb, avctx->extradata, avctx->extradata_size);
-                av_assert0(ret >= 0); // extradata size has been checked already, so this should not fail
+                init_get_bits8(&gb, avctx->extradata, avctx->extradata_size);
                 skip_bits_long(&gb, ctx->off + 3);
                 avpriv_copy_pce_data(bs, &gb);
             }

@@ -46,9 +46,6 @@
 static const AVOption options[] = {
     { "nitris_compat", "encode with Avid Nitris compatibility",
         offsetof(DNXHDEncContext, nitris_compat), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VE },
-    { "ibias", "intra quant bias",
-        offsetof(DNXHDEncContext, intra_quant_bias), AV_OPT_TYPE_INT,
-        { .i64 = 0 }, INT_MIN, INT_MAX, VE },
     { NULL }
 };
 
@@ -217,14 +214,14 @@ static av_cold int dnxhd_init_qmat(DNXHDEncContext *ctx, int lbias, int cbias)
             weight_matrix[j] = ctx->cid_table->luma_weight[i];
         }
         ff_convert_matrix(&ctx->m, ctx->qmatrix_l, ctx->qmatrix_l16,
-                          weight_matrix, ctx->intra_quant_bias, 1,
+                          weight_matrix, ctx->m.intra_quant_bias, 1,
                           ctx->m.avctx->qmax, 1);
         for (i = 1; i < 64; i++) {
             int j = ctx->m.idsp.idct_permutation[ff_zigzag_direct[i]];
             weight_matrix[j] = ctx->cid_table->chroma_weight[i];
         }
         ff_convert_matrix(&ctx->m, ctx->qmatrix_c, ctx->qmatrix_c16,
-                          weight_matrix, ctx->intra_quant_bias, 1,
+                          weight_matrix, ctx->m.intra_quant_bias, 1,
                           ctx->m.avctx->qmax, 1);
 
         for (qscale = 1; qscale <= ctx->m.avctx->qmax; qscale++) {
@@ -351,22 +348,17 @@ static av_cold int dnxhd_encode_init(AVCodecContext *avctx)
     ctx->m.mb_height = (avctx->height + 15) / 16;
     ctx->m.mb_width  = (avctx->width  + 15) / 16;
 
-    if (avctx->flags & AV_CODEC_FLAG_INTERLACED_DCT) {
+    if (avctx->flags & CODEC_FLAG_INTERLACED_DCT) {
         ctx->interlaced   = 1;
         ctx->m.mb_height /= 2;
     }
 
     ctx->m.mb_num = ctx->m.mb_height * ctx->m.mb_width;
 
-#if FF_API_QUANT_BIAS
-FF_DISABLE_DEPRECATION_WARNINGS
-    if (ctx->intra_quant_bias == FF_DEFAULT_QUANT_BIAS &&
-        avctx->intra_quant_bias != FF_DEFAULT_QUANT_BIAS)
-        ctx->intra_quant_bias = avctx->intra_quant_bias;
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
+    if (avctx->intra_quant_bias != FF_DEFAULT_QUANT_BIAS)
+        ctx->m.intra_quant_bias = avctx->intra_quant_bias;
     // XXX tune lbias/cbias
-    if ((ret = dnxhd_init_qmat(ctx, ctx->intra_quant_bias, 0)) < 0)
+    if ((ret = dnxhd_init_qmat(ctx, ctx->m.intra_quant_bias, 0)) < 0)
         return ret;
 
     /* Avid Nitris hardware decoder requires a minimum amount of padding
@@ -388,12 +380,12 @@ FF_ENABLE_DEPRECATION_WARNINGS
     FF_ALLOCZ_OR_GOTO(ctx->m.avctx, ctx->mb_qscale,
                       ctx->m.mb_num * sizeof(uint8_t), fail);
 
-#if FF_API_CODED_FRAME
-FF_DISABLE_DEPRECATION_WARNINGS
+    avctx->coded_frame = av_frame_alloc();
+    if (!avctx->coded_frame)
+        return AVERROR(ENOMEM);
+
     avctx->coded_frame->key_frame = 1;
     avctx->coded_frame->pict_type = AV_PICTURE_TYPE_I;
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
 
     if (avctx->thread_count > MAX_THREADS) {
         av_log(avctx, AV_LOG_ERROR, "too many threads\n");
@@ -458,7 +450,7 @@ static av_always_inline void dnxhd_encode_dc(DNXHDEncContext *ctx, int diff)
     }
     put_bits(&ctx->m.pb, ctx->cid_table->dc_bits[nbits] + nbits,
              (ctx->cid_table->dc_codes[nbits] << nbits) +
-             av_mod_uintp2(diff, nbits));
+             (diff & ((1 << nbits) - 1)));
 }
 
 static av_always_inline
@@ -836,7 +828,7 @@ static int dnxhd_encode_rdo(AVCodecContext *avctx, DNXHDEncContext *ctx)
             if (bits > ctx->frame_bits)
                 break;
         }
-        // ff_dlog(ctx->m.avctx,
+        // av_dlog(ctx->m.avctx,
         //         "lambda %d, up %u, down %u, bits %d, frame %d\n",
         //         lambda, last_higher, last_lower, bits, ctx->frame_bits);
         if (end) {
@@ -867,7 +859,7 @@ static int dnxhd_encode_rdo(AVCodecContext *avctx, DNXHDEncContext *ctx)
             down_step = 1<<LAMBDA_FRAC_BITS;
         }
     }
-    //ff_dlog(ctx->m.avctx, "out lambda %d\n", lambda);
+    //av_dlog(ctx->m.avctx, "out lambda %d\n", lambda);
     ctx->lambda = lambda;
     return 0;
 }
@@ -896,7 +888,7 @@ static int dnxhd_find_qscale(DNXHDEncContext *ctx)
             if (bits > ctx->frame_bits)
                 break;
         }
-        // ff_dlog(ctx->m.avctx,
+        // av_dlog(ctx->m.avctx,
         //         "%d, qscale %d, bits %d, frame %d, higher %d, lower %d\n",
         //         ctx->m.avctx->frame_number, qscale, bits, ctx->frame_bits,
         //         last_higher, last_lower);
@@ -928,7 +920,7 @@ static int dnxhd_find_qscale(DNXHDEncContext *ctx)
                 return AVERROR(EINVAL);
         }
     }
-    //ff_dlog(ctx->m.avctx, "out qscale %d\n", qscale);
+    //av_dlog(ctx->m.avctx, "out qscale %d\n", qscale);
     ctx->qscale = qscale;
     return 0;
 }
@@ -1044,11 +1036,7 @@ static void dnxhd_load_picture(DNXHDEncContext *ctx, const AVFrame *frame)
         ctx->thread[i]->dct_uv_offset = ctx->m.uvlinesize*8;
     }
 
-#if FF_API_CODED_FRAME
-FF_DISABLE_DEPRECATION_WARNINGS
     ctx->m.avctx->coded_frame->interlaced_frame = frame->interlaced_frame;
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
     ctx->cur_field = frame->interlaced_frame && !frame->top_field_first;
 }
 
@@ -1060,7 +1048,7 @@ static int dnxhd_encode_picture(AVCodecContext *avctx, AVPacket *pkt,
     int offset, i, ret;
     uint8_t *buf;
 
-    if ((ret = ff_alloc_packet2(avctx, pkt, ctx->cid_table->frame_size, 0)) < 0)
+    if ((ret = ff_alloc_packet2(avctx, pkt, ctx->cid_table->frame_size)) < 0)
         return ret;
     buf = pkt->data;
 
@@ -1109,13 +1097,7 @@ encode_coding_unit:
         goto encode_coding_unit;
     }
 
-#if FF_API_CODED_FRAME
-FF_DISABLE_DEPRECATION_WARNINGS
     avctx->coded_frame->quality = ctx->qscale * FF_QP2LAMBDA;
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
-
-    ff_side_data_set_encoder_stats(pkt, ctx->qscale * FF_QP2LAMBDA, NULL, 0, AV_PICTURE_TYPE_I);
 
     pkt->flags |= AV_PKT_FLAG_KEY;
     *got_packet = 1;
@@ -1148,6 +1130,8 @@ static av_cold int dnxhd_encode_end(AVCodecContext *avctx)
     for (i = 1; i < avctx->thread_count; i++)
         av_freep(&ctx->thread[i]);
 
+    av_frame_free(&avctx->coded_frame);
+
     return 0;
 }
 
@@ -1165,7 +1149,7 @@ AVCodec ff_dnxhd_encoder = {
     .init           = dnxhd_encode_init,
     .encode2        = dnxhd_encode_picture,
     .close          = dnxhd_encode_end,
-    .capabilities   = AV_CODEC_CAP_SLICE_THREADS,
+    .capabilities   = CODEC_CAP_SLICE_THREADS,
     .pix_fmts       = (const enum AVPixelFormat[]) {
         AV_PIX_FMT_YUV422P,
         AV_PIX_FMT_YUV422P10,

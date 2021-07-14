@@ -43,9 +43,9 @@ enum YADIFDeint {
 typedef struct YADIFContext {
     const AVClass *class;
 
-    int mode;           ///< YADIFMode
-    int parity;         ///< YADIFParity
-    int deint;          ///< YADIFDeint
+    enum YADIFMode   mode;
+    enum YADIFParity parity;
+    enum YADIFDeint  deint;
 
     int frame_pending;
 

@@ -25,7 +25,6 @@
  */
 
 #include "libavutil/attributes.h"
-#include "libavutil/bswap.h"
 #include "libavutil/common.h"
 #include "libavutil/eval.h"
 #include "libavutil/opt.h"
@@ -60,13 +59,12 @@ enum var_name {
 
 typedef struct LutContext {
     const AVClass *class;
-    uint16_t lut[4][256 * 256];  ///< lookup table for each component
+    uint8_t lut[4][256];  ///< lookup table for each component
     char   *comp_expr_str[4];
     AVExpr *comp_expr[4];
     int hsub, vsub;
     double var_values[VAR_VARS_NB];
     int is_rgb, is_yuv;
-    int is_16bit;
     int step;
     int negate_alpha; /* only used by negate */
 } LutContext;
@@ -114,13 +112,7 @@ static av_cold void uninit(AVFilterContext *ctx)
     AV_PIX_FMT_YUV411P,  AV_PIX_FMT_YUV410P,  AV_PIX_FMT_YUV440P,    \
     AV_PIX_FMT_YUVA420P, AV_PIX_FMT_YUVA422P, AV_PIX_FMT_YUVA444P,   \
     AV_PIX_FMT_YUVJ444P, AV_PIX_FMT_YUVJ422P, AV_PIX_FMT_YUVJ420P,   \
-    AV_PIX_FMT_YUVJ440P,                                             \
-    AV_PIX_FMT_YUV444P9LE, AV_PIX_FMT_YUV422P9LE, AV_PIX_FMT_YUV420P9LE, \
-    AV_PIX_FMT_YUV444P10LE, AV_PIX_FMT_YUV422P10LE, AV_PIX_FMT_YUV420P10LE, AV_PIX_FMT_YUV440P10LE, \
-    AV_PIX_FMT_YUV444P12LE, AV_PIX_FMT_YUV422P12LE, AV_PIX_FMT_YUV420P12LE, AV_PIX_FMT_YUV440P12LE, \
-    AV_PIX_FMT_YUV444P14LE, AV_PIX_FMT_YUV422P14LE, AV_PIX_FMT_YUV420P14LE, \
-    AV_PIX_FMT_YUV444P16LE, AV_PIX_FMT_YUV422P16LE, AV_PIX_FMT_YUV420P16LE, \
-    AV_PIX_FMT_YUVA444P16LE, AV_PIX_FMT_YUVA422P16LE, AV_PIX_FMT_YUVA420P16LE
+    AV_PIX_FMT_YUVJ440P
 
 #define RGB_FORMATS                             \
     AV_PIX_FMT_ARGB,         AV_PIX_FMT_RGBA,         \
@@ -138,10 +130,9 @@ static int query_formats(AVFilterContext *ctx)
     const enum AVPixelFormat *pix_fmts = s->is_rgb ? rgb_pix_fmts :
                                                      s->is_yuv ? yuv_pix_fmts :
                                                                  all_pix_fmts;
-    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
-    if (!fmts_list)
-        return AVERROR(ENOMEM);
-    return ff_set_common_formats(ctx, fmts_list);
+
+    ff_set_common_formats(ctx, ff_make_format_list(pix_fmts));
+    return 0;
 }
 
 /**
@@ -171,7 +162,7 @@ static double compute_gammaval(void *opaque, double gamma)
 }
 
 /**
- * Compute ITU Rec.709 gamma correction of value val.
+ * Compute Rec.709 gama correction of value val
  */
 static double compute_gammaval709(void *opaque, double gamma)
 {
@@ -213,7 +204,6 @@ static int config_props(AVFilterLink *inlink)
 
     s->var_values[VAR_W] = inlink->w;
     s->var_values[VAR_H] = inlink->h;
-    s->is_16bit = desc->comp[0].depth_minus1 > 7;
 
     switch (inlink->format) {
     case AV_PIX_FMT_YUV410P:
@@ -225,40 +215,10 @@ static int config_props(AVFilterLink *inlink)
     case AV_PIX_FMT_YUVA420P:
     case AV_PIX_FMT_YUVA422P:
     case AV_PIX_FMT_YUVA444P:
-    case AV_PIX_FMT_YUV420P9LE:
-    case AV_PIX_FMT_YUV422P9LE:
-    case AV_PIX_FMT_YUV444P9LE:
-    case AV_PIX_FMT_YUVA420P9LE:
-    case AV_PIX_FMT_YUVA422P9LE:
-    case AV_PIX_FMT_YUVA444P9LE:
-    case AV_PIX_FMT_YUV420P10LE:
-    case AV_PIX_FMT_YUV422P10LE:
-    case AV_PIX_FMT_YUV440P10LE:
-    case AV_PIX_FMT_YUV444P10LE:
-    case AV_PIX_FMT_YUVA420P10LE:
-    case AV_PIX_FMT_YUVA422P10LE:
-    case AV_PIX_FMT_YUVA444P10LE:
-    case AV_PIX_FMT_YUV420P12LE:
-    case AV_PIX_FMT_YUV422P12LE:
-    case AV_PIX_FMT_YUV440P12LE:
-    case AV_PIX_FMT_YUV444P12LE:
-    case AV_PIX_FMT_YUV420P14LE:
-    case AV_PIX_FMT_YUV422P14LE:
-    case AV_PIX_FMT_YUV444P14LE:
-    case AV_PIX_FMT_YUV420P16LE:
-    case AV_PIX_FMT_YUV422P16LE:
-    case AV_PIX_FMT_YUV444P16LE:
-    case AV_PIX_FMT_YUVA420P16LE:
-    case AV_PIX_FMT_YUVA422P16LE:
-    case AV_PIX_FMT_YUVA444P16LE:
-        min[Y] = 16 * (1 << (desc->comp[0].depth_minus1 - 7));
-        min[U] = 16 * (1 << (desc->comp[1].depth_minus1 - 7));
-        min[V] = 16 * (1 << (desc->comp[2].depth_minus1 - 7));
-        min[A] = 0;
-        max[Y] = 235 * (1 << (desc->comp[0].depth_minus1 - 7));
-        max[U] = 240 * (1 << (desc->comp[1].depth_minus1 - 7));
-        max[V] = 240 * (1 << (desc->comp[2].depth_minus1 - 7));
-        max[A] = (1 << (desc->comp[3].depth_minus1 + 1)) - 1;
+        min[Y] = min[U] = min[V] = 16;
+        max[Y] = 235;
+        max[U] = max[V] = 240;
+        min[A] = 0; max[A] = 255;
         break;
     default:
         min[0] = min[1] = min[2] = min[3] = 0;
@@ -294,7 +254,7 @@ static int config_props(AVFilterLink *inlink)
         s->var_values[VAR_MAXVAL] = max[color];
         s->var_values[VAR_MINVAL] = min[color];
 
-        for (val = 0; val < (1 << (desc->comp[0].depth_minus1 + 1)); val++) {
+        for (val = 0; val < 256; val++) {
             s->var_values[VAR_VAL] = val;
             s->var_values[VAR_CLIPVAL] = av_clip(val, min[color], max[color]);
             s->var_values[VAR_NEGVAL] =
@@ -322,6 +282,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
     LutContext *s = ctx->priv;
     AVFilterLink *outlink = ctx->outputs[0];
     AVFrame *out;
+    uint8_t *inrow, *outrow, *inrow0, *outrow0;
     int i, j, plane, direct = 0;
 
     if (av_frame_is_writable(in)) {
@@ -338,82 +299,44 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
 
     if (s->is_rgb) {
         /* packed */
-        uint8_t *inrow, *outrow, *inrow0, *outrow0;
-        const int w = inlink->w;
-        const int h = in->height;
-        const uint16_t (*tab)[256*256] = (const uint16_t (*)[256*256])s->lut;
-        const int in_linesize  =  in->linesize[0];
-        const int out_linesize = out->linesize[0];
-        const int step = s->step;
-
         inrow0  = in ->data[0];
         outrow0 = out->data[0];
 
-        for (i = 0; i < h; i ++) {
+        for (i = 0; i < in->height; i ++) {
+            int w = inlink->w;
+            const uint8_t (*tab)[256] = (const uint8_t (*)[256])s->lut;
             inrow  = inrow0;
             outrow = outrow0;
             for (j = 0; j < w; j++) {
-                switch (step) {
+                switch (s->step) {
                 case 4:  outrow[3] = tab[3][inrow[3]]; // Fall-through
                 case 3:  outrow[2] = tab[2][inrow[2]]; // Fall-through
                 case 2:  outrow[1] = tab[1][inrow[1]]; // Fall-through
                 default: outrow[0] = tab[0][inrow[0]];
                 }
-                outrow += step;
-                inrow  += step;
+                outrow += s->step;
+                inrow  += s->step;
             }
-            inrow0  += in_linesize;
-            outrow0 += out_linesize;
-        }
-    } else if (s->is_16bit) {
-        // planar yuv >8 bit depth
-        uint16_t *inrow, *outrow;
-
-        for (plane = 0; plane < 4 && in->data[plane] && in->linesize[plane]; plane++) {
-            int vsub = plane == 1 || plane == 2 ? s->vsub : 0;
-            int hsub = plane == 1 || plane == 2 ? s->hsub : 0;
-            int h = FF_CEIL_RSHIFT(inlink->h, vsub);
-            int w = FF_CEIL_RSHIFT(inlink->w, hsub);
-            const uint16_t *tab = s->lut[plane];
-            const int in_linesize  =  in->linesize[plane] / 2;
-            const int out_linesize = out->linesize[plane] / 2;
-
-            inrow  = (uint16_t *)in ->data[plane];
-            outrow = (uint16_t *)out->data[plane];
-
-            for (i = 0; i < h; i++) {
-                for (j = 0; j < w; j++) {
-#if HAVE_BIGENDIAN
-                    outrow[j] = av_bswap16(tab[av_bswap16(inrow[j])]);
-#else
-                    outrow[j] = tab[inrow[j]];
-#endif
-                }
-                inrow  += in_linesize;
-                outrow += out_linesize;
-            }
+            inrow0  += in ->linesize[0];
+            outrow0 += out->linesize[0];
         }
     } else {
-        /* planar 8bit depth */
-        uint8_t *inrow, *outrow;
-
+        /* planar */
         for (plane = 0; plane < 4 && in->data[plane] && in->linesize[plane]; plane++) {
             int vsub = plane == 1 || plane == 2 ? s->vsub : 0;
             int hsub = plane == 1 || plane == 2 ? s->hsub : 0;
             int h = FF_CEIL_RSHIFT(inlink->h, vsub);
             int w = FF_CEIL_RSHIFT(inlink->w, hsub);
-            const uint16_t *tab = s->lut[plane];
-            const int in_linesize  =  in->linesize[plane];
-            const int out_linesize = out->linesize[plane];
 
             inrow  = in ->data[plane];
             outrow = out->data[plane];
 
             for (i = 0; i < h; i++) {
+                const uint8_t *tab = s->lut[plane];
                 for (j = 0; j < w; j++)
                     outrow[j] = tab[inrow[j]];
-                inrow  += in_linesize;
-                outrow += out_linesize;
+                inrow  += in ->linesize[plane];
+                outrow += out->linesize[plane];
             }
         }
     }

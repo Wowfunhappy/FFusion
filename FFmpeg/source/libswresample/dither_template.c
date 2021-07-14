@@ -2,12 +2,12 @@
 #if defined(TEMPLATE_DITHER_DBL)
 #    define RENAME(N) N ## _double
 #    define DELEM  double
-#    define CLIP(v) while(0)
+#    define CLIP(v)
 
 #elif defined(TEMPLATE_DITHER_FLT)
 #    define RENAME(N) N ## _float
 #    define DELEM  float
-#    define CLIP(v) while(0)
+#    define CLIP(v)
 
 #elif defined(TEMPLATE_DITHER_S32)
 #    define RENAME(N) N ## _int32

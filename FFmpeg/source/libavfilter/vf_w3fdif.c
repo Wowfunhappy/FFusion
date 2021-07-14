@@ -40,8 +40,7 @@ typedef struct W3FDIFContext {
     int eof;
     int nb_planes;
     AVFrame *prev, *cur, *next;  ///< previous, current, next frames
-    int32_t **work_line;  ///< lines we are calculating
-    int nb_threads;
+    int32_t *work_line;   ///< line we are calculating
 } W3FDIFContext;
 
 #define OFFSET(x) offsetof(W3FDIFContext, x)
@@ -75,18 +74,16 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_NONE
     };
 
-    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
-    if (!fmts_list)
-        return AVERROR(ENOMEM);
-    return ff_set_common_formats(ctx, fmts_list);
+    ff_set_common_formats(ctx, ff_make_format_list(pix_fmts));
+
+    return 0;
 }
 
 static int config_input(AVFilterLink *inlink)
 {
-    AVFilterContext *ctx = inlink->dst;
-    W3FDIFContext *s = ctx->priv;
+    W3FDIFContext *s = inlink->dst->priv;
     const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(inlink->format);
-    int ret, i;
+    int ret;
 
     if ((ret = av_image_fill_linesizes(s->linesize, inlink->format, inlink->w)) < 0)
         return ret;
@@ -95,16 +92,9 @@ static int config_input(AVFilterLink *inlink)
     s->planeheight[0] = s->planeheight[3] = inlink->h;
 
     s->nb_planes = av_pix_fmt_count_planes(inlink->format);
-    s->nb_threads = ctx->graph->nb_threads;
-    s->work_line = av_calloc(s->nb_threads, sizeof(*s->work_line));
+    s->work_line = av_calloc(s->linesize[0], sizeof(*s->work_line));
     if (!s->work_line)
         return AVERROR(ENOMEM);
-
-    for (i = 0; i < s->nb_threads; i++) {
-        s->work_line[i] = av_calloc(s->linesize[0], sizeof(*s->work_line[0]));
-        if (!s->work_line[i])
-            return AVERROR(ENOMEM);
-    }
 
     return 0;
 }
@@ -137,20 +127,11 @@ static const int8_t   n_coef_hf[2] = { 3, 5 };
 static const int32_t coef_hf[2][5] = {{ -4096,  8192, -4096,     0,     0},
                                       {  2032, -7602, 11140, -7602,  2032}};
 
-typedef struct ThreadData {
-    AVFrame *out, *cur, *adj;
-    int plane;
-} ThreadData;
-
-static int deinterlace_slice(AVFilterContext *ctx, void *arg, int jobnr, int nb_jobs)
+static void deinterlace_plane(AVFilterContext *ctx, AVFrame *out,
+                              const AVFrame *cur, const AVFrame *adj,
+                              const int filter, const int plane)
 {
     W3FDIFContext *s = ctx->priv;
-    ThreadData *td = arg;
-    AVFrame *out = td->out;
-    AVFrame *cur = td->cur;
-    AVFrame *adj = td->adj;
-    const int plane = td->plane;
-    const int filter = s->filter;
     uint8_t *in_line, *in_lines_cur[5], *in_lines_adj[5];
     uint8_t *out_line, *out_pixel;
     int32_t *work_line, *work_pixel;
@@ -162,17 +143,15 @@ static int deinterlace_slice(AVFilterContext *ctx, void *arg, int jobnr, int nb_
     const int cur_line_stride = cur->linesize[plane];
     const int adj_line_stride = adj->linesize[plane];
     const int dst_line_stride = out->linesize[plane];
-    const int start = (height * jobnr) / nb_jobs;
-    const int end = (height * (jobnr+1)) / nb_jobs;
     int i, j, y_in, y_out;
 
     /* copy unchanged the lines of the field */
-    y_out = start + (s->field == cur->top_field_first) - (start & 1);
+    y_out = s->field == cur->top_field_first;
 
     in_line  = cur_data + (y_out * cur_line_stride);
     out_line = dst_data + (y_out * dst_line_stride);
 
-    while (y_out < end) {
+    while (y_out < height) {
         memcpy(out_line, in_line, linesize);
         y_out += 2;
         in_line  += cur_line_stride * 2;
@@ -180,13 +159,13 @@ static int deinterlace_slice(AVFilterContext *ctx, void *arg, int jobnr, int nb_
     }
 
     /* interpolate other lines of the field */
-    y_out = start + (s->field != cur->top_field_first) - (start & 1);
+    y_out = s->field != cur->top_field_first;
 
     out_line = dst_data + (y_out * dst_line_stride);
 
-    while (y_out < end) {
+    while (y_out < height) {
         /* clear workspace */
-        memset(s->work_line[jobnr], 0, sizeof(*s->work_line[jobnr]) * linesize);
+        memset(s->work_line, 0, sizeof(*s->work_line) * linesize);
 
         /* get low vertical frequencies from current field */
         for (j = 0; j < n_coef_lf[filter]; j++) {
@@ -200,7 +179,7 @@ static int deinterlace_slice(AVFilterContext *ctx, void *arg, int jobnr, int nb_
             in_lines_cur[j] = cur_data + (y_in * cur_line_stride);
         }
 
-        work_line = s->work_line[jobnr];
+        work_line = s->work_line;
         switch (n_coef_lf[filter]) {
         case 2:
             for (i = 0; i < linesize; i++) {
@@ -230,7 +209,7 @@ static int deinterlace_slice(AVFilterContext *ctx, void *arg, int jobnr, int nb_
             in_lines_adj[j] = adj_data + (y_in * adj_line_stride);
         }
 
-        work_line = s->work_line[jobnr];
+        work_line = s->work_line;
         switch (n_coef_hf[filter]) {
         case 3:
             for (i = 0; i < linesize; i++) {
@@ -258,7 +237,7 @@ static int deinterlace_slice(AVFilterContext *ctx, void *arg, int jobnr, int nb_
         }
 
         /* save scaled result to the output frame, scaling down by 256 * 256 */
-        work_pixel = s->work_line[jobnr];
+        work_pixel = s->work_line;
         out_pixel = out_line;
 
         for (j = 0; j < linesize; j++, out_pixel++, work_pixel++)
@@ -268,8 +247,6 @@ static int deinterlace_slice(AVFilterContext *ctx, void *arg, int jobnr, int nb_
         y_out += 2;
         out_line += dst_line_stride * 2;
     }
-
-    return 0;
 }
 
 static int filter(AVFilterContext *ctx, int is_second)
@@ -277,7 +254,6 @@ static int filter(AVFilterContext *ctx, int is_second)
     W3FDIFContext *s = ctx->priv;
     AVFilterLink *outlink = ctx->outputs[0];
     AVFrame *out, *adj;
-    ThreadData td;
     int plane;
 
     out = ff_get_video_buffer(outlink, outlink->w, outlink->h);
@@ -301,11 +277,8 @@ static int filter(AVFilterContext *ctx, int is_second)
     }
 
     adj = s->field ? s->next : s->prev;
-    td.out = out; td.cur = s->cur; td.adj = adj;
-    for (plane = 0; plane < s->nb_planes; plane++) {
-        td.plane = plane;
-        ctx->internal->execute(ctx, deinterlace_slice, &td, NULL, FFMIN(s->planeheight[plane], s->nb_threads));
-    }
+    for (plane = 0; plane < s->nb_planes; plane++)
+        deinterlace_plane(ctx, out, s->cur, adj, s->filter, plane);
 
     s->field = !s->field;
 
@@ -381,15 +354,10 @@ static int request_frame(AVFilterLink *outlink)
 static av_cold void uninit(AVFilterContext *ctx)
 {
     W3FDIFContext *s = ctx->priv;
-    int i;
 
     av_frame_free(&s->prev);
     av_frame_free(&s->cur );
     av_frame_free(&s->next);
-
-    for (i = 0; i < s->nb_threads; i++)
-        av_freep(&s->work_line[i]);
-
     av_freep(&s->work_line);
 }
 
@@ -422,5 +390,5 @@ AVFilter ff_vf_w3fdif = {
     .query_formats = query_formats,
     .inputs        = w3fdif_inputs,
     .outputs       = w3fdif_outputs,
-    .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_INTERNAL | AVFILTER_FLAG_SLICE_THREADS,
+    .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_INTERNAL,
 };

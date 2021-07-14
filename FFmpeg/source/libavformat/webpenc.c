@@ -29,8 +29,6 @@ typedef struct WebpContext{
     int frame_count;
     AVPacket last_pkt;
     int loop;
-    int wrote_webp_header;
-    int using_webp_anim_encoder;
 } WebpContext;
 
 static int webp_write_header(AVFormatContext *s)
@@ -48,29 +46,8 @@ static int webp_write_header(AVFormatContext *s)
     }
     avpriv_set_pts_info(st, 24, 1, 1000);
 
-    return 0;
-}
+    avio_write(s->pb, "RIFF\0\0\0\0WEBP", 12);
 
-static int is_animated_webp_packet(AVPacket *pkt)
-{
-    if (pkt->size) {
-        int skip = 0;
-        unsigned flags = 0;
-
-        if (pkt->size < 4)
-            return 0;
-        if (AV_RL32(pkt->data) == AV_RL32("RIFF"))
-            skip = 12;
-
-        if (pkt->size < skip + 4)
-            return 0;
-        if (AV_RL32(pkt->data + skip) == AV_RL32("VP8X")) {
-            flags |= pkt->data[skip + 4 + 4];
-        }
-
-        if (flags & 2)  // ANIMATION_FLAG is on
-            return 1;
-    }
     return 0;
 }
 
@@ -84,25 +61,15 @@ static int flush(AVFormatContext *s, int trailer, int64_t pts)
         unsigned flags = 0;
         int vp8x = 0;
 
-        if (w->last_pkt.size < 4)
-            return 0;
         if (AV_RL32(w->last_pkt.data) == AV_RL32("RIFF"))
             skip = 12;
-
-        if (w->last_pkt.size < skip + 4)
-            return 0;  // Safe to do this as a valid WebP bitstream is >=30 bytes.
         if (AV_RL32(w->last_pkt.data + skip) == AV_RL32("VP8X")) {
             flags |= w->last_pkt.data[skip + 4 + 4];
             vp8x = 1;
             skip += AV_RL32(w->last_pkt.data + skip + 4) + 8;
         }
 
-        if (!w->wrote_webp_header) {
-            avio_write(s->pb, "RIFF\0\0\0\0WEBP", 12);
-            w->wrote_webp_header = 1;
-            if (w->frame_count > 1)  // first non-empty packet
-                w->frame_count = 1;  // so we don't count previous empty packets.
-        }
+        w->frame_count ++;
 
         if (w->frame_count == 1) {
             if (!trailer) {
@@ -149,18 +116,12 @@ static int flush(AVFormatContext *s, int trailer, int64_t pts)
 static int webp_write_packet(AVFormatContext *s, AVPacket *pkt)
 {
     WebpContext *w = s->priv_data;
-    w->using_webp_anim_encoder |= is_animated_webp_packet(pkt);
+    int ret;
 
-    if (w->using_webp_anim_encoder) {
-        avio_write(s->pb, pkt->data, pkt->size);
-        w->wrote_webp_header = 1;  // for good measure
-    } else {
-        int ret;
-        if ((ret = flush(s, 0, pkt->pts)) < 0)
-            return ret;
-        av_copy_packet(&w->last_pkt, pkt);
-    }
-    ++w->frame_count;
+    if ((ret = flush(s, 0, pkt->pts)) < 0)
+        return ret;
+
+    av_copy_packet(&w->last_pkt, pkt);
 
     return 0;
 }
@@ -168,24 +129,14 @@ static int webp_write_packet(AVFormatContext *s, AVPacket *pkt)
 static int webp_write_trailer(AVFormatContext *s)
 {
     unsigned filesize;
-    WebpContext *w = s->priv_data;
+    int ret;
 
-    if (w->using_webp_anim_encoder) {
-        if ((w->frame_count > 1) && w->loop) {  // Write loop count.
-            avio_seek(s->pb, 42, SEEK_SET);
-            avio_wl16(s->pb, w->loop);
-        }
-    } else {
-        int ret;
-        if ((ret = flush(s, 1, AV_NOPTS_VALUE)) < 0)
-            return ret;
+    if ((ret = flush(s, 1, AV_NOPTS_VALUE)) < 0)
+        return ret;
 
-        filesize = avio_tell(s->pb);
-        avio_seek(s->pb, 4, SEEK_SET);
-        avio_wl32(s->pb, filesize - 8);
-        // Note: without the following, avio only writes 8 bytes to the file.
-        avio_seek(s->pb, filesize, SEEK_SET);
-    }
+    filesize = avio_tell(s->pb);
+    avio_seek(s->pb, 4, SEEK_SET);
+    avio_wl32(s->pb, filesize - 8);
 
     return 0;
 }

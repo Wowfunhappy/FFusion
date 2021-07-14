@@ -132,7 +132,7 @@ static int append_extradata(AVCodecContext *s, AVIOContext *pb, int len)
         return AVERROR_INVALIDDATA;
 
     new_size = previous_size + len;
-    new_extradata = av_realloc(s->extradata, new_size + AV_INPUT_BUFFER_PADDING_SIZE);
+    new_extradata = av_realloc(s->extradata, new_size + FF_INPUT_BUFFER_PADDING_SIZE);
     if (!new_extradata)
         return AVERROR(ENOMEM);
     s->extradata = new_extradata;
@@ -150,8 +150,7 @@ static int apng_read_header(AVFormatContext *s)
     AVIOContext *pb = s->pb;
     uint32_t len, tag;
     AVStream *st;
-    int acTL_found = 0;
-    int64_t ret = AVERROR_INVALIDDATA;
+    int ret = AVERROR_INVALIDDATA, acTL_found = 0;
 
     /* verify PNGSIG */
     if (avio_rb64(pb) != PNGSIG)
@@ -178,7 +177,7 @@ static int apng_read_header(AVFormatContext *s)
         return ret;
 
     /* extradata will contain every chunk up to the first fcTL (excluded) */
-    st->codec->extradata = av_malloc(len + 12 + AV_INPUT_BUFFER_PADDING_SIZE);
+    st->codec->extradata = av_malloc(len + 12 + FF_INPUT_BUFFER_PADDING_SIZE);
     if (!st->codec->extradata)
         return AVERROR(ENOMEM);
     st->codec->extradata_size = len + 12;
@@ -269,7 +268,7 @@ static int decode_fctl_chunk(AVFormatContext *s, APNGDemuxContext *ctx, AVPacket
     /* default is hundredths of seconds */
     if (!delay_den)
         delay_den = 100;
-    if (!delay_num || (ctx->max_fps && delay_den / delay_num > ctx->max_fps)) {
+    if (!delay_num || delay_den / delay_num > ctx->max_fps) {
         delay_num = 1;
         delay_den = ctx->default_fps;
     }
@@ -322,7 +321,7 @@ static int decode_fctl_chunk(AVFormatContext *s, APNGDemuxContext *ctx, AVPacket
 static int apng_read_packet(AVFormatContext *s, AVPacket *pkt)
 {
     APNGDemuxContext *ctx = s->priv_data;
-    int64_t ret;
+    int ret;
     int64_t size;
     AVIOContext *pb = s->pb;
     uint32_t len, tag;
@@ -405,7 +404,7 @@ static int apng_read_packet(AVFormatContext *s, AVPacket *pkt)
         return 0;
     default:
         {
-        char tag_buf[32];
+        char tag_buf[5];
 
         av_get_codec_tag_string(tag_buf, sizeof(tag_buf), tag);
         avpriv_request_sample(s, "In-stream tag=%s (0x%08X) len=%"PRIu32, tag_buf, tag, len);

@@ -67,7 +67,6 @@ static uint32_t get_generic_seed(void)
     uint8_t tmp[120];
     struct AVSHA *sha = (void*)tmp;
     clock_t last_t  = 0;
-    clock_t last_td = 0;
     static uint64_t i = 0;
     static uint32_t buffer[512] = { 0 };
     unsigned char digest[20];
@@ -87,25 +86,19 @@ static uint32_t get_generic_seed(void)
 
     for (;;) {
         clock_t t = clock();
-        if (last_t + 2*last_td + (CLOCKS_PER_SEC > 1000) >= t) {
-            last_td = t - last_t;
-            buffer[i & 511] = 1664525*buffer[i & 511] + 1013904223 + (last_td % 3294638521U);
+
+        if (last_t == t) {
+            buffer[i & 511]++;
         } else {
-            last_td = t - last_t;
-            buffer[++i & 511] += last_td % 3294638521U;
+            buffer[++i & 511] += (t - last_t) % 3294638521U;
             if (last_i && i - last_i > 4 || i - last_i > 64 || TEST && i - last_i > 8)
                 break;
         }
         last_t = t;
     }
 
-    if(TEST) {
+    if(TEST)
         buffer[0] = buffer[1] = 0;
-    } else {
-#ifdef AV_READ_TIME
-        buffer[111] += AV_READ_TIME();
-#endif
-    }
 
     av_sha_init(sha, 160);
     av_sha_update(sha, (const uint8_t *)buffer, sizeof(buffer));

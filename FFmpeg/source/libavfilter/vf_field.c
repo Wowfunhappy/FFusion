@@ -33,7 +33,7 @@ enum FieldType { FIELD_TYPE_TOP = 0, FIELD_TYPE_BOTTOM };
 
 typedef struct {
     const AVClass *class;
-    int type;                   ///< FieldType
+    enum FieldType type;
     int nb_planes;              ///< number of planes of the current format
 } FieldContext;
 

@@ -100,7 +100,7 @@ int getCodecID(OSType componentType)
 			codecID = AV_CODEC_ID_H264;
 			break;
 			
-		/*case 'H265':
+		case 'H265':
   		case 'h265':
   		case 'X265':
   		case 'x265':
@@ -110,7 +110,7 @@ int getCodecID(OSType componentType)
   		case 'hevc':
 		case 'hvc1':
 			codecID = AV_CODEC_ID_HEVC;
-			break;*/
+			break;
 
 		case 'FLV1':
 			codecID = AV_CODEC_ID_FLV1;
@@ -504,7 +504,7 @@ pascal ComponentResult getFFusionCodecInfo(ComponentInstance self, OSType compon
 				err = GetComponentResource((Component)self, codecInfoResourceType, kVP9CodecInfoResID, (Handle *)&tempCodecInfo);
 				break;
 				
-			/*case 'H265':
+			case 'H265':
 			case 'h265':
 			case 'X265':
 			case 'x265':
@@ -514,7 +514,7 @@ pascal ComponentResult getFFusionCodecInfo(ComponentInstance self, OSType compon
 			case 'hvc1':
 			case 'hev1':
 				err = GetComponentResource((Component)self, codecInfoResourceType, kHEVCCodecInfoResID, (Handle *)&tempCodecInfo);
-				break;*/
+				break;
 
 			case 'FFV1':
 

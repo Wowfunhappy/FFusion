@@ -46,7 +46,7 @@ enum BinkAudFlags {
 #define BINK_MAX_WIDTH          7680
 #define BINK_MAX_HEIGHT         4800
 
-typedef struct BinkDemuxContext {
+typedef struct {
     uint32_t file_size;
 
     uint32_t num_audio_tracks;
@@ -194,10 +194,7 @@ static int read_header(AVFormatContext *s)
             return ret;
     }
 
-    if (vst->index_entries)
-        avio_seek(pb, vst->index_entries[0].pos, SEEK_SET);
-    else
-        avio_skip(pb, 4);
+    avio_seek(pb, vst->index_entries[0].pos, SEEK_SET);
 
     bink->current_track = -1;
     return 0;

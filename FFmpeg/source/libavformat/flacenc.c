@@ -50,14 +50,12 @@ static int flac_write_block_comment(AVIOContext *pb, AVDictionary **m,
                                     int last_block, int bitexact)
 {
     const char *vendor = bitexact ? "ffmpeg" : LIBAVFORMAT_IDENT;
-    int64_t len;
+    unsigned int len;
     uint8_t *p, *p0;
 
     ff_metadata_conv(m, ff_vorbiscomment_metadata_conv, NULL);
 
     len = ff_vorbiscomment_length(*m, vendor);
-    if (len >= ((1<<24) - 4))
-        return AVERROR(EINVAL);
     p0 = av_malloc(len+4);
     if (!p0)
         return AVERROR(ENOMEM);
@@ -97,7 +95,7 @@ static int flac_write_header(struct AVFormatContext *s)
         padding = 8192;
     /* The FLAC specification states that 24 bits are used to represent the
      * size of a metadata block so we must clip this value to 2^24-1. */
-    padding = av_clip_uintp2(padding, 24);
+    padding = av_clip(padding, 0, 16777215);
 
     ret = ff_flac_write_header(s->pb, codec->extradata,
                                codec->extradata_size, 0);

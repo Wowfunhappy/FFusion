@@ -91,9 +91,9 @@ static inline int get_bs(cavs_vector *mvP, cavs_vector *mvQ, int b)
 }
 
 #define SET_PARAMS                                                \
-    alpha = alpha_tab[av_clip_uintp2(qp_avg + h->alpha_offset, 6)];  \
-    beta  =  beta_tab[av_clip_uintp2(qp_avg + h->beta_offset,  6)];  \
-    tc    =    tc_tab[av_clip_uintp2(qp_avg + h->alpha_offset, 6)];
+    alpha = alpha_tab[av_clip(qp_avg + h->alpha_offset, 0, 63)];  \
+    beta  =  beta_tab[av_clip(qp_avg + h->beta_offset,  0, 63)];  \
+    tc    =    tc_tab[av_clip(qp_avg + h->alpha_offset, 0, 63)];
 
 /**
  * in-loop deblocking filter for a single macroblock
@@ -538,7 +538,8 @@ void ff_cavs_inter(AVSContext *h, enum cavs_mb mb_type)
 static inline void scale_mv(AVSContext *h, int *d_x, int *d_y,
                             cavs_vector *src, int distp)
 {
-    int64_t den = h->scale_den[FFMAX(src->ref, 0)];
+    int den = h->scale_den[FFMAX(src->ref, 0)];
+
     *d_x = (src->x * distp * den + 256 + FF_SIGNBIT(src->x)) >> 9;
     *d_y = (src->y * distp * den + 256 + FF_SIGNBIT(src->y)) >> 9;
 }
@@ -613,15 +614,8 @@ void ff_cavs_mv(AVSContext *h, enum cavs_mv_loc nP, enum cavs_mv_loc nC,
         mv_pred_median(h, mvP, mvA, mvB, mvC);
 
     if (mode < MV_PRED_PSKIP) {
-        int mx = get_se_golomb(&h->gb) + (unsigned)mvP->x;
-        int my = get_se_golomb(&h->gb) + (unsigned)mvP->y;
-
-        if (mx != (int16_t)mx || my != (int16_t)my) {
-            av_log(h->avctx, AV_LOG_ERROR, "MV %d %d out of supported range\n", mx, my);
-        } else {
-            mvP->x = mx;
-            mvP->y = my;
-        }
+        mvP->x += get_se_golomb(&h->gb);
+        mvP->y += get_se_golomb(&h->gb);
     }
     set_mvs(mvP, size);
 }
@@ -757,7 +751,7 @@ int ff_cavs_init_pic(AVSContext *h)
  * this data has to be stored for one complete row of macroblocks
  * and this storage space is allocated here
  */
-int ff_cavs_init_top_lines(AVSContext *h)
+void ff_cavs_init_top_lines(AVSContext *h)
 {
     /* alloc top line of predictors */
     h->top_qp       = av_mallocz(h->mb_width);
@@ -773,23 +767,6 @@ int ff_cavs_init_top_lines(AVSContext *h)
                                         4 * sizeof(cavs_vector));
     h->col_type_base = av_mallocz(h->mb_width * h->mb_height);
     h->block         = av_mallocz(64 * sizeof(int16_t));
-
-    if (!h->top_qp || !h->top_mv[0] || !h->top_mv[1] || !h->top_pred_Y ||
-        !h->top_border_y || !h->top_border_u || !h->top_border_v ||
-        !h->col_mv || !h->col_type_base || !h->block) {
-        av_freep(&h->top_qp);
-        av_freep(&h->top_mv[0]);
-        av_freep(&h->top_mv[1]);
-        av_freep(&h->top_pred_Y);
-        av_freep(&h->top_border_y);
-        av_freep(&h->top_border_u);
-        av_freep(&h->top_border_v);
-        av_freep(&h->col_mv);
-        av_freep(&h->col_type_base);
-        av_freep(&h->block);
-        return AVERROR(ENOMEM);
-    }
-    return 0;
 }
 
 av_cold int ff_cavs_init(AVCodecContext *avctx)

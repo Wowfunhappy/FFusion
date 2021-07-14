@@ -22,8 +22,6 @@
 #ifndef AVCODEC_SNOW_H
 #define AVCODEC_SNOW_H
 
-#include "libavutil/motion_vector.h"
-
 #include "hpeldsp.h"
 #include "me_cmp.h"
 #include "qpeldsp.h"
@@ -175,17 +173,11 @@ typedef struct SnowContext{
     slice_buffer sb;
     int memc_only;
     int no_bitstream;
-    int intra_penalty;
-    int motion_est;
-    int iterative_dia_size;
 
     MpegEncContext m; // needed for motion estimation, should not be used for anything else, the idea is to eventually make the motion estimation independent of MpegEncContext, so this will be removed then (FIXME/XXX)
 
     uint8_t *scratchbuf;
     uint8_t *emu_edge_buffer;
-
-    AVMotionVector *avmv;
-    int avmv_index;
 }SnowContext;
 
 /* Tables */
@@ -306,8 +298,6 @@ static av_always_inline void add_yblock(SnowContext *s, int sliced, slice_buffer
     BlockNode *lb= lt+b_stride;
     BlockNode *rb= lb+1;
     uint8_t *block[4];
-    // When src_stride is large enough, it is possible to interleave the blocks.
-    // Otherwise the blocks are written sequentially in the tmp buffer.
     int tmp_step= src_stride >= 7*MB_SIZE ? MB_SIZE : MB_SIZE*src_stride;
     uint8_t *tmp = s->scratchbuf;
     uint8_t *ptmp;
@@ -350,6 +340,8 @@ static av_always_inline void add_yblock(SnowContext *s, int sliced, slice_buffer
     }
 
     if(b_w<=0 || b_h<=0) return;
+
+    av_assert2(src_stride > 2*MB_SIZE + 5);
 
     if(!sliced && offset_dst)
         dst += src_x + src_y*dst_stride;
@@ -561,13 +553,10 @@ static inline int get_symbol(RangeCoder *c, uint8_t *state, int is_signed){
     if(get_rac(c, state+0))
         return 0;
     else{
-        int i, e;
-        unsigned a;
+        int i, e, a;
         e= 0;
         while(get_rac(c, state+1 + FFMIN(e,9))){ //1..10
             e++;
-            if (e > 31)
-                return AVERROR_INVALIDDATA;
         }
 
         a= 1;

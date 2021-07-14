@@ -1,3 +1,5 @@
+#include <asl.h>
+
 /*
  * FFmpegUtils.c
  * Created by Alexander Strange on 11/7/10.

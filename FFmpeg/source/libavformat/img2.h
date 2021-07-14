@@ -30,15 +30,7 @@
 #include <glob.h>
 #endif
 
-enum PatternType {
-    PT_GLOB_SEQUENCE,
-    PT_GLOB,
-    PT_SEQUENCE,
-    PT_NONE,
-    PT_DEFAULT
-};
-
-typedef struct VideoDemuxData {
+typedef struct {
     const AVClass *class;  /**< Class for private options. */
     int img_first;
     int img_last;
@@ -52,7 +44,7 @@ typedef struct VideoDemuxData {
     int width, height;      /**< Set by a private option. */
     AVRational framerate;   /**< Set by a private option. */
     int loop;
-    int pattern_type; /**< PatternType */
+    enum { PT_GLOB_SEQUENCE, PT_GLOB, PT_SEQUENCE } pattern_type;
     int use_glob;
 #if HAVE_GLOB
     glob_t globstate;

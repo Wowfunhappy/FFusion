@@ -42,19 +42,18 @@ enum {
     PARAM_NUMBER
 };
 
-typedef struct SrtStack {
+typedef struct {
     char tag[128];
     char param[PARAM_NUMBER][128];
 } SrtStack;
 
 static void rstrip_spaces_buf(AVBPrint *buf)
 {
-    if (av_bprint_is_complete(buf))
-        while (buf->len > 0 && buf->str[buf->len - 1] == ' ')
-            buf->str[--buf->len] = 0;
+    while (buf->len > 0 && buf->str[buf->len - 1] == ' ')
+        buf->str[--buf->len] = 0;
 }
 
-static int srt_to_ass(AVCodecContext *avctx, AVBPrint *dst,
+static void srt_to_ass(AVCodecContext *avctx, AVBPrint *dst,
                        const char *in, int x1, int y1, int x2, int y2)
 {
     char *param, buffer[128], tmp[128];
@@ -67,22 +66,10 @@ static int srt_to_ass(AVCodecContext *avctx, AVBPrint *dst,
     strcpy(stack[0].param[PARAM_FACE],  "{\\fn}");
 
     if (x1 >= 0 && y1 >= 0) {
-        /* XXX: here we rescale coordinate assuming they are in DVD resolution
-         * (720x480) since we don't have anything better */
-
-        if (x2 >= 0 && y2 >= 0 && (x2 != x1 || y2 != y1) && x2 >= x1 && y2 >= y1) {
-            /* text rectangle defined, write the text at the center of the rectangle */
-            const int cx = x1 + (x2 - x1)/2;
-            const int cy = y1 + (y2 - y1)/2;
-            const int scaled_x = cx * (int64_t)ASS_DEFAULT_PLAYRESX / 720;
-            const int scaled_y = cy * (int64_t)ASS_DEFAULT_PLAYRESY / 480;
-            av_bprintf(dst, "{\\an5}{\\pos(%d,%d)}", scaled_x, scaled_y);
-        } else {
-            /* only the top left corner, assume the text starts in that corner */
-            const int scaled_x = x1 * (int64_t)ASS_DEFAULT_PLAYRESX / 720;
-            const int scaled_y = y1 * (int64_t)ASS_DEFAULT_PLAYRESY / 480;
-            av_bprintf(dst, "{\\an1}{\\pos(%d,%d)}", scaled_x, scaled_y);
-        }
+        if (x2 >= 0 && y2 >= 0 && (x2 != x1 || y2 != y1))
+            av_bprintf(dst, "{\\an1}{\\move(%d,%d,%d,%d)}", x1, y1, x2, y2);
+        else
+            av_bprintf(dst, "{\\an1}{\\pos(%d,%d)}", x1, y1);
     }
 
     for (; !end && *in; in++) {
@@ -192,15 +179,10 @@ static int srt_to_ass(AVCodecContext *avctx, AVBPrint *dst,
             line_start = 0;
     }
 
-    if (!av_bprint_is_complete(dst))
-        return AVERROR(ENOMEM);
-
     while (dst->len >= 2 && !strncmp(&dst->str[dst->len - 2], "\\N", 2))
         dst->len -= 2;
     dst->str[dst->len] = 0;
     rstrip_spaces_buf(dst);
-
-    return 0;
 }
 
 static int srt_decode_frame(AVCodecContext *avctx,

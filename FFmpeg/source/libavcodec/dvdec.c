@@ -116,7 +116,7 @@ static const uint16_t dv_iweight_720_y[64] = {
      96,  98,  96,  88,  96,  98, 202, 196,
     196, 202, 208, 218, 208, 232, 232, 246,
 };
-static const uint16_t dv_iweight_720_c[64] = {
+const uint16_t dv_iweight_720_c[64] = {
     128,  24,  24,  26,  26,  26,  36,  36,
      36,  36,  36,  36,  38,  36,  36,  38,
      38,  38,  38,  38,  38,  84,  76,  80,
@@ -222,7 +222,7 @@ static void dv_decode_ac(GetBitContext *gb, BlockInfo *mb, int16_t *block)
 
     /* get the AC coefficients until last_index is reached */
     for (;;) {
-        ff_dlog(NULL, "%2d: bits=%04x index=%d\n", pos, SHOW_UBITS(re, gb, 16),
+        av_dlog(NULL, "%2d: bits=%04x index=%d\n", pos, SHOW_UBITS(re, gb, 16),
                 re_index);
         /* our own optimized GET_RL_VLC */
         index   = NEG_USR32(re_cache, TEX_VLC_BITS);
@@ -245,7 +245,7 @@ static void dv_decode_ac(GetBitContext *gb, BlockInfo *mb, int16_t *block)
         }
         re_index += vlc_len;
 
-        ff_dlog(NULL, "run=%d level=%d\n", run, level);
+        av_dlog(NULL, "run=%d level=%d\n", run, level);
         pos += run;
         if (pos >= 64)
             break;
@@ -287,19 +287,13 @@ static int dv_decode_video_segment(AVCodecContext *avctx, void *arg)
     GetBitContext gb;
     BlockInfo mb_data[5 * DV_MAX_BPM], *mb, *mb1;
     LOCAL_ALIGNED_16(int16_t, sblock, [5 * DV_MAX_BPM], [64]);
-    LOCAL_ALIGNED_16(uint8_t, mb_bit_buffer, [80     + AV_INPUT_BUFFER_PADDING_SIZE]); /* allow some slack */
-    LOCAL_ALIGNED_16(uint8_t, vs_bit_buffer, [80 * 5 + AV_INPUT_BUFFER_PADDING_SIZE]); /* allow some slack */
+    LOCAL_ALIGNED_16(uint8_t, mb_bit_buffer, [80     + FF_INPUT_BUFFER_PADDING_SIZE]); /* allow some slack */
+    LOCAL_ALIGNED_16(uint8_t, vs_bit_buffer, [80 * 5 + FF_INPUT_BUFFER_PADDING_SIZE]); /* allow some slack */
     const int log2_blocksize = 3-s->avctx->lowres;
     int is_field_mode[5];
-    int vs_bit_buffer_damaged = 0;
-    int mb_bit_buffer_damaged[5] = {0};
-    int retried = 0;
-    int sta;
 
     av_assert1((((int) mb_bit_buffer) & 7) == 0);
     av_assert1((((int) vs_bit_buffer) & 7) == 0);
-
-retry:
 
     memset(sblock, 0, 5 * DV_MAX_BPM * sizeof(*sblock));
 
@@ -311,14 +305,6 @@ retry:
     for (mb_index = 0; mb_index < 5; mb_index++, mb1 += s->sys->bpm, block1 += s->sys->bpm * 64) {
         /* skip header */
         quant    = buf_ptr[3] & 0x0f;
-        if (avctx->error_concealment) {
-            if ((buf_ptr[3] >> 4) == 0x0E)
-                vs_bit_buffer_damaged = 1;
-            if (!mb_index) {
-                sta = buf_ptr[3] >> 4;
-            } else if (sta != (buf_ptr[3] >> 4))
-                vs_bit_buffer_damaged = 1;
-        }
         buf_ptr += 4;
         init_put_bits(&pb, mb_bit_buffer, 80);
         mb    = mb1;
@@ -347,7 +333,7 @@ retry:
                                     dct_mode                        * 22 * 64 +
                                     (quant + ff_dv_quant_offset[class1]) * 64];
             }
-            dc = dc * 4;
+            dc = dc << 2;
             /* convert to unsigned because 128 is not added in the
              * standard IDCT */
             dc                   += 1024;
@@ -356,25 +342,20 @@ retry:
             mb->pos               = 0;
             mb->partial_bit_count = 0;
 
-            ff_dlog(avctx, "MB block: %d, %d ", mb_index, j);
+            av_dlog(avctx, "MB block: %d, %d ", mb_index, j);
             dv_decode_ac(&gb, mb, block);
 
             /* write the remaining bits in a new buffer only if the
              * block is finished */
             if (mb->pos >= 64)
                 bit_copy(&pb, &gb);
-            if (mb->pos >= 64 && mb->pos < 127)
-                vs_bit_buffer_damaged = mb_bit_buffer_damaged[mb_index] = 1;
 
             block += 64;
             mb++;
         }
 
-        if (mb_bit_buffer_damaged[mb_index] > 0)
-            continue;
-
         /* pass 2: we can do it just after */
-        ff_dlog(avctx, "***pass 2 size=%d MB#=%d\n", put_bits_count(&pb), mb_index);
+        av_dlog(avctx, "***pass 2 size=%d MB#=%d\n", put_bits_count(&pb), mb_index);
         block = block1;
         mb    = mb1;
         init_get_bits(&gb, mb_bit_buffer, put_bits_count(&pb));
@@ -386,8 +367,6 @@ retry:
                 /* if still not finished, no need to parse other blocks */
                 if (mb->pos < 64)
                     break;
-                if (mb->pos < 127)
-                    vs_bit_buffer_damaged = mb_bit_buffer_damaged[mb_index] = 1;
             }
         }
         /* all blocks are finished, so the extra bytes can be used at
@@ -397,7 +376,7 @@ retry:
     }
 
     /* we need a pass over the whole video segment */
-    ff_dlog(avctx, "***pass 3 size=%d\n", put_bits_count(&vs_pb));
+    av_dlog(avctx, "***pass 3 size=%d\n", put_bits_count(&vs_pb));
     block = &sblock[0][0];
     mb    = mb_data;
     init_get_bits(&gb, vs_bit_buffer, put_bits_count(&vs_pb));
@@ -405,24 +384,16 @@ retry:
     flush_put_bits(&vs_pb);
     for (mb_index = 0; mb_index < 5; mb_index++) {
         for (j = 0; j < s->sys->bpm; j++) {
-            if (mb->pos < 64 && get_bits_left(&gb) > 0 && !vs_bit_buffer_damaged) {
-                ff_dlog(avctx, "start %d:%d\n", mb_index, j);
+            if (mb->pos < 64 && get_bits_left(&gb) > 0) {
+                av_dlog(avctx, "start %d:%d\n", mb_index, j);
                 dv_decode_ac(&gb, mb, block);
             }
-
-            if (mb->pos >= 64 && mb->pos < 127) {
+            if (mb->pos >= 64 && mb->pos < 127)
                 av_log(avctx, AV_LOG_ERROR,
                        "AC EOB marker is absent pos=%d\n", mb->pos);
-                vs_bit_buffer_damaged = 1;
-            }
             block += 64;
             mb++;
         }
-    }
-    if (vs_bit_buffer_damaged && !retried) {
-        av_log(avctx, AV_LOG_ERROR, "Concealing bitstream errors\n");
-        retried = 1;
-        goto retry;
     }
 
     /* compute idct and place blocks */
@@ -568,6 +539,6 @@ AVCodec ff_dvvideo_decoder = {
     .priv_data_size = sizeof(DVVideoContext),
     .init           = dvvideo_decode_init,
     .decode         = dvvideo_decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_SLICE_THREADS,
+    .capabilities   = CODEC_CAP_DR1 | CODEC_CAP_SLICE_THREADS,
     .max_lowres     = 3,
 };

@@ -52,8 +52,7 @@ typedef struct ERPicture {
 
 typedef struct ERContext {
     AVCodecContext *avctx;
-    MECmpContext mecc;
-    int mecc_inited;
+    MECmpContext *mecc;
 
     int *mb_index2xy;
     int mb_num;
@@ -61,8 +60,7 @@ typedef struct ERContext {
     int mb_stride;
     int b8_stride;
 
-    volatile int error_count;
-    int error_occurred;
+    int error_count, error_occurred;
     uint8_t *error_status_table;
     uint8_t *er_temp_buffer;
     int16_t *dc_val[3];

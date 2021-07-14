@@ -318,9 +318,6 @@ static int parse_intervals(Interval **intervals, int *nb_intervals,
     *intervals = NULL;
     *nb_intervals = 0;
 
-    if (!buf)
-        return 0;
-
     while (1) {
         Interval interval;
 
@@ -376,9 +373,9 @@ static av_cold int init(AVFilterContext *ctx)
     SendCmdContext *sendcmd = ctx->priv;
     int ret, i, j;
 
-    if ((!!sendcmd->commands_filename + !!sendcmd->commands_str) != 1) {
+    if (sendcmd->commands_filename && sendcmd->commands_str) {
         av_log(ctx, AV_LOG_ERROR,
-               "One and only one of the filename or commands options must be specified\n");
+               "Only one of the filename or commands options must be specified\n");
         return AVERROR(EINVAL);
     }
 
@@ -405,11 +402,6 @@ static av_cold int init(AVFilterContext *ctx)
     if ((ret = parse_intervals(&sendcmd->intervals, &sendcmd->nb_intervals,
                                sendcmd->commands_str, ctx)) < 0)
         return ret;
-
-    if (sendcmd->nb_intervals == 0) {
-        av_log(ctx, AV_LOG_ERROR, "No commands were specified\n");
-        return AVERROR(EINVAL);
-    }
 
     qsort(sendcmd->intervals, sendcmd->nb_intervals, sizeof(Interval), cmp_intervals);
 
@@ -439,11 +431,11 @@ static av_cold void uninit(AVFilterContext *ctx)
         Interval *interval = &sendcmd->intervals[i];
         for (j = 0; j < interval->nb_commands; j++) {
             Command *cmd = &interval->commands[j];
-            av_freep(&cmd->target);
-            av_freep(&cmd->command);
-            av_freep(&cmd->arg);
+            av_free(cmd->target);
+            av_free(cmd->command);
+            av_free(cmd->arg);
         }
-        av_freep(&interval->commands);
+        av_free(interval->commands);
     }
     av_freep(&sendcmd->intervals);
 }

@@ -631,40 +631,6 @@ static int query_formats(AVFilterGraph *graph, AVClass *log_ctx)
     return 0;
 }
 
-static int get_fmt_score(enum AVSampleFormat dst_fmt, enum AVSampleFormat src_fmt)
-{
-    int score = 0;
-
-    if (av_sample_fmt_is_planar(dst_fmt) != av_sample_fmt_is_planar(src_fmt))
-        score ++;
-
-    if (av_get_bytes_per_sample(dst_fmt) < av_get_bytes_per_sample(src_fmt)) {
-        score += 100 * (av_get_bytes_per_sample(src_fmt) - av_get_bytes_per_sample(dst_fmt));
-    }else
-        score += 10  * (av_get_bytes_per_sample(dst_fmt) - av_get_bytes_per_sample(src_fmt));
-
-    if (av_get_packed_sample_fmt(dst_fmt) == AV_SAMPLE_FMT_S32 &&
-        av_get_packed_sample_fmt(src_fmt) == AV_SAMPLE_FMT_FLT)
-        score += 20;
-
-    if (av_get_packed_sample_fmt(dst_fmt) == AV_SAMPLE_FMT_FLT &&
-        av_get_packed_sample_fmt(src_fmt) == AV_SAMPLE_FMT_S32)
-        score += 2;
-
-    return score;
-}
-
-static enum AVSampleFormat find_best_sample_fmt_of_2(enum AVSampleFormat dst_fmt1, enum AVSampleFormat dst_fmt2,
-                                                     enum AVSampleFormat src_fmt)
-{
-    int score1, score2;
-
-    score1 = get_fmt_score(dst_fmt1, src_fmt);
-    score2 = get_fmt_score(dst_fmt2, src_fmt);
-
-    return score1 < score2 ? dst_fmt1 : dst_fmt2;
-}
-
 static int pick_format(AVFilterLink *link, AVFilterLink *ref)
 {
     if (!link || !link->in_formats)
@@ -682,19 +648,6 @@ static int pick_format(AVFilterLink *link, AVFilterLink *ref)
             av_log(link->src,AV_LOG_DEBUG, "picking %s out of %d ref:%s alpha:%d\n",
                    av_get_pix_fmt_name(best), link->in_formats->nb_formats,
                    av_get_pix_fmt_name(ref->format), has_alpha);
-            link->in_formats->formats[0] = best;
-        }
-    } else if (link->type == AVMEDIA_TYPE_AUDIO) {
-        if(ref && ref->type == AVMEDIA_TYPE_AUDIO){
-            enum AVSampleFormat best= AV_SAMPLE_FMT_NONE;
-            int i;
-            for (i=0; i<link->in_formats->nb_formats; i++) {
-                enum AVSampleFormat p = link->in_formats->formats[i];
-                best = find_best_sample_fmt_of_2(best, p, ref->format);
-            }
-            av_log(link->src,AV_LOG_DEBUG, "picking %s out of %d ref:%s\n",
-                   av_get_sample_fmt_name(best), link->in_formats->nb_formats,
-                   av_get_sample_fmt_name(ref->format));
             link->in_formats->formats[0] = best;
         }
     }
@@ -865,8 +818,6 @@ static void swap_samplerates_on_filter(AVFilterContext *filter)
 
         for (j = 0; j < outlink->in_samplerates->nb_formats; j++) {
             int diff = abs(sample_rate - outlink->in_samplerates->formats[j]);
-
-            av_assert0(diff < INT_MAX); // This would lead to the use of uninitialized best_diff but is only possible with invalid sample rates
 
             if (diff < best_diff) {
                 best_diff = diff;
@@ -1168,7 +1119,7 @@ static int graph_config_formats(AVFilterGraph *graph, AVClass *log_ctx)
     return 0;
 }
 
-static int graph_config_pointers(AVFilterGraph *graph,
+static int ff_avfilter_graph_config_pointers(AVFilterGraph *graph,
                                              AVClass *log_ctx)
 {
     unsigned i, j;
@@ -1260,7 +1211,7 @@ int avfilter_graph_config(AVFilterGraph *graphctx, void *log_ctx)
         return ret;
     if ((ret = graph_config_links(graphctx, log_ctx)))
         return ret;
-    if ((ret = graph_config_pointers(graphctx, log_ctx)))
+    if ((ret = ff_avfilter_graph_config_pointers(graphctx, log_ctx)))
         return ret;
 
     return 0;
@@ -1329,8 +1280,6 @@ static void heap_bubble_up(AVFilterGraph *graph,
 {
     AVFilterLink **links = graph->sink_links;
 
-    av_assert0(index >= 0);
-
     while (index) {
         int parent = (index - 1) >> 1;
         if (links[parent]->current_pts >= link->current_pts)
@@ -1347,8 +1296,6 @@ static void heap_bubble_down(AVFilterGraph *graph,
                              AVFilterLink *link, int index)
 {
     AVFilterLink **links = graph->sink_links;
-
-    av_assert0(index >= 0);
 
     while (1) {
         int child = 2 * index + 1;

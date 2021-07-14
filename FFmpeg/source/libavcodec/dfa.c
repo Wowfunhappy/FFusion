@@ -41,7 +41,7 @@ static av_cold int dfa_decode_init(AVCodecContext *avctx)
 
     avctx->pix_fmt = AV_PIX_FMT_PAL8;
 
-    if (!avctx->width || !avctx->height || FFMAX(avctx->width, avctx->height) >= (1<<16))
+    if (!avctx->width || !avctx->height)
         return AVERROR_INVALIDDATA;
 
     av_assert0(av_image_check_size(avctx->width, avctx->height, 0, avctx) >= 0);
@@ -67,8 +67,7 @@ static int decode_tsw1(GetByteContext *gb, uint8_t *frame, int width, int height
     const uint8_t *frame_start = frame;
     const uint8_t *frame_end   = frame + width * height;
     int mask = 0x10000, bitbuf = 0;
-    int v, count;
-    unsigned segments;
+    int v, count, segments;
     unsigned offset;
 
     segments = bytestream2_get_le32(gb);
@@ -176,7 +175,7 @@ static int decode_dds1(GetByteContext *gb, uint8_t *frame, int width, int height
                 return AVERROR_INVALIDDATA;
             frame += v;
         } else {
-            if (frame_end - frame < width + 4)
+            if (frame_end - frame < width + 3)
                 return AVERROR_INVALIDDATA;
             frame[0] = frame[1] =
             frame[width] = frame[width + 1] =  bytestream2_get_byte(gb);
@@ -250,7 +249,7 @@ static int decode_wdlt(GetByteContext *gb, uint8_t *frame, int width, int height
         segments = bytestream2_get_le16u(gb);
         while ((segments & 0xC000) == 0xC000) {
             unsigned skip_lines = -(int16_t)segments;
-            int64_t delta = -((int16_t)segments * (int64_t)width);
+            unsigned delta = -((int16_t)segments * width);
             if (frame_end - frame <= delta || y + lines + skip_lines > height)
                 return AVERROR_INVALIDDATA;
             frame    += delta;
@@ -353,8 +352,6 @@ static int dfa_decode_frame(AVCodecContext *avctx,
 
     bytestream2_init(&gb, avpkt->data, avpkt->size);
     while (bytestream2_get_bytes_left(&gb) > 0) {
-        if (bytestream2_get_bytes_left(&gb) < 12)
-            return AVERROR_INVALIDDATA;
         bytestream2_skip(&gb, 4);
         chunk_size = bytestream2_get_le32(&gb);
         chunk_type = bytestream2_get_le32(&gb);
@@ -421,5 +418,5 @@ AVCodec ff_dfa_decoder = {
     .init           = dfa_decode_init,
     .close          = dfa_decode_end,
     .decode         = dfa_decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_DR1,
 };

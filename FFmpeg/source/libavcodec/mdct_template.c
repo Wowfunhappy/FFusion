@@ -32,12 +32,12 @@
  */
 
 #if FFT_FLOAT
-#   define RSCALE(x, y) ((x) + (y))
+#   define RSCALE(x) (x)
 #else
 #if FFT_FIXED_32
-#   define RSCALE(x, y) ((int)((x) + (unsigned)(y) + 32) >> 6)
+#   define RSCALE(x) (((x) + 32) >> 6)
 #else /* FFT_FIXED_32 */
-#   define RSCALE(x, y) ((int)((x) + (unsigned)(y)) >> 1)
+#   define RSCALE(x) ((x) >> 1)
 #endif /* FFT_FIXED_32 */
 #endif
 
@@ -81,13 +81,8 @@ av_cold int ff_mdct_init(FFTContext *s, int nbits, int inverse, double scale)
     scale = sqrt(fabs(scale));
     for(i=0;i<n4;i++) {
         alpha = 2 * M_PI * (i + theta) / n;
-#if FFT_FIXED_32
-        s->tcos[i*tstep] = (FFTSample)floor(-cos(alpha) * 2147483648.0 + 0.5);
-        s->tsin[i*tstep] = (FFTSample)floor(-sin(alpha) * 2147483648.0 + 0.5);
-#else
         s->tcos[i*tstep] = FIX15(-cos(alpha) * scale);
         s->tsin[i*tstep] = FIX15(-sin(alpha) * scale);
-#endif
     }
     return 0;
  fail:
@@ -180,13 +175,13 @@ void ff_mdct_calc_c(FFTContext *s, FFTSample *out, const FFTSample *input)
 
     /* pre rotation */
     for(i=0;i<n8;i++) {
-        re = RSCALE(-input[2*i+n3], - input[n3-1-2*i]);
-        im = RSCALE(-input[n4+2*i], + input[n4-1-2*i]);
+        re = RSCALE(-input[2*i+n3] - input[n3-1-2*i]);
+        im = RSCALE(-input[n4+2*i] + input[n4-1-2*i]);
         j = revtab[i];
         CMUL(x[j].re, x[j].im, re, im, -tcos[i], tsin[i]);
 
-        re = RSCALE( input[2*i]   , - input[n2-1-2*i]);
-        im = RSCALE(-input[n2+2*i], - input[ n-1-2*i]);
+        re = RSCALE( input[2*i]    - input[n2-1-2*i]);
+        im = RSCALE(-input[n2+2*i] - input[ n-1-2*i]);
         j = revtab[n8 + i];
         CMUL(x[j].re, x[j].im, re, im, -tcos[n8 + i], tsin[n8 + i]);
     }

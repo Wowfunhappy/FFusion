@@ -55,9 +55,6 @@ static int ptx_decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
 
     buf += offset;
 
-    if (buf_end - buf < w * bytes_per_pixel)
-        return AVERROR_INVALIDDATA;
-
     if ((ret = ff_set_dimensions(avctx, w, h)) < 0)
         return ret;
 
@@ -91,5 +88,5 @@ AVCodec ff_ptx_decoder = {
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_PTX,
     .decode         = ptx_decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_DR1,
 };

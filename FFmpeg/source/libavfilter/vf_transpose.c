@@ -27,7 +27,6 @@
 
 #include <stdio.h>
 
-#include "libavutil/avassert.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/internal.h"
 #include "libavutil/intreadwrite.h"
@@ -55,11 +54,10 @@ enum TransposeDir {
 typedef struct TransContext {
     const AVClass *class;
     int hsub, vsub;
-    int planes;
     int pixsteps[4];
 
-    int passthrough;    ///< PassthroughType, landscape passthrough mode enabled
-    int dir;            ///< TransposeDir
+    PassthroughType passthrough; ///< landscape passthrough mode enabled
+    enum TransposeDir dir;
 } TransContext;
 
 static int query_formats(AVFilterContext *ctx)
@@ -77,7 +75,8 @@ static int query_formats(AVFilterContext *ctx)
     }
 
 
-    return ff_set_common_formats(ctx, pix_fmts);
+    ff_set_common_formats(ctx, pix_fmts);
+    return 0;
 }
 
 static int config_props_output(AVFilterLink *outlink)
@@ -107,10 +106,6 @@ static int config_props_output(AVFilterLink *outlink)
 
     trans->hsub = desc_in->log2_chroma_w;
     trans->vsub = desc_in->log2_chroma_h;
-    trans->planes = av_pix_fmt_count_planes(outlink->format);
-
-    av_assert0(desc_in->nb_components == desc_out->nb_components);
-
 
     av_image_fill_max_pixsteps(trans->pixsteps, NULL, desc_out);
 
@@ -153,11 +148,11 @@ static int filter_slice(AVFilterContext *ctx, void *arg, int jobnr,
     AVFrame *in = td->in;
     int plane;
 
-    for (plane = 0; plane < trans->planes; plane++) {
+    for (plane = 0; out->data[plane]; plane++) {
         int hsub    = plane == 1 || plane == 2 ? trans->hsub : 0;
         int vsub    = plane == 1 || plane == 2 ? trans->vsub : 0;
         int pixstep = trans->pixsteps[plane];
-        int inh     = FF_CEIL_RSHIFT(in->height, vsub);
+        int inh     = in->height  >> vsub;
         int outw    = FF_CEIL_RSHIFT(out->width,  hsub);
         int outh    = FF_CEIL_RSHIFT(out->height, vsub);
         int start   = (outh *  jobnr   ) / nb_jobs;

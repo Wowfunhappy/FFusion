@@ -36,15 +36,17 @@ static int msrle_decode_pal4(AVCodecContext *avctx, AVPicture *pic,
     unsigned char rle_code;
     unsigned char extra_byte, odd_pixel;
     unsigned char stream_byte;
-    int pixel_ptr = 0;
-    int line = avctx->height - 1;
+    unsigned int pixel_ptr = 0;
+    int row_dec = pic->linesize[0];
+    int row_ptr = (avctx->height - 1) * row_dec;
+    int frame_size = row_dec * avctx->height;
     int i;
 
-    while (line >= 0 && pixel_ptr <= avctx->width) {
+    while (row_ptr >= 0) {
         if (bytestream2_get_bytes_left(gb) <= 0) {
             av_log(avctx, AV_LOG_ERROR,
-                   "MS RLE: bytestream overrun, %dx%d left\n",
-                   avctx->width - pixel_ptr, line);
+                   "MS RLE: bytestream overrun, %d rows left\n",
+                   row_ptr);
             return AVERROR_INVALIDDATA;
         }
         rle_code = stream_byte = bytestream2_get_byteu(gb);
@@ -53,7 +55,7 @@ static int msrle_decode_pal4(AVCodecContext *avctx, AVPicture *pic,
             stream_byte = bytestream2_get_byte(gb);
             if (stream_byte == 0) {
                 /* line is done, goto the next one */
-                line--;
+                row_ptr -= row_dec;
                 pixel_ptr = 0;
             } else if (stream_byte == 1) {
                 /* decode is done */
@@ -63,13 +65,13 @@ static int msrle_decode_pal4(AVCodecContext *avctx, AVPicture *pic,
                 stream_byte = bytestream2_get_byte(gb);
                 pixel_ptr += stream_byte;
                 stream_byte = bytestream2_get_byte(gb);
-                avpriv_request_sample(avctx, "Unused stream byte %X", stream_byte);
+                row_ptr -= stream_byte * row_dec;
             } else {
                 // copy pixels from encoded stream
                 odd_pixel =  stream_byte & 1;
                 rle_code = (stream_byte + 1) / 2;
                 extra_byte = rle_code & 0x01;
-                if (pixel_ptr + 2*rle_code - odd_pixel > avctx->width ||
+                if (row_ptr + pixel_ptr + stream_byte > frame_size ||
                     bytestream2_get_bytes_left(gb) < rle_code) {
                     av_log(avctx, AV_LOG_ERROR,
                            "MS RLE: frame/stream ptr just went out of bounds (copy)\n");
@@ -80,13 +82,13 @@ static int msrle_decode_pal4(AVCodecContext *avctx, AVPicture *pic,
                     if (pixel_ptr >= avctx->width)
                         break;
                     stream_byte = bytestream2_get_byteu(gb);
-                    pic->data[0][line * pic->linesize[0] + pixel_ptr] = stream_byte >> 4;
+                    pic->data[0][row_ptr + pixel_ptr] = stream_byte >> 4;
                     pixel_ptr++;
                     if (i + 1 == rle_code && odd_pixel)
                         break;
                     if (pixel_ptr >= avctx->width)
                         break;
-                    pic->data[0][line * pic->linesize[0] + pixel_ptr] = stream_byte & 0x0F;
+                    pic->data[0][row_ptr + pixel_ptr] = stream_byte & 0x0F;
                     pixel_ptr++;
                 }
 
@@ -96,9 +98,9 @@ static int msrle_decode_pal4(AVCodecContext *avctx, AVPicture *pic,
             }
         } else {
             // decode a run of data
-            if (pixel_ptr + rle_code > avctx->width + 1) {
+            if (row_ptr + pixel_ptr + stream_byte > frame_size) {
                 av_log(avctx, AV_LOG_ERROR,
-                       "MS RLE: frame ptr just went out of bounds (run) %d %d %d\n", pixel_ptr, rle_code, avctx->width);
+                       "MS RLE: frame ptr just went out of bounds (run)\n");
                 return AVERROR_INVALIDDATA;
             }
             stream_byte = bytestream2_get_byte(gb);
@@ -106,9 +108,9 @@ static int msrle_decode_pal4(AVCodecContext *avctx, AVPicture *pic,
                 if (pixel_ptr >= avctx->width)
                     break;
                 if ((i & 1) == 0)
-                    pic->data[0][line * pic->linesize[0] + pixel_ptr] = stream_byte >> 4;
+                    pic->data[0][row_ptr + pixel_ptr] = stream_byte >> 4;
                 else
-                    pic->data[0][line * pic->linesize[0] + pixel_ptr] = stream_byte & 0x0F;
+                    pic->data[0][row_ptr + pixel_ptr] = stream_byte & 0x0F;
                 pixel_ptr++;
             }
         }

@@ -76,7 +76,6 @@ try to unroll inner for(x=0 ... loop to avoid these damn if(x ... checks
 #include "config.h"
 #include "libavutil/avutil.h"
 #include "libavutil/avassert.h"
-#include "libavutil/intreadwrite.h"
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -89,9 +88,6 @@ try to unroll inner for(x=0 ... loop to avoid these damn if(x ... checks
 #include "postprocess.h"
 #include "postprocess_internal.h"
 #include "libavutil/avstring.h"
-
-#include "libavutil/ffversion.h"
-const char postproc_ffversion[] = "FFmpeg version " FFMPEG_VERSION;
 
 unsigned postproc_version(void)
 {
@@ -168,6 +164,37 @@ static const char * const replaceTable[]=
     "ac",           "ha:a:128:7,va:a,dr:a",
     NULL //End Marker
 };
+
+
+#if ARCH_X86 && HAVE_INLINE_ASM
+static inline void prefetchnta(const void *p)
+{
+    __asm__ volatile(   "prefetchnta (%0)\n\t"
+        : : "r" (p)
+    );
+}
+
+static inline void prefetcht0(const void *p)
+{
+    __asm__ volatile(   "prefetcht0 (%0)\n\t"
+        : : "r" (p)
+    );
+}
+
+static inline void prefetcht1(const void *p)
+{
+    __asm__ volatile(   "prefetcht1 (%0)\n\t"
+        : : "r" (p)
+    );
+}
+
+static inline void prefetcht2(const void *p)
+{
+    __asm__ volatile(   "prefetcht2 (%0)\n\t"
+        : : "r" (p)
+    );
+}
+#endif
 
 /* The horizontal functions exist only in C because the MMX
  * code is faster with vertical filters and transposing. */
@@ -670,8 +697,6 @@ pp_mode *pp_get_mode_by_name_and_quality(const char *name, int quality)
     }
 
     ppMode= av_malloc(sizeof(PPMode));
-    if (!ppMode)
-        return NULL;
 
     ppMode->lumMode= 0;
     ppMode->chromMode= 0;
@@ -682,7 +707,7 @@ pp_mode *pp_get_mode_by_name_and_quality(const char *name, int quality)
     ppMode->minAllowedY= 16;
     ppMode->baseDcDiff= 256/8;
     ppMode->flatnessThreshold= 56-16-1;
-    ppMode->maxClippedThreshold= (AVRational){1,100};
+    ppMode->maxClippedThreshold= 0.01;
     ppMode->error=0;
 
     memset(temp, 0, GET_MODE_BUFFER_SIZE);
@@ -738,7 +763,7 @@ pp_mode *pp_get_mode_by_name_and_quality(const char *name, int quality)
         /* replace stuff from the replace Table */
         for(i=0; replaceTable[2*i]; i++){
             if(!strcmp(replaceTable[2*i], filterName)){
-                size_t newlen = strlen(replaceTable[2*i + 1]);
+                int newlen= strlen(replaceTable[2*i + 1]);
                 int plen;
                 int spaceLeft;
 
@@ -884,14 +909,12 @@ static const char * context_to_name(void * ptr) {
 
 static const AVClass av_codec_context_class = { "Postproc", context_to_name, NULL };
 
-av_cold pp_context *pp_get_context(int width, int height, int cpuCaps){
-    PPContext *c= av_mallocz(sizeof(PPContext));
+pp_context *pp_get_context(int width, int height, int cpuCaps){
+    PPContext *c= av_malloc(sizeof(PPContext));
     int stride= FFALIGN(width, 16);  //assumed / will realloc if needed
     int qpStride= (width+15)/16 + 2; //assumed / will realloc if needed
 
-    if (!c)
-        return NULL;
-
+    memset(c, 0, sizeof(PPContext));
     c->av_class = &av_codec_context_class;
     if(cpuCaps&PP_FORMAT){
         c->hChromaSubSample= cpuCaps&0x3;
@@ -917,7 +940,7 @@ av_cold pp_context *pp_get_context(int width, int height, int cpuCaps){
     return c;
 }
 
-av_cold void pp_free_context(void *vc){
+void pp_free_context(void *vc){
     PPContext *c = (PPContext*)vc;
     int i;
 
@@ -973,7 +996,7 @@ void  pp_postprocess(const uint8_t * src[3], const int srcStride[3],
         int i;
         const int count= FFMAX(mbHeight * absQPStride, mbWidth);
         for(i=0; i<(count>>2); i++){
-            AV_WN32(c->stdQPTable + (i<<2), AV_RN32(QP_store + (i<<2)) >> 1 & 0x7F7F7F7F);
+            ((uint32_t*)c->stdQPTable)[i] = (((const uint32_t*)QP_store)[i]>>1) & 0x7F7F7F7F;
         }
         for(i<<=2; i<count; i++){
             c->stdQPTable[i] = QP_store[i]>>1;
@@ -998,7 +1021,7 @@ void  pp_postprocess(const uint8_t * src[3], const int srcStride[3],
             int i;
             const int count= FFMAX(mbHeight * QPStride, mbWidth);
             for(i=0; i<(count>>2); i++){
-                AV_WN32(c->nonBQPTable + (i<<2), AV_RN32(QP_store + (i<<2)) & 0x3F3F3F3F);
+                ((uint32_t*)c->nonBQPTable)[i] = ((const uint32_t*)QP_store)[i] & 0x3F3F3F3F;
             }
             for(i<<=2; i<count; i++){
                 c->nonBQPTable[i] = QP_store[i] & 0x3F;

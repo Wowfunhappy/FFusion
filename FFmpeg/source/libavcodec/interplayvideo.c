@@ -38,7 +38,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "libavutil/intreadwrite.h"
 #include "avcodec.h"
 #include "bytestream.h"
 #include "hpeldsp.h"
@@ -119,7 +118,7 @@ static int ipvideo_decode_block_opcode_0x2(IpvideoContext *s, AVFrame *frame)
         y =   8 + ((B - 56) / 29);
     }
 
-    ff_tlog(s->avctx, "motion byte = %d, (x, y) = (%d, %d)\n", B, x, y);
+    av_dlog(s->avctx, "motion byte = %d, (x, y) = (%d, %d)\n", B, x, y);
     return copy_from(s, s->second_last_frame, frame, x, y);
 }
 
@@ -145,7 +144,7 @@ static int ipvideo_decode_block_opcode_0x3(IpvideoContext *s, AVFrame *frame)
         y = -(  8 + ((B - 56) / 29));
     }
 
-    ff_tlog(s->avctx, "motion byte = %d, (x, y) = (%d, %d)\n", B, x, y);
+    av_dlog(s->avctx, "motion byte = %d, (x, y) = (%d, %d)\n", B, x, y);
     return copy_from(s, frame, frame, x, y);
 }
 
@@ -166,7 +165,7 @@ static int ipvideo_decode_block_opcode_0x4(IpvideoContext *s, AVFrame *frame)
     x = -8 + BL;
     y = -8 + BH;
 
-    ff_tlog(s->avctx, "motion byte = %d, (x, y) = (%d, %d)\n", B, x, y);
+    av_dlog(s->avctx, "motion byte = %d, (x, y) = (%d, %d)\n", B, x, y);
     return copy_from(s, s->last_frame, frame, x, y);
 }
 
@@ -179,7 +178,7 @@ static int ipvideo_decode_block_opcode_0x5(IpvideoContext *s, AVFrame *frame)
     x = bytestream2_get_byte(&s->stream_ptr);
     y = bytestream2_get_byte(&s->stream_ptr);
 
-    ff_tlog(s->avctx, "motion bytes = %d, %d\n", x, y);
+    av_dlog(s->avctx, "motion bytes = %d, %d\n", x, y);
     return copy_from(s, s->last_frame, frame, x, y);
 }
 
@@ -554,7 +553,7 @@ static int ipvideo_decode_block_opcode_0x6_16(IpvideoContext *s, AVFrame *frame)
     x = bytestream2_get_byte(&s->stream_ptr);
     y = bytestream2_get_byte(&s->stream_ptr);
 
-    ff_tlog(s->avctx, "motion bytes = %d, %d\n", x, y);
+    av_dlog(s->avctx, "motion bytes = %d, %d\n", x, y);
     return copy_from(s, s->second_last_frame, frame, x, y);
 }
 
@@ -929,7 +928,7 @@ static void ipvideo_decode_opcodes(IpvideoContext *s, AVFrame *frame)
         for (x = 0; x < s->avctx->width; x += 8) {
             opcode = get_bits(&gb, 4);
 
-            ff_tlog(s->avctx,
+            av_dlog(s->avctx,
                     "  block @ (%3d, %3d): encoding 0x%X, data ptr offset %d\n",
                     x, y, opcode, bytestream2_tell(&s->stream_ptr));
 
@@ -950,7 +949,7 @@ static void ipvideo_decode_opcodes(IpvideoContext *s, AVFrame *frame)
         }
     }
     if (bytestream2_get_bytes_left(&s->stream_ptr) > 1) {
-        av_log(s->avctx, AV_LOG_DEBUG,
+        av_log(s->avctx, AV_LOG_ERROR,
                "decode finished with %d bytes left over\n",
                bytestream2_get_bytes_left(&s->stream_ptr));
     }
@@ -988,38 +987,31 @@ static int ipvideo_decode_frame(AVCodecContext *avctx,
     AVFrame *frame = data;
     int ret;
 
+    /* decoding map contains 4 bits of information per 8x8 block */
+    s->decoding_map_size = avctx->width * avctx->height / (8 * 8 * 2);
+
+    /* compressed buffer needs to be large enough to at least hold an entire
+     * decoding map */
+    if (buf_size < s->decoding_map_size)
+        return buf_size;
+
     if (av_packet_get_side_data(avpkt, AV_PKT_DATA_PARAM_CHANGE, NULL)) {
         av_frame_unref(s->last_frame);
         av_frame_unref(s->second_last_frame);
     }
 
-    if (buf_size < 2)
-        return AVERROR_INVALIDDATA;
-
-    /* decoding map contains 4 bits of information per 8x8 block */
-    s->decoding_map_size = AV_RL16(avpkt->data);
-
-    /* compressed buffer needs to be large enough to at least hold an entire
-     * decoding map */
-    if (buf_size < s->decoding_map_size + 2)
-        return buf_size;
-
-
-    s->decoding_map = buf + 2;
-    bytestream2_init(&s->stream_ptr, buf + 2 + s->decoding_map_size,
+    s->decoding_map = buf;
+    bytestream2_init(&s->stream_ptr, buf + s->decoding_map_size,
                      buf_size - s->decoding_map_size);
 
     if ((ret = ff_get_buffer(avctx, frame, AV_GET_BUFFER_FLAG_REF)) < 0)
         return ret;
 
     if (!s->is_16bpp) {
-        int size;
-        const uint8_t *pal = av_packet_get_side_data(avpkt, AV_PKT_DATA_PALETTE, &size);
-        if (pal && size == AVPALETTE_SIZE) {
+        const uint8_t *pal = av_packet_get_side_data(avpkt, AV_PKT_DATA_PALETTE, NULL);
+        if (pal) {
             frame->palette_has_changed = 1;
             memcpy(s->pal, pal, AVPALETTE_SIZE);
-        } else if (pal) {
-            av_log(avctx, AV_LOG_ERROR, "Palette size %d is wrong\n", size);
         }
     }
 
@@ -1056,5 +1048,5 @@ AVCodec ff_interplay_video_decoder = {
     .init           = ipvideo_decode_init,
     .close          = ipvideo_decode_end,
     .decode         = ipvideo_decode_frame,
-    .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_PARAM_CHANGE,
+    .capabilities   = CODEC_CAP_DR1 | CODEC_CAP_PARAM_CHANGE,
 };

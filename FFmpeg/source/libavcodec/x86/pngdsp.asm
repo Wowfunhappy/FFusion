@@ -27,7 +27,7 @@ SECTION_RODATA
 
 cextern pw_255
 
-SECTION .text
+SECTION_TEXT
 
 ; %1 = nr. of xmm registers used
 %macro ADD_BYTES_FN 1

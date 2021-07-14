@@ -22,7 +22,6 @@
  */
 
 #include "libavutil/common.h"
-#include "libavutil/opt.h"
 #include "avcodec.h"
 #include "internal.h"
 #include "get_bits.h"
@@ -37,7 +36,6 @@ typedef struct FICThreadContext {
 } FICThreadContext;
 
 typedef struct FICContext {
-    AVClass *class;
     AVCodecContext *avctx;
     AVFrame *frame;
     AVFrame *final_frame;
@@ -53,7 +51,6 @@ typedef struct FICContext {
     int num_slices, slice_h;
 
     uint8_t cursor_buf[4096];
-    int skip_cursor;
 } FICContext;
 
 static const uint8_t fic_qmat_hq[64] = {
@@ -81,30 +78,29 @@ static const uint8_t fic_qmat_lq[64] = {
 static const uint8_t fic_header[7] = { 0, 0, 1, 'F', 'I', 'C', 'V' };
 
 #define FIC_HEADER_SIZE 27
-#define CURSOR_OFFSET 59
 
 static av_always_inline void fic_idct(int16_t *blk, int step, int shift, int rnd)
 {
-    const unsigned t0 =  27246 * blk[3 * step] + 18405 * blk[5 * step];
-    const unsigned t1 =  27246 * blk[5 * step] - 18405 * blk[3 * step];
-    const unsigned t2 =   6393 * blk[7 * step] + 32139 * blk[1 * step];
-    const unsigned t3 =   6393 * blk[1 * step] - 32139 * blk[7 * step];
-    const unsigned t4 = 5793U * ((int)(t2 + t0 + 0x800) >> 12);
-    const unsigned t5 = 5793U * ((int)(t3 + t1 + 0x800) >> 12);
-    const unsigned t6 = t2 - t0;
-    const unsigned t7 = t3 - t1;
-    const unsigned t8 =  17734 * blk[2 * step] - 42813 * blk[6 * step];
-    const unsigned t9 =  17734 * blk[6 * step] + 42814 * blk[2 * step];
-    const unsigned tA = (blk[0 * step] - blk[4 * step]) * 32768 + rnd;
-    const unsigned tB = (blk[0 * step] + blk[4 * step]) * 32768 + rnd;
-    blk[0 * step] = (int)(  t4       + t9 + tB) >> shift;
-    blk[1 * step] = (int)(  t6 + t7  + t8 + tA) >> shift;
-    blk[2 * step] = (int)(  t6 - t7  - t8 + tA) >> shift;
-    blk[3 * step] = (int)(  t5       - t9 + tB) >> shift;
-    blk[4 * step] = (int)( -t5       - t9 + tB) >> shift;
-    blk[5 * step] = (int)(-(t6 - t7) - t8 + tA) >> shift;
-    blk[6 * step] = (int)(-(t6 + t7) + t8 + tA) >> shift;
-    blk[7 * step] = (int)( -t4       + t9 + tB) >> shift;
+    const int t0 =  27246 * blk[3 * step] + 18405 * blk[5 * step];
+    const int t1 =  27246 * blk[5 * step] - 18405 * blk[3 * step];
+    const int t2 =   6393 * blk[7 * step] + 32139 * blk[1 * step];
+    const int t3 =   6393 * blk[1 * step] - 32139 * blk[7 * step];
+    const int t4 = 5793 * (t2 + t0 + 0x800 >> 12);
+    const int t5 = 5793 * (t3 + t1 + 0x800 >> 12);
+    const int t6 = t2 - t0;
+    const int t7 = t3 - t1;
+    const int t8 =  17734 * blk[2 * step] - 42813 * blk[6 * step];
+    const int t9 =  17734 * blk[6 * step] + 42814 * blk[2 * step];
+    const int tA = (blk[0 * step] - blk[4 * step] << 15) + rnd;
+    const int tB = (blk[0 * step] + blk[4 * step] << 15) + rnd;
+    blk[0 * step] = (  t4       + t9 + tB) >> shift;
+    blk[1 * step] = (  t6 + t7  + t8 + tA) >> shift;
+    blk[2 * step] = (  t6 - t7  - t8 + tA) >> shift;
+    blk[3 * step] = (  t5       - t9 + tB) >> shift;
+    blk[4 * step] = ( -t5       - t9 + tB) >> shift;
+    blk[5 * step] = (-(t6 - t7) - t8 + tA) >> shift;
+    blk[6 * step] = (-(t6 + t7) + t8 + tA) >> shift;
+    blk[7 * step] = ( -t4       + t9 + tB) >> shift;
 }
 
 static void fic_idct_put(uint8_t *dst, int stride, int16_t *block)
@@ -137,9 +133,6 @@ static int fic_decode_block(FICContext *ctx, GetBitContext *gb,
                             uint8_t *dst, int stride, int16_t *block)
 {
     int i, num_coeff;
-
-    if (get_bits_left(gb) < 8)
-        return AVERROR_INVALIDDATA;
 
     /* Is it a skip block? */
     if (get_bits1(gb)) {
@@ -270,11 +263,13 @@ static int fic_decode_frame(AVCodecContext *avctx, void *data,
     int msize;
     int tsize;
     int cur_x, cur_y;
-    int skip_cursor = ctx->skip_cursor;
+    int skip_cursor = 0;
     uint8_t *sdata;
 
-    if ((ret = ff_reget_buffer(avctx, ctx->frame)) < 0)
+    if ((ret = ff_reget_buffer(avctx, ctx->frame)) < 0) {
+        av_log(avctx, AV_LOG_ERROR, "reget_buffer() failed\n");
         return ret;
+    }
 
     /* Header + at least one slice (4) */
     if (avpkt->size < FIC_HEADER_SIZE + 4) {
@@ -338,10 +333,6 @@ static int fic_decode_frame(AVCodecContext *avctx, void *data,
         skip_cursor = 1;
     }
 
-    if (!skip_cursor && avpkt->size < CURSOR_OFFSET + sizeof(ctx->cursor_buf)) {
-        skip_cursor = 1;
-    }
-
     /* Slice height for all but the last slice. */
     ctx->slice_h = 16 * (ctx->aligned_height >> 4) / nslices;
     if (ctx->slice_h % 16)
@@ -389,8 +380,6 @@ static int fic_decode_frame(AVCodecContext *avctx, void *data,
             slice_h      = FFALIGN(avctx->height - ctx->slice_h * (nslices - 1), 16);
         } else {
             slice_size = AV_RB32(src + tsize + FIC_HEADER_SIZE + slice * 4 + 4);
-            if (slice_size < slice_off)
-                return AVERROR_INVALIDDATA;
         }
 
         if (slice_size < slice_off || slice_size > msize)
@@ -423,7 +412,7 @@ static int fic_decode_frame(AVCodecContext *avctx, void *data,
 
     /* Draw cursor. */
     if (!skip_cursor) {
-        memcpy(ctx->cursor_buf, src + CURSOR_OFFSET, sizeof(ctx->cursor_buf));
+        memcpy(ctx->cursor_buf, src + 59, 32 * 32 * 4);
         fic_draw_cursor(avctx, cur_x, cur_y);
     }
 
@@ -465,18 +454,6 @@ static av_cold int fic_decode_init(AVCodecContext *avctx)
     return 0;
 }
 
-static const AVOption options[] = {
-{ "skip_cursor", "skip the cursor", offsetof(FICContext, skip_cursor), AV_OPT_TYPE_INT, {.i64 = 0 }, 0, 1, AV_OPT_FLAG_DECODING_PARAM | AV_OPT_FLAG_VIDEO_PARAM },
-{ NULL },
-};
-
-static const AVClass fic_decoder_class = {
-    .class_name = "FIC encoder",
-    .item_name  = av_default_item_name,
-    .option     = options,
-    .version    = LIBAVUTIL_VERSION_INT,
-};
-
 AVCodec ff_fic_decoder = {
     .name           = "fic",
     .long_name      = NULL_IF_CONFIG_SMALL("Mirillis FIC"),
@@ -486,6 +463,5 @@ AVCodec ff_fic_decoder = {
     .init           = fic_decode_init,
     .decode         = fic_decode_frame,
     .close          = fic_decode_close,
-    .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_SLICE_THREADS,
-    .priv_class     = &fic_decoder_class,
+    .capabilities   = CODEC_CAP_DR1 | CODEC_CAP_SLICE_THREADS,
 };

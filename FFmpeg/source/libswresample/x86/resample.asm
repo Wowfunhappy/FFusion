@@ -176,12 +176,7 @@ cglobal resample_common_%1, 1, 7, 2, ctx, phase_shift, dst, frac, \
 .inner_loop:
     movu                          m1, [srcq+min_filter_count_x4q*1]
 %ifidn %1, int16
-%if cpuflag(xop)
-    vpmadcswd                     m0, m1, [filterq+min_filter_count_x4q*1], m0
-%else
-    pmaddwd                       m1, [filterq+min_filter_count_x4q*1]
-    paddd                         m0, m1
-%endif
+    PMADCSWD                      m0, m1, [filterq+min_filter_count_x4q*1], m0, m1
 %else ; float/double
 %if cpuflag(fma4) || cpuflag(fma3)
     fmaddp%4                      m0, m1, [filterq+min_filter_count_x4q*1], m0

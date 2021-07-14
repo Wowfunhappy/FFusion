@@ -7,8 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		AB2FE86A25B3A29C00C96D74 /* CoreMedia.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AB2FE86925B3A29C00C96D74 /* CoreMedia.framework */; };
-		AB2FE86C25B3A2C800C96D74 /* VideoToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AB2FE86B25B3A2C800C96D74 /* VideoToolbox.framework */; };
+		AB967C7D269A75E600A2E4A4 /* libde265.0.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = AB967C7C269A75E600A2E4A4 /* libde265.0.dylib */; };
 		AB9E325326975B1E0047DE6E /* FFusion.component in CopyFiles */ = {isa = PBXBuildFile; fileRef = D67BC4B216B166FF00E26386 /* FFusion.component */; };
 		ABAC75C125B4A00E00B55ABF /* libavcodec.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 11D4EFA10A3CE8C10066D45F /* libavcodec.a */; };
 		ABAC75C325B4A00E00B55ABF /* libavformat.a in Frameworks */ = {isa = PBXBuildFile; fileRef = AB38B78225B3848700DBBE4A /* libavformat.a */; };
@@ -115,6 +114,7 @@
 		AB38B78325B3848700DBBE4A /* libswresample.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libswresample.a; path = FFmpeg/osx86/lib/libswresample.a; sourceTree = "<group>"; };
 		AB38B78425B3848700DBBE4A /* libswscale.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libswscale.a; path = FFmpeg/osx86/lib/libswscale.a; sourceTree = "<group>"; };
 		AB7DDD7425B3ECDF00C31DD6 /* libvpx.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libvpx.a; path = FFmpeg/osx86/lib/libvpx.a; sourceTree = "<group>"; };
+		AB967C7C269A75E600A2E4A4 /* libde265.0.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libde265.0.dylib; path = ../../../../opt/local/lib/libde265.0.dylib; sourceTree = "<group>"; };
 		ABAFF7F225B20487005D96A4 /* VideoDecodeAcceleration.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = VideoDecodeAcceleration.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.8.sdk/System/Library/Frameworks/VideoDecodeAcceleration.framework; sourceTree = DEVELOPER_DIR; };
 		ABAFF7F425B2048C005D96A4 /* CoreVideo.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreVideo.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.8.sdk/System/Library/Frameworks/CoreVideo.framework; sourceTree = DEVELOPER_DIR; };
 		D604CEC516DA3DC70066FD67 /* demux+code-bench.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = "demux+code-bench.c"; sourceTree = "<group>"; };
@@ -2295,8 +2295,7 @@
 				ABAC75C525B4A00E00B55ABF /* libswresample.a in Frameworks */,
 				ABAC75C625B4A00E00B55ABF /* libswscale.a in Frameworks */,
 				ABAC75C725B4A00E00B55ABF /* libvpx.a in Frameworks */,
-				AB2FE86C25B3A2C800C96D74 /* VideoToolbox.framework in Frameworks */,
-				AB2FE86A25B3A29C00C96D74 /* CoreMedia.framework in Frameworks */,
+				AB967C7D269A75E600A2E4A4 /* libde265.0.dylib in Frameworks */,
 				ABAFF7F525B2048C005D96A4 /* CoreVideo.framework in Frameworks */,
 				ABAFF7F325B20487005D96A4 /* VideoDecodeAcceleration.framework in Frameworks */,
 				D67BC49E16B166FF00E26386 /* libz.dylib in Frameworks */,
@@ -2315,6 +2314,7 @@
 		089C166AFE841209C02AAC07 /* ffmpeg DivX */ = {
 			isa = PBXGroup;
 			children = (
+				AB967C7C269A75E600A2E4A4 /* libde265.0.dylib */,
 				AB7DDD7425B3ECDF00C31DD6 /* libvpx.a */,
 				AB2FE86B25B3A2C800C96D74 /* VideoToolbox.framework */,
 				AB2FE86925B3A29C00C96D74 /* CoreMedia.framework */,
@@ -5305,11 +5305,12 @@
 				);
 				GCC_VERSION = "";
 				HEADER_SEARCH_PATHS = (
+					"$(PROJECT_DIR)",
+					"FFmpeg/osx86/include/**",
+					"FFmpeg/source/**",
 					"$(BUILT_PRODUCTS_DIR)/$(arch)",
-					libmatroska,
-					libebml,
-					"ffmpeg/**",
 					"$(BUILT_PRODUCTS_DIR)",
+					"libde265/**",
 				);
 				INFOPLIST_FILE = "Plists/FFusion-Info.plist";
 				INFOPLIST_OTHER_PREPROCESSOR_FLAGS = "-C";
@@ -5324,6 +5325,8 @@
 					"$(SRCROOT)/FFmpeg/osx86/lib",
 					/Users/jonathan/Desktop/FFusion/FFmpeg/osx86/lib,
 					/Users/jonathan/Desktop/FFusion,
+					/Users/jonathan/Desktop/FFusion/libde265,
+					/opt/local/lib,
 				);
 				ONLY_ACTIVE_ARCH = NO;
 				OTHER_CFLAGS = "-march=core2";
@@ -5335,7 +5338,7 @@
 				OTHER_REZFLAGS = "-rd -d ppc_$(ppc) -d i386_$(i386) -d TARGET_REZ_CARBON_MACHO=1 -i \"$(SRCROOT)\" -i \"$(DERIVED_FILE_DIR)\"";
 				PRODUCT_NAME = FFusion;
 				REZ_PREPROCESSOR_DEFINITIONS = "";
-				SDKROOT = macosx10.8;
+				SDKROOT = macosx10.6;
 				VALID_ARCHS = "ppc i386";
 				WRAPPER_EXTENSION = component;
 			};
@@ -5366,6 +5369,7 @@
 					"FFmpeg/source/**",
 					"$(BUILT_PRODUCTS_DIR)/$(arch)",
 					"$(BUILT_PRODUCTS_DIR)",
+					"libde265/**",
 				);
 				INFOPLIST_FILE = "Plists/FFusion-Info.plist";
 				INFOPLIST_OTHER_PREPROCESSOR_FLAGS = "-C";
@@ -5378,6 +5382,8 @@
 					"$(SRCROOT)/FFmpeg/osx86/lib",
 					/Users/jonathan/Desktop/FFusion/FFmpeg/osx86/lib,
 					/Users/jonathan/Desktop/FFusion,
+					/Users/jonathan/Desktop/FFusion/libde265,
+					/opt/local/lib,
 				);
 				MACOSX_DEPLOYMENT_TARGET = 10.6;
 				OTHER_CFLAGS = (
@@ -5396,7 +5402,7 @@
 				OTHER_REZFLAGS = "-rd -d ppc_$(ppc) -d i386_$(i386) -d TARGET_REZ_CARBON_MACHO=1 -i \"$(SRCROOT)\" -i \"$(DERIVED_FILE_DIR)\"";
 				PRECOMPS_INCLUDE_HEADERS_FROM_BUILT_PRODUCTS_DIR = NO;
 				PRODUCT_NAME = FFusion;
-				SDKROOT = macosx10.8;
+				SDKROOT = macosx10.6;
 				STRIP_INSTALLED_PRODUCT = NO;
 				VALID_ARCHS = "ppc i386";
 				WRAPPER_EXTENSION = component;
@@ -5420,11 +5426,12 @@
 				);
 				GCC_VERSION = "";
 				HEADER_SEARCH_PATHS = (
-					"\\\"$(BUILT_PRODUCTS_DIR)\\\"/$(arch)",
-					libmatroska,
-					libebml,
-					"ffmpeg/**",
-					"\\\"$(BUILT_PRODUCTS_DIR)\\\"",
+					"$(PROJECT_DIR)",
+					"FFmpeg/osx86/include/**",
+					"FFmpeg/source/**",
+					"$(BUILT_PRODUCTS_DIR)/$(arch)",
+					"$(BUILT_PRODUCTS_DIR)",
+					"libde265/**",
 				);
 				INFOPLIST_FILE = "Plists/FFusion-Info.plist";
 				INFOPLIST_OTHER_PREPROCESSOR_FLAGS = "-C";
@@ -5433,15 +5440,10 @@
 				INFOPLIST_PREPROCESSOR_DEFINITIONS = "";
 				INSTALL_PATH = "$(HOME)/Library/QuickTime";
 				LIBRARY_SEARCH_PATHS = (
-					"$(inherited)",
-					"\\\\\\\\\\\\\\\"$(SRCROOT)/build/Universal\\\\\\\\\\\\\\\"",
-					/usr/local/FFmpeg/trunk/lib,
-					"\\\\\\\"$(SRCROOT)/build/Universal\\\\\\\"",
-					"\\\\\\\"$(SRCROOT)/../Perian-1.2.1/build/Universal\\\\\\\"",
-					"$(SRCROOT)",
-					"\\\\\\\"$(SRCROOT)/FFmpeg/osx86/lib\\\\\\\"",
 					/Users/jonathan/Desktop/FFusion/FFmpeg/osx86/lib,
 					/Users/jonathan/Desktop/FFusion,
+					/Users/jonathan/Desktop/FFusion/libde265,
+					/opt/local/lib,
 				);
 				OTHER_CFLAGS = "-march=core2";
 				OTHER_CPLUSPLUSFLAGS = "$(OTHER_CFLAGS)";
@@ -5451,7 +5453,7 @@
 				);
 				OTHER_REZFLAGS = "-rd -d ppc_$(ppc) -d i386_$(i386) -d TARGET_REZ_CARBON_MACHO=1 -i \"$(SRCROOT)\" -i \"$(DERIVED_FILE_DIR)\"";
 				PRODUCT_NAME = FFusion;
-				SDKROOT = macosx10.8;
+				SDKROOT = macosx10.6;
 				VALID_ARCHS = "ppc i386";
 				WRAPPER_EXTENSION = component;
 			};

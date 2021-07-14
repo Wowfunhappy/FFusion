@@ -41,7 +41,7 @@ enum PhaseMode {
 
 typedef struct PhaseContext {
     const AVClass *class;
-    int mode;                   ///<PhaseMode
+    enum PhaseMode mode;
     AVFrame *frame; /* previous frame */
     int nb_planes;
     int planeheight[4];
@@ -77,10 +77,8 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_GBRP, AV_PIX_FMT_GBRAP, AV_PIX_FMT_GRAY8, AV_PIX_FMT_NONE
     };
 
-    AVFilterFormats *fmts_list = ff_make_format_list(pix_fmts);
-    if (!fmts_list)
-        return AVERROR(ENOMEM);
-    return ff_set_common_formats(ctx, fmts_list);
+    ff_set_common_formats(ctx, ff_make_format_list(pix_fmts));
+    return 0;
 }
 
 static int config_input(AVFilterLink *inlink)
@@ -108,7 +106,7 @@ static int config_input(AVFilterLink *inlink)
  *
  * (The result is actually multiplied by 25)
  */
-#define DIFF(a, as, b, bs) ((t) = ((*(a) - (b)[bs]) << 2) + (a)[(as) << 1] - (b)[-(bs)], (t) * (t))
+#define DIFF(a, as, b, bs) (t = ((*a - b[bs]) << 2) + a[as << 1] - b[-bs], t * t)
 
 /*
  * Find which field combination has the smallest average squared difference
