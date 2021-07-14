@@ -51,6 +51,10 @@ static int mp3_header_decompress(AVBitStreamFilterContext *bsfc, AVCodecContext 
     lsf     = sample_rate < (24000+32000)/2;
     mpeg25  = sample_rate < (12000+16000)/2;
     sample_rate_index= (header>>10)&3;
+    if (sample_rate_index == 3) {
+        return AVERROR_INVALIDDATA;
+    }
+
     sample_rate= avpriv_mpa_freq_tab[sample_rate_index] >> (lsf + mpeg25); //in case sample rate is a little off
 
     for(bitrate_index=2; bitrate_index<30; bitrate_index++){
@@ -71,8 +75,8 @@ static int mp3_header_decompress(AVBitStreamFilterContext *bsfc, AVCodecContext 
     header |= (frame_size == buf_size + 4)<<16; //FIXME actually set a correct crc instead of 0
 
     *poutbuf_size= frame_size;
-    *poutbuf= av_malloc(frame_size + FF_INPUT_BUFFER_PADDING_SIZE);
-    memcpy(*poutbuf + frame_size - buf_size, buf, buf_size + FF_INPUT_BUFFER_PADDING_SIZE);
+    *poutbuf= av_malloc(frame_size + AV_INPUT_BUFFER_PADDING_SIZE);
+    memcpy(*poutbuf + frame_size - buf_size, buf, buf_size + AV_INPUT_BUFFER_PADDING_SIZE);
 
     if(avctx->channels==2){
         uint8_t *p= *poutbuf + frame_size - buf_size;

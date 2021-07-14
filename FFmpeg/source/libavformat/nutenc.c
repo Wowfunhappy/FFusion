@@ -280,7 +280,7 @@ static void put_tt(NUTContext *nut, AVRational *time_base, AVIOContext *bc, uint
  */
 static void put_str(AVIOContext *bc, const char *string)
 {
-    int len = strlen(string);
+    size_t len = strlen(string);
 
     ff_put_v(bc, len);
     avio_write(bc, string, len);
@@ -524,7 +524,10 @@ static int write_streaminfo(NUTContext *nut, AVIOContext *bc, int stream_id) {
     }
     if (st->codec->codec_type == AVMEDIA_TYPE_VIDEO) {
         uint8_t buf[256];
-        snprintf(buf, sizeof(buf), "%d/%d", st->codec->time_base.den, st->codec->time_base.num);
+        if (st->r_frame_rate.num>0 && st->r_frame_rate.den>0)
+            snprintf(buf, sizeof(buf), "%d/%d", st->r_frame_rate.num, st->r_frame_rate.den);
+        else
+            snprintf(buf, sizeof(buf), "%d/%d", st->codec->time_base.den, st->codec->time_base.num);
         count += add_info(dyn_bc, "r_frame_rate", buf);
     }
     dyn_size = avio_close_dyn_buf(dyn_bc, &dyn_buf);
@@ -663,11 +666,8 @@ static int write_headers(AVFormatContext *avctx, AVIOContext *bc)
             return ret;
         if (ret > 0)
             put_packet(nut, bc, dyn_bc, 1, INFO_STARTCODE);
-        else {
-            uint8_t *buf;
-            avio_close_dyn_buf(dyn_bc, &buf);
-            av_free(buf);
-        }
+        else
+            ffio_free_dyn_buf(&dyn_bc);
     }
 
     for (i = 0; i < nut->avf->nb_chapters; i++) {
@@ -676,9 +676,7 @@ static int write_headers(AVFormatContext *avctx, AVIOContext *bc)
             return ret;
         ret = write_chapter(nut, dyn_bc, i);
         if (ret < 0) {
-            uint8_t *buf;
-            avio_close_dyn_buf(dyn_bc, &buf);
-            av_freep(&buf);
+            ffio_free_dyn_buf(&dyn_bc);
             return ret;
         }
         put_packet(nut, bc, dyn_bc, 1, INFO_STARTCODE);
@@ -800,11 +798,12 @@ static int get_needed_flags(NUTContext *nut, StreamContext *nus, FrameCode *fc,
         flags |= FLAG_CHECKSUM;
     if (FFABS(pkt->pts - nus->last_pts) > nus->max_pts_distance)
         flags |= FLAG_CHECKSUM;
-    if (pkt->size < nut->header_len[fc->header_idx] ||
-        (pkt->size > 4096 && fc->header_idx)        ||
-        memcmp(pkt->data, nut->header[fc->header_idx],
-               nut->header_len[fc->header_idx]))
-        flags |= FLAG_HEADER_IDX;
+    if (fc->header_idx)
+        if (pkt->size < nut->header_len[fc->header_idx] ||
+            pkt->size > 4096                            ||
+            memcmp(pkt->data, nut->header    [fc->header_idx],
+                              nut->header_len[fc->header_idx]))
+            flags |= FLAG_HEADER_IDX;
 
     return flags | (fc->flags & FLAG_CODED);
 }
@@ -935,6 +934,7 @@ static int write_sm_data(AVFormatContext *s, AVIOContext *bc, AVPacket *pkt, int
                 break;
             case AV_PKT_DATA_METADATA_UPDATE:
             case AV_PKT_DATA_STRINGS_METADATA:
+            case AV_PKT_DATA_QUALITY_STATS:
                 // belongs into meta, not side data
                 break;
             }
@@ -1182,7 +1182,7 @@ static int nut_write_trailer(AVFormatContext *s)
 
     ret = avio_open_dyn_buf(&dyn_bc);
     if (ret >= 0 && nut->sp_count) {
-        av_assert1(nut->write_index);
+        av_assert1(nut->write_index); // sp_count should be 0 if no index is going to be written
         write_index(nut, dyn_bc);
         put_packet(nut, bc, dyn_bc, 1, INDEX_STARTCODE);
     }

@@ -109,6 +109,11 @@ static int bethsoftvid_decode_frame(AVCodecContext *avctx,
             if(yoffset >= avctx->height)
                 return AVERROR_INVALIDDATA;
             dst += vid->frame->linesize[0] * yoffset;
+        case VIDEO_P_FRAME:
+        case VIDEO_I_FRAME:
+            break;
+        default:
+            return AVERROR_INVALIDDATA;
     }
 
     // main code
@@ -162,5 +167,5 @@ AVCodec ff_bethsoftvid_decoder = {
     .init           = bethsoftvid_decode_init,
     .close          = bethsoftvid_decode_end,
     .decode         = bethsoftvid_decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };

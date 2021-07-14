@@ -126,6 +126,7 @@ typedef struct AC3DecodeContext {
     int phase_flags_in_use;                 ///< phase flags in use                     (phsflginu)
     int phase_flags[AC3_MAX_CPL_BANDS];     ///< phase flags                            (phsflg)
     int num_cpl_bands;                      ///< number of coupling bands               (ncplbnd)
+    uint8_t cpl_band_struct[AC3_MAX_CPL_BANDS];
     uint8_t cpl_band_sizes[AC3_MAX_CPL_BANDS]; ///< number of coeffs in each coupling band
     int firstchincpl;                       ///< first channel in coupling
     int first_cpl_coords[AC3_MAX_CHANNELS]; ///< first coupling coordinates states      (firstcplcos)
@@ -142,6 +143,7 @@ typedef struct AC3DecodeContext {
     int spx_dst_start_freq;                     ///< spx starting frequency bin for copying (copystartmant)
                                                 ///< the copy region ends at the start of the spx region.
     int num_spx_bands;                          ///< number of spx bands                    (nspxbnds)
+    uint8_t spx_band_struct[SPX_MAX_BANDS];
     uint8_t spx_band_sizes[SPX_MAX_BANDS];      ///< number of bins in each spx band
     uint8_t first_spx_coords[AC3_MAX_CHANNELS]; ///< first spx coordinates states           (firstspxcos)
     INTFLOAT spx_noise_blend[AC3_MAX_CHANNELS][SPX_MAX_BANDS]; ///< spx noise blending factor  (nblendfact)
@@ -235,7 +237,7 @@ typedef struct AC3DecodeContext {
     DECLARE_ALIGNED(32, INTFLOAT, window)[AC3_BLOCK_SIZE];                              ///< window coefficients
     DECLARE_ALIGNED(32, INTFLOAT, tmp_output)[AC3_BLOCK_SIZE];                          ///< temporary storage for output before windowing
     DECLARE_ALIGNED(32, SHORTFLOAT, output)[AC3_MAX_CHANNELS][AC3_BLOCK_SIZE];            ///< output after imdct transform and windowing
-    DECLARE_ALIGNED(32, uint8_t, input_buffer)[AC3_FRAME_BUFFER_SIZE + FF_INPUT_BUFFER_PADDING_SIZE]; ///< temp buffer to prevent overread
+    DECLARE_ALIGNED(32, uint8_t, input_buffer)[AC3_FRAME_BUFFER_SIZE + AV_INPUT_BUFFER_PADDING_SIZE]; ///< temp buffer to prevent overread
 ///@}
 } AC3DecodeContext;
 
@@ -243,19 +245,19 @@ typedef struct AC3DecodeContext {
  * Parse the E-AC-3 frame header.
  * This parses both the bit stream info and audio frame header.
  */
-int ff_eac3_parse_header(AC3DecodeContext *s);
+static int ff_eac3_parse_header(AC3DecodeContext *s);
 
 /**
  * Decode mantissas in a single channel for the entire frame.
  * This is used when AHT mode is enabled.
  */
-void ff_eac3_decode_transform_coeffs_aht_ch(AC3DecodeContext *s, int ch);
+static void ff_eac3_decode_transform_coeffs_aht_ch(AC3DecodeContext *s, int ch);
 
 /**
  * Apply spectral extension to each channel by copying lower frequency
  * coefficients to higher frequency bins and applying side information to
  * approximate the original high frequency signal.
  */
-void ff_eac3_apply_spectral_extension(AC3DecodeContext *s);
+static void ff_eac3_apply_spectral_extension(AC3DecodeContext *s);
 
 #endif /* AVCODEC_AC3DEC_H */

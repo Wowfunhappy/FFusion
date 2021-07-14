@@ -63,6 +63,9 @@ static av_cold int msvideo1_decode_init(AVCodecContext *avctx)
 
     s->avctx = avctx;
 
+    if (avctx->width < 4 || avctx->height < 4)
+        return AVERROR_INVALIDDATA;
+
     /* figure out the colorspace based on the presence of a palette */
     if (s->avctx->bits_per_coded_sample == 8) {
         s->mode_8bit = 1;
@@ -302,15 +305,24 @@ static int msvideo1_decode_frame(AVCodecContext *avctx,
     s->buf = buf;
     s->size = buf_size;
 
+    // Discard frame if its smaller than the minimum frame size
+    if (buf_size < (avctx->width/4) * (avctx->height/4) / 512) {
+        av_log(avctx, AV_LOG_ERROR, "Packet is too small\n");
+        return AVERROR_INVALIDDATA;
+    }
+
     if ((ret = ff_reget_buffer(avctx, s->frame)) < 0)
         return ret;
 
     if (s->mode_8bit) {
-        const uint8_t *pal = av_packet_get_side_data(avpkt, AV_PKT_DATA_PALETTE, NULL);
+        int size;
+        const uint8_t *pal = av_packet_get_side_data(avpkt, AV_PKT_DATA_PALETTE, &size);
 
-        if (pal) {
+        if (pal && size == AVPALETTE_SIZE) {
             memcpy(s->pal, pal, AVPALETTE_SIZE);
             s->frame->palette_has_changed = 1;
+        } else if (pal) {
+            av_log(avctx, AV_LOG_ERROR, "Palette size %d is wrong\n", size);
         }
     }
 
@@ -346,5 +358,5 @@ AVCodec ff_msvideo1_decoder = {
     .init           = msvideo1_decode_init,
     .close          = msvideo1_decode_end,
     .decode         = msvideo1_decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };

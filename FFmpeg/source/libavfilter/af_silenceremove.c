@@ -122,8 +122,17 @@ static int config_input(AVFilterLink *inlink)
 
     s->start_duration = av_rescale(s->start_duration, inlink->sample_rate,
                                    AV_TIME_BASE);
+    if (s->start_duration < 0) {
+        av_log(ctx, AV_LOG_WARNING, "start duration must be non-negative\n");
+        s->start_duration = -s->start_duration;
+    }
+
     s->stop_duration  = av_rescale(s->stop_duration, inlink->sample_rate,
                                    AV_TIME_BASE);
+    if (s->stop_duration < 0) {
+        av_log(ctx, AV_LOG_WARNING, "stop duration must be non-negative\n");
+        s->stop_duration = -s->stop_duration;
+    }
 
     s->start_holdoff = av_malloc_array(FFMAX(s->start_duration, 1),
                                        sizeof(*s->start_holdoff) *
@@ -418,23 +427,26 @@ static int query_formats(AVFilterContext *ctx)
     static const enum AVSampleFormat sample_fmts[] = {
         AV_SAMPLE_FMT_DBL, AV_SAMPLE_FMT_NONE
     };
+    int ret;
 
     layouts = ff_all_channel_layouts();
     if (!layouts)
         return AVERROR(ENOMEM);
-    ff_set_common_channel_layouts(ctx, layouts);
+    ret = ff_set_common_channel_layouts(ctx, layouts);
+    if (ret < 0)
+        return ret;
 
     formats = ff_make_format_list(sample_fmts);
     if (!formats)
         return AVERROR(ENOMEM);
-    ff_set_common_formats(ctx, formats);
+    ret = ff_set_common_formats(ctx, formats);
+    if (ret < 0)
+        return ret;
 
     formats = ff_all_samplerates();
     if (!formats)
         return AVERROR(ENOMEM);
-    ff_set_common_samplerates(ctx, formats);
-
-    return 0;
+    return ff_set_common_samplerates(ctx, formats);
 }
 
 static av_cold void uninit(AVFilterContext *ctx)

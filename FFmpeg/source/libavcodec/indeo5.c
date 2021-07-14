@@ -30,8 +30,8 @@
 #define BITSTREAM_READER_LE
 #include "avcodec.h"
 #include "get_bits.h"
+#include "ivi.h"
 #include "ivi_dsp.h"
-#include "ivi_common.h"
 #include "indeo5data.h"
 
 /**
@@ -324,6 +324,7 @@ static int decode_pic_hdr(IVI45DecContext *ctx, AVCodecContext *avctx)
     ctx->frame_type      = get_bits(&ctx->gb, 3);
     if (ctx->frame_type >= 5) {
         av_log(avctx, AV_LOG_ERROR, "Invalid frame type: %d \n", ctx->frame_type);
+        ctx->frame_type = FRAMETYPE_INTRA;
         return AVERROR_INVALIDDATA;
     }
 
@@ -688,5 +689,5 @@ AVCodec ff_indeo5_decoder = {
     .init           = decode_init,
     .close          = ff_ivi_decode_close,
     .decode         = ff_ivi_decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };

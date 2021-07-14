@@ -35,6 +35,8 @@
 #include "bintext.h"
 #include "internal.h"
 
+#define FONT_WIDTH 8
+
 typedef struct XbinContext {
     AVFrame *frame;
     int palette[16];
@@ -59,6 +61,10 @@ static av_cold int decode_init(AVCodecContext *avctx)
         if(avctx->extradata_size < 2 + (!!(s->flags & BINTEXT_PALETTE))*3*16
                                      + (!!(s->flags & BINTEXT_FONT))*s->font_height*256) {
             av_log(avctx, AV_LOG_ERROR, "not enough extradata\n");
+            return AVERROR_INVALIDDATA;
+        }
+        if (!s->font_height) {
+            av_log(avctx, AV_LOG_ERROR, "invalid font height\n");
             return AVERROR_INVALIDDATA;
         }
     } else {
@@ -91,6 +97,9 @@ static av_cold int decode_init(AVCodecContext *avctx)
             break;
         }
     }
+    if (avctx->width < FONT_WIDTH || avctx->height < s->font_height)
+        return AVERROR_INVALIDDATA;
+
 
     s->frame = av_frame_alloc();
     if (!s->frame)
@@ -112,8 +121,6 @@ av_unused static void hscroll(AVCodecContext *avctx)
             DEFAULT_BG_COLOR, s->font_height * s->frame->linesize[0]);
     }
 }
-
-#define FONT_WIDTH 8
 
 /**
  * Draw character to screen
@@ -227,7 +234,7 @@ AVCodec ff_bintext_decoder = {
     .init           = decode_init,
     .close          = decode_end,
     .decode         = decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };
 #endif
 #if CONFIG_XBIN_DECODER
@@ -240,7 +247,7 @@ AVCodec ff_xbin_decoder = {
     .init           = decode_init,
     .close          = decode_end,
     .decode         = decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };
 #endif
 #if CONFIG_IDF_DECODER
@@ -253,6 +260,6 @@ AVCodec ff_idf_decoder = {
     .init           = decode_init,
     .close          = decode_end,
     .decode         = decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };
 #endif

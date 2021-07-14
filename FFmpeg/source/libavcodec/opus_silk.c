@@ -824,7 +824,7 @@ static inline void silk_stabilize_lsf(int16_t nlsf[16], int order, const uint16_
 
             /* upper extent */
             for (i = order; i > k; i--)
-                max_center -= min_delta[k];
+                max_center -= min_delta[i];
             max_center -= min_delta[k] >> 1;
 
             /* move apart */
@@ -851,8 +851,7 @@ static inline void silk_stabilize_lsf(int16_t nlsf[16], int order, const uint16_
     if (nlsf[0] < min_delta[0])
         nlsf[0] = min_delta[0];
     for (i = 1; i < order; i++)
-        if (nlsf[i] < nlsf[i - 1] + min_delta[i])
-            nlsf[i] = nlsf[i - 1] + min_delta[i];
+        nlsf[i] = FFMAX(nlsf[i], FFMIN(nlsf[i - 1] + min_delta[i], 32767));
 
     /* push backwards to increase distance */
     if (nlsf[order-1] > 32768 - min_delta[order])
@@ -956,8 +955,10 @@ static void silk_lsf2lpc(const int16_t nlsf[16], float lpcf[16], int order)
 
     /* reconstruct A(z) */
     for (k = 0; k < order>>1; k++) {
-        lpc32[k]         = -p[k + 1] - p[k] - q[k + 1] + q[k];
-        lpc32[order-k-1] = -p[k + 1] - p[k] + q[k + 1] - q[k];
+        int32_t p_tmp = p[k + 1] + p[k];
+        int32_t q_tmp = q[k + 1] - q[k];
+        lpc32[k]         = -q_tmp - p_tmp;
+        lpc32[order-k-1] =  q_tmp - p_tmp;
     }
 
     /* limit the range of the LPC coefficients to each fit within an int16_t */
@@ -1077,7 +1078,7 @@ static inline void silk_decode_lpc(SilkContext *s, SilkFrame *frame,
         weight = y + ((213 * fpart * y) >> 16);
 
         value = cur * 128 + (lsf_res[i] * 16384) / weight;
-        nlsf[i] = av_clip(value, 0, 32767);
+        nlsf[i] = av_clip_uintp2(value, 15);
     }
 
     /* stabilize the NLSF coefficients */
@@ -1288,8 +1289,8 @@ static void silk_decode_frame(SilkContext *s, OpusRangeCoder *rc,
         } else {
             /* gain is coded relative */
             int delta_gain = opus_rc_getsymbol(rc, silk_model_gain_delta);
-            log_gain = av_clip(FFMAX((delta_gain<<1) - 16,
-                                     frame->log_gain + delta_gain - 4), 0, 63);
+            log_gain = av_clip_uintp2(FFMAX((delta_gain<<1) - 16,
+                                     frame->log_gain + delta_gain - 4), 6);
         }
 
         frame->log_gain = log_gain;

@@ -62,20 +62,24 @@ void av_register_input_format(AVInputFormat *format)
 {
     AVInputFormat **p = last_iformat;
 
-    format->next = NULL;
-    while(*p || avpriv_atomic_ptr_cas((void * volatile *)p, NULL, format))
+    // Note, format could be added after the first 2 checks but that implies that *p is no longer NULL
+    while(p != &format->next && !format->next && avpriv_atomic_ptr_cas((void * volatile *)p, NULL, format))
         p = &(*p)->next;
-    last_iformat = &format->next;
+
+    if (!format->next)
+        last_iformat = &format->next;
 }
 
 void av_register_output_format(AVOutputFormat *format)
 {
     AVOutputFormat **p = last_oformat;
 
-    format->next = NULL;
-    while(*p || avpriv_atomic_ptr_cas((void * volatile *)p, NULL, format))
+    // Note, format could be added after the first 2 checks but that implies that *p is no longer NULL
+    while(p != &format->next && !format->next && avpriv_atomic_ptr_cas((void * volatile *)p, NULL, format))
         p = &(*p)->next;
-    last_oformat = &format->next;
+
+    if (!format->next)
+        last_oformat = &format->next;
 }
 
 int av_match_ext(const char *filename, const char *extensions)
@@ -151,6 +155,8 @@ enum AVCodecID av_guess_codec(AVOutputFormat *fmt, const char *short_name,
         return fmt->audio_codec;
     else if (type == AVMEDIA_TYPE_SUBTITLE)
         return fmt->subtitle_codec;
+    else if (type == AVMEDIA_TYPE_DATA)
+        return fmt->data_codec;
     else
         return AV_CODEC_ID_NONE;
 }
@@ -193,6 +199,8 @@ AVInputFormat *av_probe_input_format3(AVProbeData *pd, int is_opened,
         score = 0;
         if (fmt1->read_probe) {
             score = fmt1->read_probe(&lpd);
+            if (score)
+                av_log(NULL, AV_LOG_TRACE, "Probing %s score:%d size:%d\n", fmt1->name, score, lpd.buf_size);
             if (fmt1->extensions && av_match_ext(lpd.filename, fmt1->extensions)) {
                 if      (nodat == 0) score = FFMAX(score, 1);
                 else if (nodat == 1) score = FFMAX(score, AVPROBE_SCORE_EXTENSION / 2 - 1);

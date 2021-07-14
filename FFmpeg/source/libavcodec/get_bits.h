@@ -32,6 +32,7 @@
 #include "libavutil/intreadwrite.h"
 #include "libavutil/log.h"
 #include "libavutil/avassert.h"
+#include "avcodec.h"
 #include "mathops.h"
 
 /*
@@ -374,6 +375,10 @@ static inline uint64_t get_bits64(GetBitContext *s, int n)
  */
 static inline int get_sbits_long(GetBitContext *s, int n)
 {
+    // sign_extend(x, 0) is undefined
+    if (!n)
+        return 0;
+
     return sign_extend(get_bits_long(s, n), n);
 }
 
@@ -394,14 +399,14 @@ static inline int check_marker(GetBitContext *s, const char *msg)
 {
     int bit = get_bits1(s);
     if (!bit)
-        av_log(NULL, AV_LOG_INFO, "Marker bit missing %s\n", msg);
+        av_log(NULL, AV_LOG_INFO, "Marker bit missing at %d of %d %s\n", get_bits_count(s) - 1, s->size_in_bits, msg);
 
     return bit;
 }
 
 /**
  * Initialize GetBitContext.
- * @param buffer bitstream buffer, must be FF_INPUT_BUFFER_PADDING_SIZE bytes
+ * @param buffer bitstream buffer, must be AV_INPUT_BUFFER_PADDING_SIZE bytes
  *        larger than the actual read bits because some optimized bitstream
  *        readers read 32 or 64 bit at once and could read over the end
  * @param bit_size the size of the buffer in bits
@@ -413,7 +418,7 @@ static inline int init_get_bits(GetBitContext *s, const uint8_t *buffer,
     int buffer_size;
     int ret = 0;
 
-    if (bit_size >= INT_MAX - 7 || bit_size < 0 || !buffer) {
+    if (bit_size >= INT_MAX - FFMAX(7, AV_INPUT_BUFFER_PADDING_SIZE*8) || bit_size < 0 || !buffer) {
         bit_size    = 0;
         buffer      = NULL;
         ret         = AVERROR_INVALIDDATA;
@@ -432,7 +437,7 @@ static inline int init_get_bits(GetBitContext *s, const uint8_t *buffer,
 
 /**
  * Initialize GetBitContext.
- * @param buffer bitstream buffer, must be FF_INPUT_BUFFER_PADDING_SIZE bytes
+ * @param buffer bitstream buffer, must be AV_INPUT_BUFFER_PADDING_SIZE bytes
  *        larger than the actual read bits because some optimized bitstream
  *        readers read 32 or 64 bit at once and could read over the end
  * @param byte_size the size of the buffer in bytes
@@ -551,6 +556,7 @@ void ff_free_vlc(VLC *vlc);
  * @param max_depth is the number of times bits bits must be read to completely
  *                  read the longest vlc code
  *                  = (max_vlc_length + bits - 1) / bits
+ * @returns the code parsed or -1 if no vlc matches
  */
 static av_always_inline int get_vlc2(GetBitContext *s, VLC_TYPE (*table)[2],
                                      int bits, int max_depth)
@@ -685,11 +691,7 @@ static inline int get_xbits_trace(GetBitContext *s, int n, const char *file,
 
 #define get_vlc(s, vlc)             get_vlc_trace(s, (vlc)->table, (vlc)->bits,   3, __FILE__, __PRETTY_FUNCTION__, __LINE__)
 #define get_vlc2(s, tab, bits, max) get_vlc_trace(s,          tab,        bits, max, __FILE__, __PRETTY_FUNCTION__, __LINE__)
-
-#define tprintf(p, ...) av_log(p, AV_LOG_DEBUG, __VA_ARGS__)
-
 #else //TRACE
-#define tprintf(p, ...) { }
 #define GET_RL_VLC GET_RL_VLC_INTERNAL
 #endif
 

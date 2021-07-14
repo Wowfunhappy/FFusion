@@ -44,7 +44,7 @@
 #include "amrwbdata.h"
 #include "mips/amrwbdec_mips.h"
 
-typedef struct {
+typedef struct AMRWBContext {
     AMRWBFrame                             frame; ///< AMRWB parameters decoded from bitstream
     enum Mode                        fr_cur_mode; ///< mode index of current frame
     uint8_t                           fr_quality; ///< frame quality index (FQI)
@@ -265,7 +265,7 @@ static void decode_pitch_lag_high(int *lag_int, int *lag_frac, int pitch_index,
             *lag_frac = pitch_index - (*lag_int << 2) + 136;
         } else if (pitch_index < 440) {
             *lag_int  = (pitch_index + 257 - 376) >> 1;
-            *lag_frac = (pitch_index - (*lag_int << 1) + 256 - 376) << 1;
+            *lag_frac = (pitch_index - (*lag_int << 1) + 256 - 376) * 2;
             /* the actual resolution is 1/2 but expressed as 1/4 */
         } else {
             *lag_int  = pitch_index - 280;
@@ -295,7 +295,7 @@ static void decode_pitch_lag_low(int *lag_int, int *lag_frac, int pitch_index,
     if (subframe == 0 || (subframe == 2 && mode != MODE_6k60)) {
         if (pitch_index < 116) {
             *lag_int  = (pitch_index + 69) >> 1;
-            *lag_frac = (pitch_index - (*lag_int << 1) + 68) << 1;
+            *lag_frac = (pitch_index - (*lag_int << 1) + 68) * 2;
         } else {
             *lag_int  = pitch_index - 24;
             *lag_frac = 0;
@@ -305,7 +305,7 @@ static void decode_pitch_lag_low(int *lag_int, int *lag_frac, int pitch_index,
                                 AMRWB_P_DELAY_MIN, AMRWB_P_DELAY_MAX - 15);
     } else {
         *lag_int  = (pitch_index + 1) >> 1;
-        *lag_frac = (pitch_index - (*lag_int << 1)) << 1;
+        *lag_frac = (pitch_index - (*lag_int << 1)) * 2;
         *lag_int += *base_lag_int;
     }
 }
@@ -614,7 +614,7 @@ static float voice_factor(float *p_vector, float p_gain,
                                                           AMRWB_SFR_SIZE) *
                     f_gain * f_gain;
 
-    return (p_ener - f_ener) / (p_ener + f_ener);
+    return (p_ener - f_ener) / (p_ener + f_ener + 0.01);
 }
 
 /**
@@ -865,15 +865,20 @@ static float find_hb_gain(AMRWBContext *ctx, const float *synth,
 {
     int wsp = (vad > 0);
     float tilt;
+    float tmp;
 
     if (ctx->fr_cur_mode == MODE_23k85)
         return qua_hb_gain[hb_idx] * (1.0f / (1 << 14));
 
-    tilt = ctx->celpm_ctx.dot_productf(synth, synth + 1, AMRWB_SFR_SIZE - 1) /
-           ctx->celpm_ctx.dot_productf(synth, synth, AMRWB_SFR_SIZE);
+    tmp = ctx->celpm_ctx.dot_productf(synth, synth + 1, AMRWB_SFR_SIZE - 1);
+
+    if (tmp > 0) {
+        tilt = tmp / ctx->celpm_ctx.dot_productf(synth, synth, AMRWB_SFR_SIZE);
+    } else
+        tilt = 0;
 
     /* return gain bounded by [0.1, 1.0] */
-    return av_clipf((1.0 - FFMAX(0.0, tilt)) * (1.25 - 0.25 * wsp), 0.1, 1.0);
+    return av_clipf((1.0 - tilt) * (1.25 - 0.25 * wsp), 0.1, 1.0);
 }
 
 /**
@@ -1273,7 +1278,7 @@ AVCodec ff_amrwb_decoder = {
     .priv_data_size = sizeof(AMRWBContext),
     .init           = amrwb_decode_init,
     .decode         = amrwb_decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
     .sample_fmts    = (const enum AVSampleFormat[]){ AV_SAMPLE_FMT_FLT,
                                                      AV_SAMPLE_FMT_NONE },
 };

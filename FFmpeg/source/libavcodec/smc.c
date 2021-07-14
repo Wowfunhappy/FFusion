@@ -70,7 +70,7 @@ typedef struct SmcContext {
         row_ptr += stride * 4; \
     } \
     total_blocks--; \
-    if (total_blocks < 0 + !!n_blocks) \
+    if (total_blocks < !!n_blocks) \
     { \
         av_log(s->avctx, AV_LOG_INFO, "warning: block counter just went negative (this should not happen)\n"); \
         return; \
@@ -130,6 +130,10 @@ static void smc_decode_stream(SmcContext *s)
         if (row_ptr >= image_size) {
             av_log(s->avctx, AV_LOG_INFO, "SMC decoder just went out of bounds (row ptr = %d, height = %d)\n",
                 row_ptr, image_size);
+            return;
+        }
+        if (bytestream2_get_bytes_left(&s->gb) < 1) {
+            av_log(s->avctx, AV_LOG_ERROR, "input too small\n");
             return;
         }
 
@@ -433,6 +437,10 @@ static int smc_decode_frame(AVCodecContext *avctx,
     SmcContext *s = avctx->priv_data;
     const uint8_t *pal = av_packet_get_side_data(avpkt, AV_PKT_DATA_PALETTE, NULL);
     int ret;
+    int total_blocks = ((s->avctx->width + 3) / 4) * ((s->avctx->height + 3) / 4);
+
+    if (total_blocks / 1024 > avpkt->size)
+        return AVERROR_INVALIDDATA;
 
     bytestream2_init(&s->gb, buf, buf_size);
 
@@ -472,5 +480,5 @@ AVCodec ff_smc_decoder = {
     .init           = smc_decode_init,
     .close          = smc_decode_end,
     .decode         = smc_decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };

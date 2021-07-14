@@ -207,7 +207,7 @@ static uint8_t *realloc_section_array(ASSSplitContext *ctx)
     const ASSSection *section = &ass_sections[ctx->current_section];
     int *count = (int *)((uint8_t *)&ctx->ass + section->offset_count);
     void **section_ptr = (void **)((uint8_t *)&ctx->ass + section->offset);
-    uint8_t *tmp = av_realloc(*section_ptr, (*count+1)*section->size);
+    uint8_t *tmp = av_realloc_array(*section_ptr, (*count+1), section->size);
     if (!tmp)
         return NULL;
     *section_ptr = tmp;
@@ -232,7 +232,7 @@ static inline const char *skip_space(const char *buf)
 static int *get_default_field_orders(const ASSSection *section)
 {
     int i;
-    int *order = av_malloc(FF_ARRAY_ELEMS(section->fields) * sizeof(*order));
+    int *order = av_malloc_array(FF_ARRAY_ELEMS(section->fields), sizeof(*order));
 
     if (!order)
         return NULL;
@@ -265,7 +265,7 @@ static const char *ass_split_section(ASSSplitContext *ctx, const char *buf)
             while (!is_eol(*buf)) {
                 buf = skip_space(buf);
                 len = strcspn(buf, ", \r\n");
-                if (!(tmp = av_realloc(order, (*number + 1) * sizeof(*order))))
+                if (!(tmp = av_realloc_array(order, (*number + 1), sizeof(*order))))
                     return NULL;
                 order = tmp;
                 order[*number] = -1;
@@ -356,6 +356,8 @@ static int ass_split(ASSSplitContext *ctx, const char *buf)
 ASSSplitContext *ff_ass_split(const char *buf)
 {
     ASSSplitContext *ctx = av_mallocz(sizeof(*ctx));
+    if (!ctx)
+        return NULL;
     ctx->current_section = -1;
     if (ass_split(ctx, buf) < 0) {
         ff_ass_split_free(ctx);
@@ -523,7 +525,7 @@ ASSStyle *ff_ass_style_get(ASSSplitContext *ctx, const char *style)
     if (!style || !*style)
         style = "Default";
     for (i=0; i<ass->styles_count; i++)
-        if (!strcmp(ass->styles[i].name, style))
+        if (ass->styles[i].name && !strcmp(ass->styles[i].name, style))
             return ass->styles + i;
     return NULL;
 }

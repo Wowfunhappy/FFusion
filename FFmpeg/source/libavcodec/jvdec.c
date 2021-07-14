@@ -43,6 +43,13 @@ static av_cold int decode_init(AVCodecContext *avctx)
 {
     JvContext *s = avctx->priv_data;
 
+    if (!avctx->width || !avctx->height ||
+        (avctx->width & 7) || (avctx->height & 7)) {
+        av_log(avctx, AV_LOG_ERROR, "Invalid video dimensions: %dx%d\n",
+               avctx->width, avctx->height);
+        return AVERROR(EINVAL);
+    }
+
     s->frame = av_frame_alloc();
     if (!s->frame)
         return AVERROR(ENOMEM);
@@ -156,12 +163,18 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
             av_log(avctx, AV_LOG_ERROR, "video size %d invalid\n", video_size);
             return AVERROR_INVALIDDATA;
         }
-        if ((ret = ff_reget_buffer(avctx, s->frame)) < 0)
-            return ret;
 
         if (video_type == 0 || video_type == 1) {
             GetBitContext gb;
             init_get_bits(&gb, buf, 8 * video_size);
+
+            if ((ret = ff_reget_buffer(avctx, s->frame)) < 0)
+                return ret;
+
+            if (avctx->height/8 * (avctx->width/8) > 4 * video_size) {
+                av_log(avctx, AV_LOG_ERROR, "Insufficient input data for dimensions\n");
+                return AVERROR_INVALIDDATA;
+            }
 
             for (j = 0; j < avctx->height; j += 8)
                 for (i = 0; i < avctx->width; i += 8)
@@ -172,6 +185,11 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
             buf += video_size;
         } else if (video_type == 2) {
             int v = *buf++;
+
+            av_frame_unref(s->frame);
+            if ((ret = ff_get_buffer(avctx, s->frame, AV_GET_BUFFER_FLAG_REF)) < 0)
+                return ret;
+
             for (j = 0; j < avctx->height; j++)
                 memset(s->frame->data[0] + j * s->frame->linesize[0],
                        v, avctx->width);
@@ -224,5 +242,5 @@ AVCodec ff_jv_decoder = {
     .init           = decode_init,
     .close          = decode_close,
     .decode         = decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };

@@ -7,7 +7,7 @@ all the encoders and decoders. In addition each codec may support
 so-called private options, which are specific for a given codec.
 
 Sometimes, a global option may only affect a specific kind of codec,
-and may be unsensical or ignored by another, so you need to be aware
+and may be nonsensical or ignored by another, so you need to be aware
 of the meaning of the specified options. Also some options are
 meant only for decoding or encoding.
 
@@ -475,6 +475,9 @@ per-block quantization parameter (QP)
 motion vector
 @item dct_coeff
 
+@item green_metadata
+display complexity metadata for the upcoming frame, GoP or for a given duration.
+
 @item skip
 
 @item startcode
@@ -495,6 +498,8 @@ visualize block types
 picture buffer allocations
 @item thread_ops
 threading operations
+@item nomc
+skip motion compensation
 @end table
 
 @item vismv @var{integer} (@emph{decoding,video})
@@ -863,6 +868,14 @@ Possible values:
 
 @item mpeg2_aac_he
 
+@item mpeg4_sp
+
+@item mpeg4_core
+
+@item mpeg4_main
+
+@item mpeg4_asp
+
 @item dts
 
 @item dts_es
@@ -1032,7 +1045,11 @@ Possible values:
 @item color_primaries @var{integer} (@emph{decoding/encoding,video})
 @item color_trc @var{integer} (@emph{decoding/encoding,video})
 @item colorspace @var{integer} (@emph{decoding/encoding,video})
+
 @item color_range @var{integer} (@emph{decoding/encoding,video})
+If used as input parameter, it serves as a hint to the decoder, which
+color_range the input has.
+
 @item chroma_sample_location @var{integer} (@emph{decoding/encoding,video})
 
 @item log_level_offset @var{integer}

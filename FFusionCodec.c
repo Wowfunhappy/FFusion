@@ -268,7 +268,15 @@ static enum AVPixelFormat FindPixFmtFromVideo(AVCodec *codec, AVCodecContext *av
 	pkt.size = bufferSize;
 	int len = avcodec_decode_video2(tmpContext, tmpFrame, &got_picture, &pkt);
 	asl_log(NULL, NULL, ASL_LEVEL_ERR, "Decoded frame to find pix_fmt, got %d", len);
+	
+	if (len == -1094995529) {
+		//Wowfunhappy: AVERROR_INVALIDDATA. Let's just guess the pixel format.
+		//(This video probably won't work anyway, but worth a try?)
+		return 0;
+	}
+	
     pix_fmt = tmpContext->pix_fmt;
+	asl_log(NULL, NULL, ASL_LEVEL_ERR, "Normally found pix_fmt is: %d", pix_fmt);
     avcodec_close(tmpContext);
 bail:
 	av_frame_free(&tmpFrame);
@@ -669,9 +677,10 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 			asl_log(NULL, NULL, ASL_LEVEL_ERR, "Warning! Unknown codec type! Using MPEG4 by default.\n");
 			codecID = AV_CODEC_ID_MPEG4;
 		}
-		/*else if (codecID == AV_CODEC_ID_VP9) {
+		else if (codecID == AV_CODEC_ID_VP9) {
+			//Wowfunhappy: For some reason, FFMpeg's default VP9 decoder displays some videos (e.g. Youtube downloads) as colored vertical bands.
 			glob->avCodec = avcodec_find_decoder_by_name("libvpx-vp9");
-		}*/
+		}
 		else {
 			glob->avCodec = avcodec_find_decoder(codecID);
 		}
@@ -765,7 +774,14 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 				DisposeHandle(imgDescExt);
 			}
 		} else if (glob->componentType == 'hev1') {
-			asl_log(NULL, NULL, ASL_LEVEL_ERR, "Testing: %d", isImageDescriptionExtensionPresent(p->imageDescription, 'hvcC'));
+			
+			/* Wowfunhappy:
+			 * This magical code fixes HEVC. I don't know why.
+			 * I just copied and pasted the avc1, and I changed the 'a' to an 'h'.
+			 * I guess this is some kind of header offset?
+			 */
+			
+			asl_log(NULL, NULL, ASL_LEVEL_ERR, "Does hev1 video have mysterious hvcC image Description? %d", isImageDescriptionExtensionPresent(p->imageDescription, 'hvcC'));
 			count = isImageDescriptionExtensionPresent(p->imageDescription, 'hvcC');
 			
 			if (count >= 1) {

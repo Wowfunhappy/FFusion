@@ -178,7 +178,7 @@ static int flic_decode_frame_8BPP(AVCodecContext *avctx,
     int lines;
     int compressed_lines;
     int starting_line;
-    signed short line_packets;
+    int line_packets;
     int y_ptr;
     int byte_run;
     int pixel_skip;
@@ -193,7 +193,7 @@ static int flic_decode_frame_8BPP(AVCodecContext *avctx,
 
     pixels = s->frame->data[0];
     pixel_limit = s->avctx->height * s->frame->linesize[0];
-    if (buf_size < 16 || buf_size > INT_MAX - (3 * 256 + FF_INPUT_BUFFER_PADDING_SIZE))
+    if (buf_size < 16 || buf_size > INT_MAX - (3 * 256 + AV_INPUT_BUFFER_PADDING_SIZE))
         return AVERROR_INVALIDDATA;
     frame_size = bytestream2_get_le32(&g2);
     if (frame_size > buf_size)
@@ -201,6 +201,9 @@ static int flic_decode_frame_8BPP(AVCodecContext *avctx,
     bytestream2_skip(&g2, 2); /* skip the magic number */
     num_chunks = bytestream2_get_le16(&g2);
     bytestream2_skip(&g2, 8);  /* skip padding */
+
+    if (frame_size < 16)
+        return AVERROR_INVALIDDATA;
 
     frame_size -= 16;
 
@@ -272,10 +275,14 @@ static int flic_decode_frame_8BPP(AVCodecContext *avctx,
             while (compressed_lines > 0) {
                 if (bytestream2_tell(&g2) + 2 > stream_ptr_after_chunk)
                     break;
-                line_packets = bytestream2_get_le16(&g2);
+                if (y_ptr > pixel_limit)
+                    return AVERROR_INVALIDDATA;
+                line_packets = sign_extend(bytestream2_get_le16(&g2), 16);
                 if ((line_packets & 0xC000) == 0xC000) {
                     // line skip opcode
                     line_packets = -line_packets;
+                    if (line_packets > s->avctx->height)
+                        return AVERROR_INVALIDDATA;
                     y_ptr += line_packets * s->frame->linesize[0];
                 } else if ((line_packets & 0xC000) == 0x4000) {
                     av_log(avctx, AV_LOG_ERROR, "Undefined opcode (%x) in DELTA_FLI\n", line_packets);
@@ -324,6 +331,8 @@ static int flic_decode_frame_8BPP(AVCodecContext *avctx,
         case FLI_LC:
             /* line compressed */
             starting_line = bytestream2_get_le16(&g2);
+            if (starting_line >= s->avctx->height)
+                return AVERROR_INVALIDDATA;
             y_ptr = 0;
             y_ptr += starting_line * s->frame->linesize[0];
 
@@ -496,7 +505,7 @@ static int flic_decode_frame_15_16BPP(AVCodecContext *avctx,
 
     int lines;
     int compressed_lines;
-    signed short line_packets;
+    int line_packets;
     int y_ptr;
     int byte_run;
     int pixel_skip;
@@ -520,6 +529,8 @@ static int flic_decode_frame_15_16BPP(AVCodecContext *avctx,
     if (frame_size > buf_size)
         frame_size = buf_size;
 
+    if (frame_size < 16)
+        return AVERROR_INVALIDDATA;
     frame_size -= 16;
 
     /* iterate through the chunks */
@@ -543,7 +554,7 @@ static int flic_decode_frame_15_16BPP(AVCodecContext *avctx,
             /* For some reason, it seems that non-palettized flics do
              * include one of these chunks in their first frame.
              * Why I do not know, it seems rather extraneous. */
-            av_dlog(avctx,
+            ff_dlog(avctx,
                     "Unexpected Palette chunk %d in non-palettized FLC\n",
                     chunk_type);
             bytestream2_skip(&g2, chunk_size - 6);
@@ -556,9 +567,13 @@ static int flic_decode_frame_15_16BPP(AVCodecContext *avctx,
             while (compressed_lines > 0) {
                 if (bytestream2_tell(&g2) + 2 > stream_ptr_after_chunk)
                     break;
-                line_packets = bytestream2_get_le16(&g2);
+                if (y_ptr > pixel_limit)
+                    return AVERROR_INVALIDDATA;
+                line_packets = sign_extend(bytestream2_get_le16(&g2), 16);
                 if (line_packets < 0) {
                     line_packets = -line_packets;
+                    if (line_packets > s->avctx->height)
+                        return AVERROR_INVALIDDATA;
                     y_ptr += line_packets * s->frame->linesize[0];
                 } else {
                     compressed_lines--;
@@ -814,5 +829,5 @@ AVCodec ff_flic_decoder = {
     .init           = flic_decode_init,
     .close          = flic_decode_end,
     .decode         = flic_decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };

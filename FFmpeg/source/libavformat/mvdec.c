@@ -338,6 +338,8 @@ static int mv_read_header(AVFormatContext *avctx)
             uint32_t pos   = avio_rb32(pb);
             uint32_t asize = avio_rb32(pb);
             uint32_t vsize = avio_rb32(pb);
+            if (avio_feof(pb))
+                return AVERROR_INVALIDDATA;
             avio_skip(pb, 8);
             av_add_index_entry(ast, pos, timestamp, asize, 0, AVINDEX_KEYFRAME);
             av_add_index_entry(vst, pos + asize, i, vsize, 0, AVINDEX_KEYFRAME);
@@ -348,6 +350,12 @@ static int mv_read_header(AVFormatContext *avctx)
 
         if ((ret = read_table(avctx, NULL, parse_global_var)) < 0)
             return ret;
+
+        if (mv->nb_audio_tracks < 0  || mv->nb_video_tracks < 0 ||
+           (mv->nb_audio_tracks == 0 && mv->nb_video_tracks == 0)) {
+            av_log(avctx, AV_LOG_ERROR, "Stream count is invalid.\n");
+            return AVERROR_INVALIDDATA;
+        }
 
         if (mv->nb_audio_tracks > 1) {
             avpriv_request_sample(avctx, "Multiple audio streams support");
@@ -408,7 +416,7 @@ static int mv_read_packet(AVFormatContext *avctx, AVPacket *pkt)
     AVStream *st = avctx->streams[mv->stream_index];
     const AVIndexEntry *index;
     int frame = mv->frame[mv->stream_index];
-    int ret;
+    int64_t ret;
     uint64_t pos;
 
     if (frame < st->nb_index_entries) {

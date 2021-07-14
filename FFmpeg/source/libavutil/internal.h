@@ -30,6 +30,9 @@
 #    define NDEBUG
 #endif
 
+// This can be enabled to allow detection of additional integer overflows with ubsan
+//#define CHECKED
+
 #include <limits.h>
 #include <stdint.h>
 #include <stddef.h>
@@ -47,7 +50,7 @@
 #endif
 
 #ifndef emms_c
-#   define emms_c()
+#   define emms_c() while(0)
 #endif
 
 #ifndef attribute_align_arg
@@ -164,11 +167,6 @@
 
 #include "libm.h"
 
-#if defined(_MSC_VER)
-#pragma comment(linker, "/include:"EXTERN_PREFIX"avpriv_strtod")
-#pragma comment(linker, "/include:"EXTERN_PREFIX"avpriv_snprintf")
-#endif
-
 /**
  * Return NULL if CONFIG_SMALL is true, otherwise the argument
  * without modification. Used to disable the definition of strings
@@ -241,12 +239,34 @@ void avpriv_request_sample(void *avc,
                            const char *msg, ...) av_printf_format(2, 3);
 
 #if HAVE_LIBC_MSVCRT
+#include <crtversion.h>
+#if defined(_VC_CRT_MAJOR_VERSION) && _VC_CRT_MAJOR_VERSION < 14
+#pragma comment(linker, "/include:" EXTERN_PREFIX "avpriv_strtod")
+#pragma comment(linker, "/include:" EXTERN_PREFIX "avpriv_snprintf")
+#endif
+
 #define avpriv_open ff_open
 #define PTRDIFF_SPECIFIER "Id"
 #define SIZE_SPECIFIER "Iu"
 #else
 #define PTRDIFF_SPECIFIER "td"
 #define SIZE_SPECIFIER "zu"
+#endif
+
+#ifdef DEBUG
+#   define ff_dlog(ctx, ...) av_log(ctx, AV_LOG_DEBUG, __VA_ARGS__)
+#else
+#   define ff_dlog(ctx, ...) do { if (0) av_log(ctx, AV_LOG_DEBUG, __VA_ARGS__); } while (0)
+#endif
+
+// For debuging we use signed operations so overflows can be detected (by ubsan)
+// For production we use unsigned so there are no undefined operations
+#ifdef CHECKED
+#define SUINT   int
+#define SUINT32 int32_t
+#else
+#define SUINT   unsigned
+#define SUINT32 uint32_t
 #endif
 
 /**
@@ -256,8 +276,25 @@ int avpriv_open(const char *filename, int flags, ...);
 
 int avpriv_set_systematic_pal2(uint32_t pal[256], enum AVPixelFormat pix_fmt);
 
+static av_always_inline av_const int avpriv_mirror(int x, int w)
+{
+    if (!w)
+        return 0;
+
+    while ((unsigned)x > (unsigned)w) {
+        x = -x;
+        if (x < 0)
+            x += 2 * w;
+    }
+    return x;
+}
+
 #if FF_API_GET_CHANNEL_LAYOUT_COMPAT
 uint64_t ff_get_channel_layout(const char *name, int compat);
 #endif
+
+void ff_check_pixfmt_descriptors(void);
+
+extern const uint8_t ff_reverse[256];
 
 #endif /* AVUTIL_INTERNAL_H */

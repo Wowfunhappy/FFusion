@@ -33,7 +33,7 @@
 #include "internal.h"
 #include "rtjpeg.h"
 
-typedef struct {
+typedef struct NuvContext {
     AVFrame *pic;
     int codec_frameheader;
     int quality;
@@ -123,15 +123,15 @@ static int codec_reinit(AVCodecContext *avctx, int width, int height,
         get_quant_quality(c, quality);
     if (width != c->width || height != c->height) {
         // also reserve space for a possible additional header
-        int buf_size = height * width * 3 / 2
-                     + FFMAX(AV_LZO_OUTPUT_PADDING, FF_INPUT_BUFFER_PADDING_SIZE)
+        int64_t buf_size = height * (int64_t)width * 3 / 2
+                     + FFMAX(AV_LZO_OUTPUT_PADDING, AV_INPUT_BUFFER_PADDING_SIZE)
                      + RTJPEG_HEADER_SIZE;
         if (buf_size > INT_MAX/8)
             return -1;
-        if ((ret = av_image_check_size(height, width, 0, avctx)) < 0)
+        if ((ret = ff_set_dimensions(avctx, width, height)) < 0)
             return ret;
-        avctx->width  = c->width  = width;
-        avctx->height = c->height = height;
+        c->width  = width;
+        c->height = height;
         av_fast_malloc(&c->decomp_buf, &c->decomp_size,
                        buf_size);
         if (!c->decomp_buf) {
@@ -158,6 +158,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     int orig_size      = buf_size;
     int keyframe, ret;
     int size_change = 0;
+    int minsize = 0;
     int result, init_frame = !avctx->frame_number;
     enum {
         NUV_UNCOMPRESSED  = '0',
@@ -195,6 +196,9 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     case NUV_RTJPEG_IN_LZO:
     case NUV_RTJPEG:
         keyframe = !buf[2];
+        if (c->width < 16 || c->height < 16) {
+            return AVERROR_INVALIDDATA;
+        }
         break;
     case NUV_COPY_LAST:
         keyframe = 0;
@@ -203,20 +207,38 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
         keyframe = 1;
         break;
     }
+    switch (comptype) {
+    case NUV_UNCOMPRESSED:
+        minsize = c->width * c->height * 3 / 2;
+        break;
+    case NUV_RTJPEG:
+        minsize = c->width/16 * (c->height/16) * 6;
+        break;
+    case NUV_BLACK:
+    case NUV_COPY_LAST:
+    case NUV_LZO:
+    case NUV_RTJPEG_IN_LZO:
+        break;
+    default:
+        av_log(avctx, AV_LOG_ERROR, "unknown compression\n");
+        return AVERROR_INVALIDDATA;
+    }
+    if (buf_size < minsize / 4)
+        return AVERROR_INVALIDDATA;
 retry:
     // skip rest of the frameheader.
     buf       = &buf[12];
     buf_size -= 12;
     if (comptype == NUV_RTJPEG_IN_LZO || comptype == NUV_LZO) {
-        int outlen = c->decomp_size - FFMAX(FF_INPUT_BUFFER_PADDING_SIZE, AV_LZO_OUTPUT_PADDING);
+        int outlen = c->decomp_size - FFMAX(AV_INPUT_BUFFER_PADDING_SIZE, AV_LZO_OUTPUT_PADDING);
         int inlen  = buf_size;
         if (av_lzo1x_decode(c->decomp_buf, &outlen, buf, &inlen)) {
             av_log(avctx, AV_LOG_ERROR, "error during lzo decompression\n");
             return AVERROR_INVALIDDATA;
         }
         buf      = c->decomp_buf;
-        buf_size = c->decomp_size - FFMAX(FF_INPUT_BUFFER_PADDING_SIZE, AV_LZO_OUTPUT_PADDING) - outlen;
-        memset(c->decomp_buf + buf_size, 0, FF_INPUT_BUFFER_PADDING_SIZE);
+        buf_size = c->decomp_size - FFMAX(AV_INPUT_BUFFER_PADDING_SIZE, AV_LZO_OUTPUT_PADDING) - outlen;
+        memset(c->decomp_buf + buf_size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
     }
     if (c->codec_frameheader) {
         int w, h, q;
@@ -288,9 +310,6 @@ retry:
     case NUV_COPY_LAST:
         /* nothing more to do here */
         break;
-    default:
-        av_log(avctx, AV_LOG_ERROR, "unknown compression\n");
-        return AVERROR_INVALIDDATA;
     }
 
     if ((result = av_frame_ref(picture, c->pic)) < 0)
@@ -347,5 +366,5 @@ AVCodec ff_nuv_decoder = {
     .init           = decode_init,
     .close          = decode_end,
     .decode         = decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };

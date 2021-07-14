@@ -184,9 +184,9 @@ static union av_intfloat32 exr_half2float(uint16_t hf)
  *
  * @return normalized 16-bit unsigned int
  */
-static inline uint16_t exr_flt2uint(uint32_t v)
+static inline uint16_t exr_flt2uint(int32_t v)
 {
-    unsigned int exp = v >> 23;
+    int32_t exp = v >> 23;
     // "HACK": negative values result in exp<  0, so clipping them to 0
     // is also handled by this condition, avoids explicit check for sign bit.
     if (exp <= 127 + 7 - 24) // we would shift out all bits anyway
@@ -459,7 +459,7 @@ static int huf_build_dec_table(const uint64_t *hcode, int im,
         lc += 8;                                                              \
 }
 
-#define get_code(po, rlc, c, lc, gb, out, oe)                                 \
+#define get_code(po, rlc, c, lc, gb, out, oe, outb)                           \
 {                                                                             \
         if (po == rlc) {                                                      \
             if (lc < 8)                                                       \
@@ -468,7 +468,7 @@ static int huf_build_dec_table(const uint64_t *hcode, int im,
                                                                               \
             cs = c >> lc;                                                     \
                                                                               \
-            if (out + cs > oe)                                                \
+            if (out + cs > oe || out == outb)                                 \
                 return AVERROR_INVALIDDATA;                                   \
                                                                               \
             s = out[-1];                                                      \
@@ -501,7 +501,7 @@ static int huf_decode(const uint64_t *hcode, const HufDec *hdecod,
 
             if (pl.len) {
                 lc -= pl.len;
-                get_code(pl.lit, rlc, c, lc, gb, out, oe);
+                get_code(pl.lit, rlc, c, lc, gb, out, oe, outb);
             } else {
                 int j;
 
@@ -518,7 +518,7 @@ static int huf_decode(const uint64_t *hcode, const HufDec *hdecod,
                         if ((hcode[pl.p[j]] >> 6) ==
                             ((c >> (lc - l)) & ((1LL << l) - 1))) {
                             lc -= l;
-                            get_code(pl.p[j], rlc, c, lc, gb, out, oe);
+                            get_code(pl.p[j], rlc, c, lc, gb, out, oe, outb);
                             break;
                         }
                     }
@@ -537,9 +537,9 @@ static int huf_decode(const uint64_t *hcode, const HufDec *hdecod,
     while (lc > 0) {
         const HufDec pl = hdecod[(c << (HUF_DECBITS - lc)) & HUF_DECMASK];
 
-        if (pl.len) {
+        if (pl.len && lc >= pl.len) {
             lc -= pl.len;
-            get_code(pl.lit, rlc, c, lc, gb, out, oe);
+            get_code(pl.lit, rlc, c, lc, gb, out, oe, outb);
         } else {
             return AVERROR_INVALIDDATA;
         }
@@ -846,7 +846,7 @@ static int decode_block(AVCodecContext *avctx, void *tdata,
 
     line_offset = AV_RL64(s->gb.buffer + jobnr * 8);
     // Check if the buffer has the required bytes needed from the offset
-    if (line_offset > buf_size - 8)
+    if (buf_size < 8 || line_offset > buf_size - 8)
         return AVERROR_INVALIDDATA;
 
     src  = buf + line_offset + 8;
@@ -855,7 +855,7 @@ static int decode_block(AVCodecContext *avctx, void *tdata,
         return AVERROR_INVALIDDATA;
 
     data_size = AV_RL32(src - 4);
-    if (data_size <= 0 || data_size > buf_size)
+    if (data_size <= 0 || data_size > buf_size - line_offset - 8)
         return AVERROR_INVALIDDATA;
 
     s->ysize          = FFMIN(s->scan_lines_per_block, s->ymax - line + 1);
@@ -1009,6 +1009,22 @@ static int decode_header(EXRContext *s)
 {
     int current_channel_offset = 0;
     int magic_number, version, flags, i;
+
+    s->xmin               = ~0;
+    s->xmax               = ~0;
+    s->ymin               = ~0;
+    s->ymax               = ~0;
+    s->xdelta             = ~0;
+    s->ydelta             = ~0;
+    s->channel_offsets[0] = -1;
+    s->channel_offsets[1] = -1;
+    s->channel_offsets[2] = -1;
+    s->channel_offsets[3] = -1;
+    s->pixel_type         = EXR_UNKNOWN;
+    s->compression        = EXR_UNKN;
+    s->nb_channels        = 0;
+    s->w                  = 0;
+    s->h                  = 0;
 
     if (bytestream2_get_bytes_left(&s->gb) < 10) {
         av_log(s->avctx, AV_LOG_ERROR, "Header too short to parse.\n");
@@ -1350,21 +1366,6 @@ static av_cold int decode_init(AVCodecContext *avctx)
     float one_gamma = 1.0f / s->gamma;
 
     s->avctx              = avctx;
-    s->xmin               = ~0;
-    s->xmax               = ~0;
-    s->ymin               = ~0;
-    s->ymax               = ~0;
-    s->xdelta             = ~0;
-    s->ydelta             = ~0;
-    s->channel_offsets[0] = -1;
-    s->channel_offsets[1] = -1;
-    s->channel_offsets[2] = -1;
-    s->channel_offsets[3] = -1;
-    s->pixel_type         = EXR_UNKNOWN;
-    s->compression        = EXR_UNKN;
-    s->nb_channels        = 0;
-    s->w                  = 0;
-    s->h                  = 0;
 
     if (one_gamma > 0.9999f && one_gamma < 1.0001f) {
         for (i = 0; i < 65536; ++i)
@@ -1446,7 +1447,7 @@ AVCodec ff_exr_decoder = {
     .init_thread_copy = ONLY_IF_THREADS_ENABLED(decode_init_thread_copy),
     .close            = decode_end,
     .decode           = decode_frame,
-    .capabilities     = CODEC_CAP_DR1 | CODEC_CAP_FRAME_THREADS |
-                        CODEC_CAP_SLICE_THREADS,
+    .capabilities     = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_FRAME_THREADS |
+                        AV_CODEC_CAP_SLICE_THREADS,
     .priv_class       = &exr_class,
 };

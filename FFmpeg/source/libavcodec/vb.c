@@ -107,6 +107,10 @@ static int vb_decode_framedata(VBDecContext *c, int offset)
     blk2   = 0;
     for (blk = 0; blk < blocks; blk++) {
         if (!(blk & 3)) {
+            if (bytestream2_get_bytes_left(&g) < 1) {
+                av_log(c->avctx, AV_LOG_ERROR, "Insufficient data\n");
+                return AVERROR_INVALIDDATA;
+            }
             blocktypes = bytestream2_get_byte(&g);
         }
         switch (blocktypes & 0xC0) {
@@ -195,6 +199,9 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     uint32_t size;
     int offset = 0;
 
+    if (avpkt->size < 2)
+        return AVERROR_INVALIDDATA;
+
     bytestream2_init(&c->stream, avpkt->data, avpkt->size);
 
     if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
@@ -205,6 +212,10 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     if (flags & VB_HAS_GMC) {
         i = (int16_t)bytestream2_get_le16(&c->stream);
         j = (int16_t)bytestream2_get_le16(&c->stream);
+        if (FFABS(j) > avctx->height) {
+            av_log(avctx, AV_LOG_ERROR, "GMV out of range\n");
+            return AVERROR_INVALIDDATA;
+        }
         offset = i + j * avctx->width;
     }
     if (flags & VB_HAS_VIDEO) {
@@ -251,6 +262,12 @@ static av_cold int decode_init(AVCodecContext *avctx)
     c->frame      = av_mallocz(avctx->width * avctx->height);
     c->prev_frame = av_mallocz(avctx->width * avctx->height);
 
+    if (!c->frame || !c->prev_frame) {
+        av_freep(&c->frame);
+        av_freep(&c->prev_frame);
+        return AVERROR(ENOMEM);
+    }
+
     return 0;
 }
 
@@ -273,5 +290,5 @@ AVCodec ff_vb_decoder = {
     .init           = decode_init,
     .close          = decode_end,
     .decode         = decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };

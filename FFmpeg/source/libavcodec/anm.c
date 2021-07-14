@@ -119,6 +119,9 @@ static int decode_frame(AVCodecContext *avctx,
     uint8_t *dst, *dst_end;
     int count, ret;
 
+    if (buf_size < 7)
+        return AVERROR_INVALIDDATA;
+
     if ((ret = ff_reget_buffer(avctx, s->frame)) < 0)
         return ret;
     dst     = s->frame->data[0];
@@ -198,5 +201,5 @@ AVCodec ff_anm_decoder = {
     .init           = decode_init,
     .close          = decode_end,
     .decode         = decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };

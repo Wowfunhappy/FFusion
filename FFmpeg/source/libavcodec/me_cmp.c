@@ -108,8 +108,8 @@ static int sum_abs_dctelem_c(int16_t *block)
     return sum;
 }
 
-#define avg2(a, b) ((a + b + 1) >> 1)
-#define avg4(a, b, c, d) ((a + b + c + d + 2) >> 2)
+#define avg2(a, b) (((a) + (b) + 1) >> 1)
+#define avg4(a, b, c, d) (((a) + (b) + (c) + (d) + 2) >> 2)
 
 static inline int pix_abs16_c(MpegEncContext *v, uint8_t *pix1, uint8_t *pix2,
                               ptrdiff_t stride, int h)
@@ -555,7 +555,7 @@ static int dct_sad8x8_c(MpegEncContext *s, uint8_t *src1,
 
     av_assert2(h == 8);
 
-    s->pdsp.diff_pixels(temp, src1, src2, stride);
+    s->pdsp.diff_pixels_unaligned(temp, src1, src2, stride);
     s->fdsp.fdct(temp);
     return s->mecc.sum_abs_dctelem(temp);
 }
@@ -595,7 +595,7 @@ static int dct264_sad8x8_c(MpegEncContext *s, uint8_t *src1,
     int16_t dct[8][8];
     int i, sum = 0;
 
-    s->pdsp.diff_pixels(dct[0], src1, src2, stride);
+    s->pdsp.diff_pixels_unaligned(dct[0], src1, src2, stride);
 
 #define SRC(x) dct[i][x]
 #define DST(x, v) dct[i][x] = v
@@ -622,7 +622,7 @@ static int dct_max8x8_c(MpegEncContext *s, uint8_t *src1,
 
     av_assert2(h == 8);
 
-    s->pdsp.diff_pixels(temp, src1, src2, stride);
+    s->pdsp.diff_pixels_unaligned(temp, src1, src2, stride);
     s->fdsp.fdct(temp);
 
     for (i = 0; i < 64; i++)
@@ -641,7 +641,7 @@ static int quant_psnr8x8_c(MpegEncContext *s, uint8_t *src1,
     av_assert2(h == 8);
     s->mb_intra = 0;
 
-    s->pdsp.diff_pixels(temp, src1, src2, stride);
+    s->pdsp.diff_pixels_unaligned(temp, src1, src2, stride);
 
     memcpy(bak, temp, 64 * sizeof(int16_t));
 
@@ -744,7 +744,7 @@ static int bit8x8_c(MpegEncContext *s, uint8_t *src1, uint8_t *src2,
 
     av_assert2(h == 8);
 
-    s->pdsp.diff_pixels(temp, src1, src2, stride);
+    s->pdsp.diff_pixels_unaligned(temp, src1, src2, stride);
 
     s->block_last_index[0 /* FIXME */] =
     last                               =
@@ -991,4 +991,6 @@ av_cold void ff_me_cmp_init(MECmpContext *c, AVCodecContext *avctx)
         ff_me_cmp_init_ppc(c, avctx);
     if (ARCH_X86)
         ff_me_cmp_init_x86(c, avctx);
+    if (ARCH_MIPS)
+        ff_me_cmp_init_mips(c, avctx);
 }

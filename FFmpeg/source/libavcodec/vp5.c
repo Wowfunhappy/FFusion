@@ -39,13 +39,18 @@ static int vp5_parse_header(VP56Context *s, const uint8_t *buf, int buf_size)
 {
     VP56RangeCoder *c = &s->c;
     int rows, cols;
+    int ret;
 
-    ff_vp56_init_range_decoder(&s->c, buf, buf_size);
+    ret = ff_vp56_init_range_decoder(&s->c, buf, buf_size);
+    if (ret < 0)
+        return ret;
     s->frames[VP56_FRAME_CURRENT]->key_frame = !vp56_rac_get(c);
     vp56_rac_get(c);
     ff_vp56_init_dequant(s, vp56_rac_gets(c, 6));
     if (s->frames[VP56_FRAME_CURRENT]->key_frame)
     {
+        int render_x, render_y;
+
         vp56_rac_gets(c, 8);
         if(vp56_rac_gets(c, 5) > 5)
             return AVERROR_INVALIDDATA;
@@ -61,8 +66,11 @@ static int vp5_parse_header(VP56Context *s, const uint8_t *buf, int buf_size)
                    cols << 4, rows << 4);
             return AVERROR_INVALIDDATA;
         }
-        vp56_rac_gets(c, 8);  /* number of displayed macroblock rows */
-        vp56_rac_gets(c, 8);  /* number of displayed macroblock cols */
+        render_y = vp56_rac_gets(c, 8);  /* number of displayed macroblock rows */
+        render_x = vp56_rac_gets(c, 8);  /* number of displayed macroblock cols */
+        if (render_x == 0 || render_x > cols ||
+            render_y == 0 || render_y > rows)
+            return AVERROR_INVALIDDATA;
         vp56_rac_gets(c, 2);
         if (!s->macroblocks || /* first frame */
             16*cols != s->avctx->coded_width ||
@@ -171,7 +179,7 @@ static int vp5_parse_coeff_models(VP56Context *s)
     return 0;
 }
 
-static void vp5_parse_coeff(VP56Context *s)
+static int vp5_parse_coeff(VP56Context *s)
 {
     VP56RangeCoder *c = &s->c;
     VP56Model *model = s->modelp;
@@ -180,6 +188,11 @@ static void vp5_parse_coeff(VP56Context *s)
     int coeff, sign, coeff_idx;
     int b, i, cg, idx, ctx, ctx_last;
     int pt = 0;    /* plane type (0 for Y, 1 for U or V) */
+
+    if (vpX_rac_is_end(c)) {
+        av_log(s->avctx, AV_LOG_ERROR, "End of AC stream reached in vp5_parse_coeff\n");
+        return AVERROR_INVALIDDATA;
+    }
 
     for (b=0; b<6; b++) {
         int ct = 1;    /* code type */
@@ -246,6 +259,7 @@ static void vp5_parse_coeff(VP56Context *s)
                 s->coeff_ctx[ff_vp56_b6to4[b]][i] = 5;
         s->above_blocks[s->above_block_idx[b]].not_null_dc = s->coeff_ctx[ff_vp56_b6to4[b]][0];
     }
+    return 0;
 }
 
 static void vp5_default_models_init(VP56Context *s)
@@ -290,5 +304,5 @@ AVCodec ff_vp5_decoder = {
     .init           = vp5_decode_init,
     .close          = ff_vp56_free,
     .decode         = ff_vp56_decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };

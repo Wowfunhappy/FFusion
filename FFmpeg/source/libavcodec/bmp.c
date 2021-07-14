@@ -215,9 +215,13 @@ static int bmp_decode_frame(AVCodecContext *avctx,
     n = ((avctx->width * depth + 31) / 8) & ~3;
 
     if (n * avctx->height > dsize && comp != BMP_RLE4 && comp != BMP_RLE8) {
-        av_log(avctx, AV_LOG_ERROR, "not enough data (%d < %d)\n",
-               dsize, n * avctx->height);
-        return AVERROR_INVALIDDATA;
+        n = (avctx->width * depth + 7) / 8;
+        if (n * avctx->height > dsize) {
+            av_log(avctx, AV_LOG_ERROR, "not enough data (%d < %d)\n",
+                   dsize, n * avctx->height);
+            return AVERROR_INVALIDDATA;
+        }
+        av_log(avctx, AV_LOG_ERROR, "data size too small, assuming missing line alignment\n");
     }
 
     // RLE may skip decoding some picture areas, so blank picture before decoding
@@ -282,7 +286,7 @@ static int bmp_decode_frame(AVCodecContext *avctx,
         case 1:
             for (i = 0; i < avctx->height; i++) {
                 int j;
-                for (j = 0; j < n; j++) {
+                for (j = 0; j < avctx->width >> 3; j++) {
                     ptr[j*8+0] =  buf[j] >> 7;
                     ptr[j*8+1] = (buf[j] >> 6) & 1;
                     ptr[j*8+2] = (buf[j] >> 5) & 1;
@@ -291,6 +295,9 @@ static int bmp_decode_frame(AVCodecContext *avctx,
                     ptr[j*8+5] = (buf[j] >> 2) & 1;
                     ptr[j*8+6] = (buf[j] >> 1) & 1;
                     ptr[j*8+7] =  buf[j]       & 1;
+                }
+                for (j = 0; j < (avctx->width & 7); j++) {
+                    ptr[avctx->width - (avctx->width & 7) + j] = buf[avctx->width >> 3] >> (7 - j) & 1;
                 }
                 buf += n;
                 ptr += linesize;
@@ -345,5 +352,5 @@ AVCodec ff_bmp_decoder = {
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_BMP,
     .decode         = bmp_decode_frame,
-    .capabilities   = CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };
