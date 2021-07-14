@@ -33,6 +33,7 @@
 #endif
 #include "ColorConversions.h"
 #include "CommonUtils.h"
+#include <libswscale/swscale.h>
 
 /*
  Converts (without resampling) from ffmpeg pixel formats to the ones QT accepts
@@ -643,7 +644,7 @@ OSType ColorConversionDstForPixFmt(enum AVCodecID codecID, enum AVPixelFormat ff
 		//Wowfunhappy
 		case AV_PIX_FMT_YUV420P10LE:
 			//Todo: fix
-			return k24RGBPixelFormat;
+			return k2vuyPixelFormat;
 		default:
 			//return k2vuyPixelFormat; //Just guess the right format
 			return 0;
@@ -751,8 +752,8 @@ int ColorConversionFindFor( ColorConversionFuncs *funcs, enum AVCodecID codecID,
 			break;
 		case AV_PIX_FMT_YUV420P10LE:
 			asl_log(NULL, NULL, ASL_LEVEL_ERR, "10 bit, not implemented, colors will be wrong.");
-			funcs->clear = ClearGRAY8;
-			funcs->convert = GRAY8toRGB24;
+			funcs->clear = ClearY422;
+			funcs->convert = Y422toY422;
 			break;
 		default:
 			return paramErr;
