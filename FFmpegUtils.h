@@ -40,9 +40,9 @@
 #	include <Endian.h>
 #	include <ImageCodec.h>
 #endif
-#ifndef FFUSION_CODEC_ONLY
+//#ifndef FFUSION_CODEC_ONLY
 #	include <CoreAudio/CoreAudio.h>
-#endif
+//#endif
 
 #ifdef __cplusplus
 extern "C" {

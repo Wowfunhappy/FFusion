@@ -47,9 +47,11 @@
 #ifdef __GNUC__
 #	define unlikely(x) __builtin_expect(x, 0)
 #	define likely(x) __builtin_expect(x, 1)
+#   define impossible(x) if (x) __builtin_unreachable()
 #else
 #	define unlikely(x)	(x)
 #	define likely(x)	(x)
+#   define impossible(x)
 #endif
 
 //Handles the last row for Y420 videos with an odd number of luma rows
@@ -547,6 +549,48 @@ static FASTCALL void Y410toY422(AVPicture *picture, UInt8 *o, long outRB, int wi
 	}
 }
 
+static FASTCALL void Y420_10toY422_8(AVPicture *picture, UInt8 *o, int outRB, int width, int height)
+{
+	UInt16	*yc = (UInt16*)picture->data[0], *u = (UInt16*)picture->data[1], *v = (UInt16*)picture->data[2];
+	int		rY = picture->linesize[0]/2, rUV = picture->linesize[1]/2;
+	int		halfheight = height >> 1, halfwidth = width >> 1;
+	int		y, x;
+	
+	impossible(width <= 1 || height <= 1 || outRB <= 0 || rY <= 0 || rUV <= 0);
+	
+	for (y = 0; y < halfheight; y ++) {
+		UInt8 *o2 = o + outRB;
+		UInt16 *yc2 = yc + rY;
+		
+		for (x = 0; x < halfwidth; x++) {
+			int x4 = x*4, x2 = x*2;
+			o2[x4]     = o[x4] = u[x]>>2;
+			o [x4 + 1] = yc[x2]>>2;
+			o2[x4 + 1] = yc2[x2]>>2;
+			o2[x4 + 2] = o[x4 + 2] = v[x]>>2;
+			o [x4 + 3] = yc[x2 + 1]>>2;
+			o2[x4 + 3] = yc2[x2 + 1]>>2;
+		}
+		
+		o  += outRB*2;
+		yc += rY*2;
+		u  += rUV;
+		v  += rUV;
+	}
+	
+	if (likely((height&1)==0)) return;
+	
+	for(x=0; x < halfwidth; x++)
+	{
+		int x4 = x*4, x2 = x*2;
+		
+		o[x4]   = u[x]>>2;
+		o[x4+1] = yc[x2]>>2;
+		o[x4+2] = v[x]>>2;
+		o[x4+3] = yc[x2+1]>>2;
+	}
+}
+
 static void ClearRGB(UInt8 *baseAddr, long rowBytes, int width, int height, int bytesPerPixel)
 {
 	int y;
@@ -643,7 +687,6 @@ OSType ColorConversionDstForPixFmt(enum AVCodecID codecID, enum AVPixelFormat ff
 			return k24RGBPixelFormat;
 		//Wowfunhappy
 		case AV_PIX_FMT_YUV420P10LE:
-			//Todo: fix
 			return k2vuyPixelFormat;
 		default:
 			//return k2vuyPixelFormat; //Just guess the right format
@@ -753,7 +796,7 @@ int ColorConversionFindFor( ColorConversionFuncs *funcs, enum AVCodecID codecID,
 		case AV_PIX_FMT_YUV420P10LE:
 			asl_log(NULL, NULL, ASL_LEVEL_ERR, "10 bit, not implemented, colors will be wrong.");
 			funcs->clear = ClearY422;
-			funcs->convert = Y422toY422;
+			funcs->convert = Y420_10toY422_8;
 			break;
 		default:
 			return paramErr;

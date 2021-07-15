@@ -46,6 +46,7 @@ enum{
 	kNuvCodecInfoResID,
 	kIndeo2CodecInfoResID,
 	kIndeo3CodecInfoResID,
+    kIndeo4CodecInfoResID,
 	kIndeo5CodecInfoResID,
 	kTSCCCodecInfoResID,
 	kZMBVCodecInfoResID,
@@ -55,7 +56,9 @@ enum{
 	kFFv1CodecInfoResID,
 	kTheoraCodecInfoResID,
     
-    kHEVCCodecInfoResID,
+    kH265CodecInfoResID,
+    
+    kEAC3CodecInfoResID,
 
 	kVobSubCodecResourceID,
 
