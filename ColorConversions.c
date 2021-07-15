@@ -689,8 +689,7 @@ OSType ColorConversionDstForPixFmt(enum AVCodecID codecID, enum AVPixelFormat ff
 		case AV_PIX_FMT_YUV420P10LE:
 			return k2vuyPixelFormat;
 		default:
-			//return k2vuyPixelFormat; //Just guess the right format
-			return 0;
+			return k2vuyPixelFormat; //Just guess the right format
 	}
 }
 
@@ -794,7 +793,6 @@ int ColorConversionFindFor( ColorConversionFuncs *funcs, enum AVCodecID codecID,
 			funcs->convert = YA420toV408;
 			break;
 		case AV_PIX_FMT_YUV420P10LE:
-			asl_log(NULL, NULL, ASL_LEVEL_ERR, "10 bit, not implemented, colors will be wrong.");
 			funcs->clear = ClearY422;
 			funcs->convert = Y420_10toY422_8;
 			break;
