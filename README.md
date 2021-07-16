@@ -3,7 +3,7 @@ This is an updated version of the FFusion QuickTime Component. It's based on RJV
 FFusion aims to be a decode-only QuickTime component which leverages FFmpeg to do the actual work. Like older versions, this one allows QuickTime to play DIVX, H.263, and a variety of other video formats. Unlike older versions, this one can also play 4K VP9 streams downloded from Youtube, because it's based off of FFmpeg 2.8.17.
 
 If you have youtube-dl installed, run:
-> youtube-dl **VIDEO-URL-HERE** -f ((bestvideo[height>1080][vcodec!^=av01]/bestvideo[vcodec^=avc1])+bestaudio[ext=m4a])/best --add-metadata --merge-output-format mp4
+> youtube-dl **VIDEO-URL-HERE** -f '((bestvideo[height>1080][vcodec!^=av01]/bestvideo[vcodec^=avc1])+bestaudio[ext=m4a])/best' --add-metadata --merge-output-format mp4
 
 ...with a video that's available in 4K. With this component installed in Library/QuickTime/, QuickTime Player 10.0–10.2 should be able to play the downloaded file.
 
