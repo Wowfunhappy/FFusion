@@ -1,5 +1,4 @@
 #include <asl.h>
-#include <swscale.h>
 
 //---------------------------------------------------------------------------
 //FFusion
@@ -66,7 +65,7 @@
 //---------------------------------------------------------------------------
 
 // 64 because that's 2 * ffmpeg's INTERNAL_BUFFER_SIZE and QT sometimes uses more than 32
-#define FFUSION_MAX_BUFFERS 64 * 64
+#define FFUSION_MAX_BUFFERS 64
 
 #define kNumPixelFormatsSupportedFFusion 1
 
@@ -292,7 +291,6 @@ FFusionPacked DefaultPackedTypeForCodec(OSType codec)
   		case 'HEVC':
   		case 'hevc':
 		case 'hvc1':
-		case kH265CodecInfoResID:
 			return PACKED_QUICKTIME_KNOWS_ORDER;
 		default:
 			return PACKED_ALL_IN_FIRST_FRAME;

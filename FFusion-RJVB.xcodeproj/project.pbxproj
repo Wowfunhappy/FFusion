@@ -71,7 +71,7 @@
 		AB9E325226975ACF0047DE6E /* CopyFiles */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
-			dstPath = "~/Library/QuickTime";
+			dstPath = /Volumes/Jonathan/Library/QuickTime;
 			dstSubfolderSpec = 0;
 			files = (
 				AB9E325326975B1E0047DE6E /* FFusion.component in CopyFiles */,
