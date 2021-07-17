@@ -4,6 +4,7 @@ FFusion aims to be a decode-only QuickTime component which leverages FFmpeg to d
 
 For example, this component allows QuickTime to play 4K video streams downlaoded from Youtube. If you have youtube-dl installed, run:
 > youtube-dl **VIDEO-URL-HERE** -f '((bestvideo[height>1080][vcodec!^=av01]/bestvideo[vcodec^=avc1])+bestaudio[ext=m4a])/best' --add-metadata --merge-output-format mp4
+
 ...to get a video which will play in Quicktime 10.2 and below when this component is installed.
 
 Snow Leopard, Lion, and Mountain Lion ship with QuickTime Player 10.0, 10.1, and 10.2 respectively. Mavericks comes with QuickTime 10.3, but can be downgraded to [this modified version](https://github.com/Wowfunhappy/QuickTime-Fixer/releases) which I created. Ugly flat versions of macOS are out of luck, sorry!
