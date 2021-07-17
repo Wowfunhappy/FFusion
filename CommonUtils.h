@@ -123,3 +123,17 @@ void ConvertImageToQDTransparent(Ptr baseAddr, OSType pixelFormat, int rowBytes,
 #endif
 
 #endif
+
+
+
+
+
+//Wowfunhappy
+
+#ifndef SUINT
+#define SUINT   unsigned
+#endif
+
+#ifndef SUINT32
+#define SUINT32 uint32_t
+#endif

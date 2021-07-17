@@ -484,7 +484,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame_ptr,
     while (get_bits_left(&gb) > 0) {
         if (ctx->num_blocks >= FF_ARRAY_ELEMS(ctx->block_size))
             return AVERROR_INVALIDDATA;
-        ctx->block_size[ctx->num_blocks] = get_bits(&gb, 15);
+        ctx->block_size[ctx->num_blocks] = get_bits(&gb, 13 + avctx->channels);
         if (get_bits1(&gb)) {
             ctx->block_pts[ctx->num_blocks] = get_bits(&gb, 9);
         } else {

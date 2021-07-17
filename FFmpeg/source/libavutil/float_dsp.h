@@ -55,6 +55,22 @@ typedef struct AVFloatDSPContext {
                                int len);
 
     /**
+     * Multiply a vector of doubles by a scalar double and add to
+     * destination vector.  Source and destination vectors must
+     * overlap exactly or not at all.
+     *
+     * @param dst result vector
+     *            constraints: 32-byte aligned
+     * @param src input vector
+     *            constraints: 32-byte aligned
+     * @param mul scalar value
+     * @param len length of vector
+     *            constraints: multiple of 16
+     */
+    void (*vector_dmac_scalar)(double *dst, const double *src, double mul,
+                               int len);
+
+    /**
      * Multiply a vector of floats by a scalar float.  Source and
      * destination vectors must overlap exactly or not at all.
      *
@@ -169,15 +185,6 @@ typedef struct AVFloatDSPContext {
  * @return sum of elementwise products
  */
 float avpriv_scalarproduct_float_c(const float *v1, const float *v2, int len);
-
-/**
- * Initialize a float DSP context.
- *
- * @param fdsp    float DSP context
- * @param strict  setting to non-zero avoids using functions which may not be IEEE-754 compliant
- */
-void avpriv_float_dsp_init(AVFloatDSPContext *fdsp, int strict);
-
 
 void ff_float_dsp_init_aarch64(AVFloatDSPContext *fdsp);
 void ff_float_dsp_init_arm(AVFloatDSPContext *fdsp);

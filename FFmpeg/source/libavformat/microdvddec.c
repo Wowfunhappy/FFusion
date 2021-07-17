@@ -81,7 +81,7 @@ static int microdvd_read_header(AVFormatContext *s)
     AVRational pts_info = (AVRational){ 2997, 125 };  /* default: 23.976 fps */
     MicroDVDContext *microdvd = s->priv_data;
     AVStream *st = avformat_new_stream(s, NULL);
-    int i = 0;
+    int i = 0, ret;
     char line_buf[MAX_LINESIZE];
     int has_real_fps = 0;
 
@@ -115,11 +115,13 @@ static int microdvd_read_header(AVFormatContext *s)
                 has_real_fps = 1;
                 continue;
             }
-            if (!st->codec->extradata && sscanf(line, "{DEFAULT}{}%c", &c) == 1) {
-                st->codec->extradata = av_strdup(line + 11);
-                if (!st->codec->extradata)
-                    return AVERROR(ENOMEM);
-                st->codec->extradata_size = strlen(st->codec->extradata) + 1;
+            if (!st->codecpar->extradata && sscanf(line, "{DEFAULT}{}%c", &c) == 1) {
+                st->codecpar->extradata = av_strdup(line + 11);
+                if (!st->codecpar->extradata) {
+                    ret = AVERROR(ENOMEM);
+                    goto fail;
+                }
+                st->codecpar->extradata_size = strlen(st->codecpar->extradata) + 1;
                 continue;
             }
         }
@@ -139,13 +141,15 @@ static int microdvd_read_header(AVFormatContext *s)
         if (pts == AV_NOPTS_VALUE)
             continue;
         sub = ff_subtitles_queue_insert(&microdvd->q, p, strlen(p), 0);
-        if (!sub)
-            return AVERROR(ENOMEM);
+        if (!sub) {
+            ret = AVERROR(ENOMEM);
+            goto fail;
+        }
         sub->pos = pos;
         sub->pts = pts;
         sub->duration = get_duration(line);
     }
-    ff_subtitles_queue_finalize(&microdvd->q);
+    ff_subtitles_queue_finalize(s, &microdvd->q);
     if (has_real_fps) {
         /* export the FPS info only if set in the file */
         microdvd->frame_rate = pts_info;
@@ -154,9 +158,12 @@ static int microdvd_read_header(AVFormatContext *s)
         pts_info = microdvd->frame_rate;
     }
     avpriv_set_pts_info(st, 64, pts_info.den, pts_info.num);
-    st->codec->codec_type = AVMEDIA_TYPE_SUBTITLE;
-    st->codec->codec_id   = AV_CODEC_ID_MICRODVD;
+    st->codecpar->codec_type = AVMEDIA_TYPE_SUBTITLE;
+    st->codecpar->codec_id   = AV_CODEC_ID_MICRODVD;
     return 0;
+fail:
+    ff_subtitles_queue_clean(&microdvd->q);
+    return ret;
 }
 
 static int microdvd_read_packet(AVFormatContext *s, AVPacket *pkt)

@@ -124,7 +124,7 @@ static int pnm_decode_frame(AVCodecContext *avctx, void *data,
     do_read:
         ptr      = p->data[0];
         linesize = p->linesize[0];
-        if (s->bytestream + n * avctx->height > s->bytestream_end)
+        if (n * avctx->height > s->bytestream_end - s->bytestream)
             return AVERROR_INVALIDDATA;
         if(s->type < 4 || (is_mono && s->type==7)){
             for (i=0; i<avctx->height; i++) {
@@ -172,7 +172,7 @@ static int pnm_decode_frame(AVCodecContext *avctx, void *data,
             } else if (upgrade == 2) {
                 unsigned int j, v, f = (65535 * 32768 + s->maxval / 2) / s->maxval;
                 for (j = 0; j < n / 2; j++) {
-                    v = AV_RB16(s->bytestream + 2*j);
+                    v = av_be2ne16(((uint16_t *)s->bytestream)[j]);
                     ((uint16_t *)ptr)[j] = (v * f + 16384) >> 15;
                 }
             }
@@ -192,7 +192,7 @@ static int pnm_decode_frame(AVCodecContext *avctx, void *data,
             linesize = p->linesize[0];
             if (s->maxval >= 256)
                 n *= 2;
-            if (s->bytestream + n * avctx->height * 3 / 2 > s->bytestream_end)
+            if (n * avctx->height * 3 / 2 > s->bytestream_end - s->bytestream)
                 return AVERROR_INVALIDDATA;
             for (i = 0; i < avctx->height; i++) {
                 samplecpy(ptr, s->bytestream, n, s->maxval);
@@ -222,11 +222,11 @@ static int pnm_decode_frame(AVCodecContext *avctx, void *data,
             n        = avctx->width * 2;
             ptr      = p->data[0];
             linesize = p->linesize[0];
-            if (s->bytestream + n * avctx->height * 3 / 2 > s->bytestream_end)
+            if (n * avctx->height * 3 / 2 > s->bytestream_end - s->bytestream)
                 return AVERROR_INVALIDDATA;
             for (i = 0; i < avctx->height; i++) {
                 for (j = 0; j < n / 2; j++) {
-                    v = AV_RB16(s->bytestream + 2*j);
+                    v = av_be2ne16(((uint16_t *)s->bytestream)[j]);
                     ((uint16_t *)ptr)[j] = (v * f + 16384) >> 15;
                 }
                 s->bytestream += n;
@@ -238,13 +238,13 @@ static int pnm_decode_frame(AVCodecContext *avctx, void *data,
             h = avctx->height >> 1;
             for (i = 0; i < h; i++) {
                 for (j = 0; j < n / 2; j++) {
-                    v = AV_RB16(s->bytestream + 2*j);
+                    v = av_be2ne16(((uint16_t *)s->bytestream)[j]);
                     ptr1[j] = (v * f + 16384) >> 15;
                 }
                 s->bytestream += n;
 
                 for (j = 0; j < n / 2; j++) {
-                    v = AV_RB16(s->bytestream + 2*j);
+                    v = av_be2ne16(((uint16_t *)s->bytestream)[j]);
                     ptr2[j] = (v * f + 16384) >> 15;
                 }
                 s->bytestream += n;

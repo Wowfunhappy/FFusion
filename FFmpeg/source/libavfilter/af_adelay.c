@@ -66,7 +66,7 @@ static int query_formats(AVFilterContext *ctx)
     };
     int ret;
 
-    layouts = ff_all_channel_layouts();
+    layouts = ff_all_channel_counts();
     if (!layouts)
         return AVERROR(ENOMEM);
     ret = ff_set_common_channel_layouts(ctx, layouts);
@@ -138,14 +138,20 @@ static int config_input(AVFilterLink *inlink)
     for (i = 0; i < s->nb_delays; i++) {
         ChanDelay *d = &s->chandelay[i];
         float delay;
+        char type = 0;
+        int ret;
 
         if (!(arg = av_strtok(p, "|", &saveptr)))
             break;
 
         p = NULL;
-        sscanf(arg, "%f", &delay);
 
-        d->delay = delay * inlink->sample_rate / 1000.0;
+        ret = sscanf(arg, "%d%c", &d->delay, &type);
+        if (ret != 2 || type != 'S') {
+            sscanf(arg, "%f", &delay);
+            d->delay = delay * inlink->sample_rate / 1000.0;
+        }
+
         if (d->delay < 0) {
             av_log(ctx, AV_LOG_ERROR, "Delay must be non negative number.\n");
             return AVERROR(EINVAL);
@@ -163,11 +169,6 @@ static int config_input(AVFilterLink *inlink)
             return AVERROR(ENOMEM);
 
         s->max_delay = FFMAX(s->max_delay, d->delay);
-    }
-
-    if (!s->max_delay) {
-        av_log(ctx, AV_LOG_ERROR, "At least one delay >0 must be specified.\n");
-        return AVERROR(EINVAL);
     }
 
     switch (inlink->format) {
@@ -192,8 +193,10 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
         return ff_filter_frame(ctx->outputs[0], frame);
 
     out_frame = ff_get_audio_buffer(inlink, frame->nb_samples);
-    if (!out_frame)
+    if (!out_frame) {
+        av_frame_free(&frame);
         return AVERROR(ENOMEM);
+    }
     av_frame_copy_props(out_frame, frame);
 
     for (i = 0; i < s->nb_delays; i++) {

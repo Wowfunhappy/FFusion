@@ -196,8 +196,13 @@ int AAC_RENAME(ff_ps_read_data)(AVCodecContext *avctx, GetBitContext *gb_host, P
 
     ps->border_position[0] = -1;
     if (ps->frame_class) {
-        for (e = 1; e <= ps->num_env; e++)
+        for (e = 1; e <= ps->num_env; e++) {
             ps->border_position[e] = get_bits(gb, 5);
+            if (ps->border_position[e] < ps->border_position[e-1]) {
+                av_log(avctx, AV_LOG_ERROR, "border_position non monotone.\n");
+                goto err;
+            }
+        }
     } else
         for (e = 1; e <= ps->num_env; e++)
             ps->border_position[e] = (e * numQMFSlots >> ff_log2_tab[ps->num_env]) - 1;
@@ -409,33 +414,33 @@ static void hybrid_synthesis(PSDSPContext *dsp, INTFLOAT out[2][38][64],
             memset(out[0][n], 0, 5*sizeof(out[0][n][0]));
             memset(out[1][n], 0, 5*sizeof(out[1][n][0]));
             for (i = 0; i < 12; i++) {
-                out[0][n][0] += in[   i][n][0];
-                out[1][n][0] += in[   i][n][1];
+                out[0][n][0] += (UINTFLOAT)in[   i][n][0];
+                out[1][n][0] += (UINTFLOAT)in[   i][n][1];
             }
             for (i = 0; i < 8; i++) {
-                out[0][n][1] += in[12+i][n][0];
-                out[1][n][1] += in[12+i][n][1];
+                out[0][n][1] += (UINTFLOAT)in[12+i][n][0];
+                out[1][n][1] += (UINTFLOAT)in[12+i][n][1];
             }
             for (i = 0; i < 4; i++) {
-                out[0][n][2] += in[20+i][n][0];
-                out[1][n][2] += in[20+i][n][1];
-                out[0][n][3] += in[24+i][n][0];
-                out[1][n][3] += in[24+i][n][1];
-                out[0][n][4] += in[28+i][n][0];
-                out[1][n][4] += in[28+i][n][1];
+                out[0][n][2] += (UINTFLOAT)in[20+i][n][0];
+                out[1][n][2] += (UINTFLOAT)in[20+i][n][1];
+                out[0][n][3] += (UINTFLOAT)in[24+i][n][0];
+                out[1][n][3] += (UINTFLOAT)in[24+i][n][1];
+                out[0][n][4] += (UINTFLOAT)in[28+i][n][0];
+                out[1][n][4] += (UINTFLOAT)in[28+i][n][1];
             }
         }
         dsp->hybrid_synthesis_deint(out, in + 27, 5, len);
     } else {
         for (n = 0; n < len; n++) {
-            out[0][n][0] = in[0][n][0] + in[1][n][0] + in[2][n][0] +
-                           in[3][n][0] + in[4][n][0] + in[5][n][0];
-            out[1][n][0] = in[0][n][1] + in[1][n][1] + in[2][n][1] +
-                           in[3][n][1] + in[4][n][1] + in[5][n][1];
-            out[0][n][1] = in[6][n][0] + in[7][n][0];
-            out[1][n][1] = in[6][n][1] + in[7][n][1];
-            out[0][n][2] = in[8][n][0] + in[9][n][0];
-            out[1][n][2] = in[8][n][1] + in[9][n][1];
+            out[0][n][0] = (UINTFLOAT)in[0][n][0] + in[1][n][0] + in[2][n][0] +
+                           (UINTFLOAT)in[3][n][0] + in[4][n][0] + in[5][n][0];
+            out[1][n][0] = (UINTFLOAT)in[0][n][1] + in[1][n][1] + in[2][n][1] +
+                           (UINTFLOAT)in[3][n][1] + in[4][n][1] + in[5][n][1];
+            out[0][n][1] = (UINTFLOAT)in[6][n][0] + in[7][n][0];
+            out[1][n][1] = (UINTFLOAT)in[6][n][1] + in[7][n][1];
+            out[0][n][2] = (UINTFLOAT)in[8][n][0] + in[9][n][0];
+            out[1][n][2] = (UINTFLOAT)in[8][n][1] + in[9][n][1];
         }
         dsp->hybrid_synthesis_deint(out, in + 7, 3, len);
     }
@@ -965,9 +970,10 @@ static void stereo_processing(PSContext *ps, INTFLOAT (*l)[32][2], INTFLOAT (*r)
                 h_step[1][2] = AAC_MSUB31_V3(H21[1][e+1][b], h[1][2], width);
                 h_step[1][3] = AAC_MSUB31_V3(H22[1][e+1][b], h[1][3], width);
             }
-            ps->dsp.stereo_interpolate[!PS_BASELINE && ps->enable_ipdopd](
-                l[k] + 1 + start, r[k] + 1 + start,
-                h, h_step, stop - start);
+            if (stop - start)
+                ps->dsp.stereo_interpolate[!PS_BASELINE && ps->enable_ipdopd](
+                    l[k] + 1 + start, r[k] + 1 + start,
+                    h, h_step, stop - start);
         }
     }
 }

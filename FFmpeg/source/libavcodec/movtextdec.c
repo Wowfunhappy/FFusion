@@ -99,6 +99,7 @@ typedef struct {
     uint64_t tracksize;
     int size_var;
     int count_s, count_f;
+    int readorder;
 } MovTextContext;
 
 typedef struct {
@@ -425,7 +426,8 @@ static int mov_text_init(AVCodecContext *avctx) {
     if (ret == 0) {
         return ff_ass_subtitle_header(avctx, m->d.font, m->d.fontsize, m->d.color,
                                 m->d.back_color, m->d.bold, m->d.italic,
-                                m->d.underline, m->d.alignment);
+                                m->d.underline, ASS_DEFAULT_BORDERSTYLE,
+                                m->d.alignment);
     } else
         return ff_ass_subtitle_header_default(avctx);
 }
@@ -435,7 +437,7 @@ static int mov_text_decode_frame(AVCodecContext *avctx,
 {
     AVSubtitle *sub = data;
     MovTextContext *m = avctx->priv_data;
-    int ret, ts_start, ts_end;
+    int ret;
     AVBPrint buf;
     char *ptr = avpkt->data;
     char *end;
@@ -465,12 +467,7 @@ static int mov_text_decode_frame(AVCodecContext *avctx,
     end = ptr + FFMIN(2 + text_length, avpkt->size);
     ptr += 2;
 
-    ts_start = av_rescale_q(avpkt->pts,
-                            avctx->time_base,
-                            (AVRational){1,100});
-    ts_end   = av_rescale_q(avpkt->pts + avpkt->duration,
-                            avctx->time_base,
-                            (AVRational){1,100});
+    mov_text_cleanup(m);
 
     tsmb_size = 0;
     m->tracksize = 2 + text_length;
@@ -522,7 +519,7 @@ static int mov_text_decode_frame(AVCodecContext *avctx,
     } else
         text_to_ass(&buf, ptr, end, m);
 
-    ret = ff_ass_add_rect_bprint(sub, &buf, ts_start, ts_end - ts_start);
+    ret = ff_ass_add_rect(sub, buf.str, m->readorder++, 0, NULL, NULL);
     av_bprint_finalize(&buf, NULL);
     if (ret < 0)
         return ret;
@@ -534,7 +531,15 @@ static int mov_text_decode_close(AVCodecContext *avctx)
 {
     MovTextContext *m = avctx->priv_data;
     mov_text_cleanup_ftab(m);
+    mov_text_cleanup(m);
     return 0;
+}
+
+static void mov_text_flush(AVCodecContext *avctx)
+{
+    MovTextContext *m = avctx->priv_data;
+    if (!(avctx->flags2 & AV_CODEC_FLAG2_RO_FLUSH_NOOP))
+        m->readorder = 0;
 }
 
 AVCodec ff_movtext_decoder = {
@@ -546,4 +551,5 @@ AVCodec ff_movtext_decoder = {
     .init         = mov_text_init,
     .decode       = mov_text_decode_frame,
     .close        = mov_text_decode_close,
+    .flush        = mov_text_flush,
 };

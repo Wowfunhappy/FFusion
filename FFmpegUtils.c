@@ -273,7 +273,7 @@ static const struct {
 enum AVCodecID FFFourCCToCodecID(OSType formatID)
 {
 #ifndef FFUSION_CODEC_ONLY
-	for (int i = 0; kAudioCodecMap[i].codecID != CODEC_ID_NONE; i++) {
+	for (int i = 0; kAudioCodecMap[i].codecID != AV_CODEC_ID_NONE; i++) {
 		if (kAudioCodecMap[i].mFormatID == formatID)
 			return kAudioCodecMap[i].codecID;
 	}
@@ -284,7 +284,7 @@ enum AVCodecID FFFourCCToCodecID(OSType formatID)
 OSType FFCodecIDToFourCC(enum AVCodecID codecID)
 {
 #ifndef FFUSION_CODEC_ONLY
-	for (int i = 0; kAudioCodecMap[i].codecID != CODEC_ID_NONE; i++) {
+	for (int i = 0; kAudioCodecMap[i].codecID != AV_CODEC_ID_NONE; i++) {
 		if (kAudioCodecMap[i].codecID == codecID)
 			return kAudioCodecMap[i].mFormatID;
 	}

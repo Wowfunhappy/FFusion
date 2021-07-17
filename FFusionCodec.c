@@ -162,7 +162,7 @@ typedef struct
 //---------------------------------------------------------------------------
 
 static OSErr FFusionDecompress(FFusionGlobals glob, AVCodecContext *context, UInt8 *dataPtr, int width, int height, AVFrame *picture, int length);
-static int FFusionGetBuffer(AVCodecContext *s, AVFrame *pic);
+static int FFusionGetBuffer(AVCodecContext *s, AVFrame *pic, int flags);
 static void FFusionReleaseBuffer(AVCodecContext *s, AVFrame *pic);
 static FFusionBuffer *retainBuffer(FFusionGlobals glob, FFusionBuffer *buf);
 static void releaseBuffer(AVCodecContext *s, FFusionBuffer *buf);
@@ -224,7 +224,7 @@ static void RecomputeMaxCounts(FFusionGlobals glob)
 
 static enum AVPixelFormat FindPixFmtFromVideo(AVCodec *codec, AVCodecContext *avctx, Ptr data, int bufferSize)
 {
-    AVCodecContext *tmpContext;
+	AVCodecContext *tmpContext;
     AVFrame *tmpFrame;
 	int got_picture = 0;
     enum AVPixelFormat pix_fmt;
@@ -304,7 +304,9 @@ void setFutureFrame(FFusionGlobals glob, FFusionBuffer *newFuture)
 		retainBuffer(glob, newFuture);
 	glob->decode.futureBuffer = newFuture;
 	if(temp != NULL)
+	{
 		releaseBuffer(glob->avContext, temp);
+	}
 }
 
 //---------------------------------------------------------------------------
@@ -565,7 +567,7 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 		glob->packedType = DefaultPackedTypeForCodec(componentType);
 		//asl_log(NULL, NULL, ASL_LEVEL_ERR, "ComponentType: %s", FourCCString(glob->componentType));
 		
-		if(codecID == CODEC_ID_NONE)
+		if(codecID == AV_CODEC_ID_NONE)
 		{
 			err = featureUnsupported;
 		}
@@ -584,7 +586,7 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 			//asl_log(NULL, NULL, ASL_LEVEL_ERR, "QuickTime is said to not know the order!");
 		}
 		
-		if ((codecID == CODEC_ID_MPEG4 || codecID == CODEC_ID_H264) && !glob->begin.parser)
+		if ((codecID == AV_CODEC_ID_MPEG4 || codecID == AV_CODEC_ID_H264) && !glob->begin.parser)
 		{
 			//asl_log(NULL, NULL, ASL_LEVEL_ERR, "This is a parseable format, but we couldn't open a parser!\n");
 		}
@@ -616,7 +618,7 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 				imgDescExt = NewHandle(0);
 				GetImageDescriptionExtension(p->imageDescription, &imgDescExt, 'avcC', 1);
 				
-				glob->avContext->extradata = calloc(1, GetHandleSize(imgDescExt) + FF_INPUT_BUFFER_PADDING_SIZE);
+				glob->avContext->extradata = calloc(1, GetHandleSize(imgDescExt) + AV_INPUT_BUFFER_PADDING_SIZE);
 				memcpy(glob->avContext->extradata, *imgDescExt, GetHandleSize(imgDescExt));
 				glob->avContext->extradata_size = GetHandleSize(imgDescExt);
 				
@@ -702,7 +704,8 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 		// some hooks into ffmpeg's buffer allocation to get frames in
 		// decode order without delay more easily
 		glob->avContext->opaque = glob;
-		glob->avContext->get_buffer = FFusionGetBuffer;
+		//glob->avContext->get_buffer = FFusionGetBuffer;
+		glob->avContext->get_buffer2 = FFusionGetBuffer;
 		//glob->avContext->release_buffer = FFusionReleaseBuffer;
 		
 		// multi-slice decoding
@@ -1116,7 +1119,7 @@ pascal ComponentResult FFusionCodecDecodeBand(FFusionGlobals glob, ImageSubCodec
 		dataPtr = FFusionCreateEntireDataBuffer(&(glob->data), (uint8_t *)drp->codecData, dataSize);
 	}
 	
-	//asl_log(NULL, NULL, ASL_LEVEL_ERR, "About to use FFusionDecompress from FFusionCodecDecodeBand");
+	//asl_log(NULL, NULL, ASL_LEVEL_ERR, "About to call FFusionDecompress from FFusionCodecDecodeBand");
 	err = FFusionDecompress(glob, glob->avContext, dataPtr, myDrp->width, myDrp->height, &tempFrame, dataSize);
 	
 	if (glob->packedType == PACKED_QUICKTIME_KNOWS_ORDER) {
@@ -1125,13 +1128,16 @@ pascal ComponentResult FFusionCodecDecodeBand(FFusionGlobals glob, ImageSubCodec
 		retainBuffer(glob, myDrp->buffer);
 		myDrp->decoded = true;
 		glob->decode.lastFrame = myDrp->frameNumber;
+		av_frame_unref(&tempFrame);
 		return err;
 	}
 	if(tempFrame.data[0] == NULL) {
 		myDrp->buffer = NULL;
 	}
 	else
+	{
 		myDrp->buffer = retainBuffer(glob, (FFusionBuffer *)tempFrame.opaque);
+	}
 	
 	if(tempFrame.pict_type == AV_PICTURE_TYPE_I)
 	/* Wipe memory of past P frames */
@@ -1287,7 +1293,7 @@ pascal ComponentResult FFusionCodecGetCodecInfo(FFusionGlobals glob, CodecInfo *
 	return getFFusionCodecInfo(glob->self, glob->componentType, info);
 }
 
-static int FFusionGetBuffer(AVCodecContext *s, AVFrame *pic)
+static int FFusionGetBuffer(AVCodecContext *s, AVFrame *pic, int flags)
 {
 	FFusionGlobals glob = s->opaque;
 	int ret = avcodec_default_get_buffer2(s, pic, NULL);
@@ -1303,6 +1309,8 @@ static int FFusionGetBuffer(AVCodecContext *s, AVFrame *pic)
 				glob->buffers[i].retainCount = 0;
 				glob->lastAllocatedBuffer = i;
 				break;
+			} else {
+				
 			}
 		}
 	}
@@ -1338,19 +1346,24 @@ static void releaseBuffer(AVCodecContext *s, FFusionBuffer *buf)
 OSErr FFusionDecompress(FFusionGlobals glob, AVCodecContext *context, UInt8 *dataPtr, int width, int height, AVFrame *picture, int length)
 {
 	OSErr err = noErr;
-	int got_picture = false;
-	int len = 0;
 	AVPacket pkt;
-	
 	//asl_log(NULL, NULL, ASL_LEVEL_ERR, "%p Decompress %d bytes.\n", glob, length);
 	
 	av_init_packet(&pkt);
 	pkt.data = dataPtr;
 	pkt.size = length;
 	
-	len = avcodec_decode_video2(context, picture, &got_picture, &pkt);
-	if( !got_picture ){
-		//asl_log(NULL, NULL, ASL_LEVEL_ERR, "Found no picture, len=%d", len );
+	if(glob->packedType != PACKED_QUICKTIME_KNOWS_ORDER) {
+		//Wowfunhappy:	If Quicktime doesn't know the order, we need to use the old API,
+		//				because we need to leave `context->refcounted_frames` disabled,
+		//				because I can't find the right time to call `av_packet_free`.
+		
+		int got_picture = false;
+		avcodec_decode_video2(context, picture, &got_picture, &pkt);
+		
+	} else {
+		avcodec_send_packet(context, &pkt);
+		avcodec_receive_frame(context, picture);
 	}
 	
 	return err;

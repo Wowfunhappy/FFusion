@@ -32,7 +32,6 @@
 #include "cavs.h"
 #include "internal.h"
 #include "mpeg12data.h"
-#include "mpegvideo.h"
 
 static const uint8_t mv_scan[4] = {
     MV_FWD_X0, MV_FWD_X1,
@@ -546,7 +545,7 @@ static inline int dequant(AVSContext *h, int16_t *level_buf, uint8_t *run_buf,
  */
 static int decode_residual_block(AVSContext *h, GetBitContext *gb,
                                  const struct dec_2dvlc *r, int esc_golomb_order,
-                                 int qp, uint8_t *dst, int stride)
+                                 int qp, uint8_t *dst, ptrdiff_t stride)
 {
     int i, esc_code, level, mask, ret;
     unsigned int level_code, run;
@@ -693,7 +692,7 @@ static int decode_mb_i(AVSContext *h, int cbp_code)
     }
     h->cbp = cbp_tab[cbp_code][0];
     if (h->cbp && !h->qp_fixed)
-        h->qp = (h->qp + get_se_golomb(gb)) & 63; //qp_delta
+        h->qp = (h->qp + (unsigned)get_se_golomb(gb)) & 63; //qp_delta
 
     /* luma intra prediction interleaved with residual decode/transform/add */
     for (block = 0; block < 4; block++) {
@@ -1089,10 +1088,14 @@ static int decode_pic(AVSContext *h)
     } else {
         h->alpha_offset = h->beta_offset  = 0;
     }
+
+    ret = 0;
     if (h->cur.f->pict_type == AV_PICTURE_TYPE_I) {
         do {
             check_for_slice(h);
-            decode_mb_i(h, 0);
+            ret = decode_mb_i(h, 0);
+            if (ret < 0)
+                break;
         } while (ff_cavs_next_mb(h));
     } else if (h->cur.f->pict_type == AV_PICTURE_TYPE_P) {
         do {
@@ -1105,10 +1108,12 @@ static int decode_pic(AVSContext *h)
             } else {
                 mb_type = get_ue_golomb(&h->gb) + P_SKIP + h->skip_mode_flag;
                 if (mb_type > P_8X8)
-                    decode_mb_i(h, mb_type - P_8X8 - 1);
+                    ret = decode_mb_i(h, mb_type - P_8X8 - 1);
                 else
                     decode_mb_p(h, mb_type);
             }
+            if (ret < 0)
+                break;
         } while (ff_cavs_next_mb(h));
     } else { /* AV_PICTURE_TYPE_B */
         do {
@@ -1117,22 +1122,25 @@ static int decode_pic(AVSContext *h)
             if (h->skip_mode_flag && (skip_count < 0))
                 skip_count = get_ue_golomb(&h->gb);
             if (h->skip_mode_flag && skip_count--) {
-                decode_mb_b(h, B_SKIP);
+                ret = decode_mb_b(h, B_SKIP);
             } else {
                 mb_type = get_ue_golomb(&h->gb) + B_SKIP + h->skip_mode_flag;
                 if (mb_type > B_8X8)
-                    decode_mb_i(h, mb_type - B_8X8 - 1);
+                    ret = decode_mb_i(h, mb_type - B_8X8 - 1);
                 else
-                    decode_mb_b(h, mb_type);
+                    ret = decode_mb_b(h, mb_type);
             }
+            if (ret < 0)
+                break;
         } while (ff_cavs_next_mb(h));
     }
-    if (h->cur.f->pict_type != AV_PICTURE_TYPE_B) {
+    emms_c();
+    if (ret >= 0 && h->cur.f->pict_type != AV_PICTURE_TYPE_B) {
         av_frame_unref(h->DPB[1].f);
         FFSWAP(AVSFrame, h->cur, h->DPB[1]);
         FFSWAP(AVSFrame, h->DPB[0], h->DPB[1]);
     }
-    return 0;
+    return ret;
 }
 
 /*****************************************************************************

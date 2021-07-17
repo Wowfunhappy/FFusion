@@ -2512,7 +2512,7 @@ static void vc1_decode_i_blocks(VC1Context *v)
     uint8_t *coded_val;
     int mb_pos;
 
-    /* select codingmode used for VLC tables selection */
+    /* select coding mode used for VLC tables selection */
     switch (v->y_ac_table_index) {
     case 0:
         v->codingset = (v->pqindex <= 8) ? CS_HIGH_RATE_INTRA : CS_LOW_MOT_INTRA;
@@ -2660,7 +2660,7 @@ static void vc1_decode_i_blocks_adv(VC1Context *v)
     int mqdiff;
     GetBitContext *gb = &s->gb;
 
-    /* select codingmode used for VLC tables selection */
+    /* select coding mode used for VLC tables selection */
     switch (v->y_ac_table_index) {
     case 0:
         v->codingset = (v->pqindex <= 8) ? CS_HIGH_RATE_INTRA : CS_LOW_MOT_INTRA;
@@ -2788,7 +2788,7 @@ static void vc1_decode_p_blocks(VC1Context *v)
     MpegEncContext *s = &v->s;
     int apply_loop_filter;
 
-    /* select codingmode used for VLC tables selection */
+    /* select coding mode used for VLC tables selection */
     switch (v->c_ac_table_index) {
     case 0:
         v->codingset = (v->pqindex <= 8) ? CS_HIGH_RATE_INTRA : CS_LOW_MOT_INTRA;
@@ -2864,7 +2864,7 @@ static void vc1_decode_b_blocks(VC1Context *v)
 {
     MpegEncContext *s = &v->s;
 
-    /* select codingmode used for VLC tables selection */
+    /* select coding mode used for VLC tables selection */
     switch (v->c_ac_table_index) {
     case 0:
         v->codingset = (v->pqindex <= 8) ? CS_HIGH_RATE_INTRA : CS_LOW_MOT_INTRA;
@@ -2951,7 +2951,14 @@ void ff_vc1_decode_blocks(VC1Context *v)
 
     v->s.esc3_level_length = 0;
     if (v->x8_type) {
-        ff_intrax8_decode_picture(&v->x8, 2*v->pq + v->halfpq, v->pq * !v->pquantizer);
+        ff_intrax8_decode_picture(&v->x8, &v->s.current_picture,
+                                  &v->s.gb, &v->s.mb_x, &v->s.mb_y,
+                                  2 * v->pq + v->halfpq, v->pq * !v->pquantizer,
+                                  v->s.loop_filter, v->s.low_delay);
+
+        ff_er_add_slice(&v->s.er, 0, 0,
+                        (v->s.mb_x >> 1) - 1, (v->s.mb_y >> 1) - 1,
+                        ER_MB_END);
     } else {
         v->cur_blk_idx     =  0;
         v->left_blk_idx    = -1;
