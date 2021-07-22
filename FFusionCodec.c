@@ -750,8 +750,8 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
     // but we don't care since some DivX are so bugged that the depth information
     // is not correct
 	
-    //capabilities->wantedPixelSize = 0;
-	capabilities->wantedPixelSize = (**p->imageDescription).depth;
+    capabilities->wantedPixelSize = 0;
+	//capabilities->wantedPixelSize = (**p->imageDescription).depth;
 	
 	//asl_log(NULL, NULL, ASL_LEVEL_ERR, "capabilities->wantedPixelSize: %d", capabilities->wantedPixelSize);
 	
