@@ -24,133 +24,152 @@
 #include "libavutil/intreadwrite.h"
 #include "libavutil/time.h"
 
+#include "libavcodec/bytestream.h"
+
 #include "avformat.h"
 #include "network.h"
 #include "srtp.h"
 #include "url.h"
 #include "rtpdec.h"
 #include "rtpdec_formats.h"
+#include "internal.h"
 
 #define MIN_FEEDBACK_INTERVAL 200000 /* 200 ms in us */
 
-static RTPDynamicProtocolHandler l24_dynamic_handler = {
+static const RTPDynamicProtocolHandler l24_dynamic_handler = {
     .enc_name   = "L24",
     .codec_type = AVMEDIA_TYPE_AUDIO,
     .codec_id   = AV_CODEC_ID_PCM_S24BE,
 };
 
-static RTPDynamicProtocolHandler gsm_dynamic_handler = {
+static const RTPDynamicProtocolHandler gsm_dynamic_handler = {
     .enc_name   = "GSM",
     .codec_type = AVMEDIA_TYPE_AUDIO,
     .codec_id   = AV_CODEC_ID_GSM,
 };
 
-static RTPDynamicProtocolHandler realmedia_mp3_dynamic_handler = {
+static const RTPDynamicProtocolHandler realmedia_mp3_dynamic_handler = {
     .enc_name   = "X-MP3-draft-00",
     .codec_type = AVMEDIA_TYPE_AUDIO,
     .codec_id   = AV_CODEC_ID_MP3ADU,
 };
 
-static RTPDynamicProtocolHandler speex_dynamic_handler = {
+static const RTPDynamicProtocolHandler speex_dynamic_handler = {
     .enc_name   = "speex",
     .codec_type = AVMEDIA_TYPE_AUDIO,
     .codec_id   = AV_CODEC_ID_SPEEX,
 };
 
-static RTPDynamicProtocolHandler opus_dynamic_handler = {
+static const RTPDynamicProtocolHandler opus_dynamic_handler = {
     .enc_name   = "opus",
     .codec_type = AVMEDIA_TYPE_AUDIO,
     .codec_id   = AV_CODEC_ID_OPUS,
 };
 
-static RTPDynamicProtocolHandler t140_dynamic_handler = { /* RFC 4103 */
+static const RTPDynamicProtocolHandler t140_dynamic_handler = { /* RFC 4103 */
     .enc_name   = "t140",
     .codec_type = AVMEDIA_TYPE_SUBTITLE,
     .codec_id   = AV_CODEC_ID_TEXT,
 };
 
-static RTPDynamicProtocolHandler *rtp_first_dynamic_payload_handler = NULL;
+extern const RTPDynamicProtocolHandler ff_rdt_video_handler;
+extern const RTPDynamicProtocolHandler ff_rdt_audio_handler;
+extern const RTPDynamicProtocolHandler ff_rdt_live_video_handler;
+extern const RTPDynamicProtocolHandler ff_rdt_live_audio_handler;
 
-void ff_register_dynamic_payload_handler(RTPDynamicProtocolHandler *handler)
+static const RTPDynamicProtocolHandler *const rtp_dynamic_protocol_handler_list[] = {
+    /* rtp */
+    &ff_ac3_dynamic_handler,
+    &ff_amr_nb_dynamic_handler,
+    &ff_amr_wb_dynamic_handler,
+    &ff_dv_dynamic_handler,
+    &ff_g726_16_dynamic_handler,
+    &ff_g726_24_dynamic_handler,
+    &ff_g726_32_dynamic_handler,
+    &ff_g726_40_dynamic_handler,
+    &ff_g726le_16_dynamic_handler,
+    &ff_g726le_24_dynamic_handler,
+    &ff_g726le_32_dynamic_handler,
+    &ff_g726le_40_dynamic_handler,
+    &ff_h261_dynamic_handler,
+    &ff_h263_1998_dynamic_handler,
+    &ff_h263_2000_dynamic_handler,
+    &ff_h263_rfc2190_dynamic_handler,
+    &ff_h264_dynamic_handler,
+    &ff_hevc_dynamic_handler,
+    &ff_ilbc_dynamic_handler,
+    &ff_jpeg_dynamic_handler,
+    &ff_mp4a_latm_dynamic_handler,
+    &ff_mp4v_es_dynamic_handler,
+    &ff_mpeg_audio_dynamic_handler,
+    &ff_mpeg_audio_robust_dynamic_handler,
+    &ff_mpeg_video_dynamic_handler,
+    &ff_mpeg4_generic_dynamic_handler,
+    &ff_mpegts_dynamic_handler,
+    &ff_ms_rtp_asf_pfa_handler,
+    &ff_ms_rtp_asf_pfv_handler,
+    &ff_qcelp_dynamic_handler,
+    &ff_qdm2_dynamic_handler,
+    &ff_qt_rtp_aud_handler,
+    &ff_qt_rtp_vid_handler,
+    &ff_quicktime_rtp_aud_handler,
+    &ff_quicktime_rtp_vid_handler,
+    &ff_rfc4175_rtp_handler,
+    &ff_svq3_dynamic_handler,
+    &ff_theora_dynamic_handler,
+    &ff_vc2hq_dynamic_handler,
+    &ff_vorbis_dynamic_handler,
+    &ff_vp8_dynamic_handler,
+    &ff_vp9_dynamic_handler,
+    &gsm_dynamic_handler,
+    &l24_dynamic_handler,
+    &opus_dynamic_handler,
+    &realmedia_mp3_dynamic_handler,
+    &speex_dynamic_handler,
+    &t140_dynamic_handler,
+    /* rdt */
+    &ff_rdt_video_handler,
+    &ff_rdt_audio_handler,
+    &ff_rdt_live_video_handler,
+    &ff_rdt_live_audio_handler,
+    NULL,
+};
+
+const RTPDynamicProtocolHandler *ff_rtp_handler_iterate(void **opaque)
 {
-    handler->next = rtp_first_dynamic_payload_handler;
-    rtp_first_dynamic_payload_handler = handler;
+    uintptr_t i = (uintptr_t)*opaque;
+    const RTPDynamicProtocolHandler *r = rtp_dynamic_protocol_handler_list[i];
+
+    if (r)
+        *opaque = (void*)(i + 1);
+
+    return r;
 }
 
-void ff_register_rtp_dynamic_payload_handlers(void)
-{
-    ff_register_dynamic_payload_handler(&ff_ac3_dynamic_handler);
-    ff_register_dynamic_payload_handler(&ff_amr_nb_dynamic_handler);
-    ff_register_dynamic_payload_handler(&ff_amr_wb_dynamic_handler);
-    ff_register_dynamic_payload_handler(&ff_dv_dynamic_handler);
-    ff_register_dynamic_payload_handler(&ff_g726_16_dynamic_handler);
-    ff_register_dynamic_payload_handler(&ff_g726_24_dynamic_handler);
-    ff_register_dynamic_payload_handler(&ff_g726_32_dynamic_handler);
-    ff_register_dynamic_payload_handler(&ff_g726_40_dynamic_handler);
-    ff_register_dynamic_payload_handler(&ff_g726le_16_dynamic_handler);
-    ff_register_dynamic_payload_handler(&ff_g726le_24_dynamic_handler);
-    ff_register_dynamic_payload_handler(&ff_g726le_32_dynamic_handler);
-    ff_register_dynamic_payload_handler(&ff_g726le_40_dynamic_handler);
-    ff_register_dynamic_payload_handler(&ff_h261_dynamic_handler);
-    ff_register_dynamic_payload_handler(&ff_h263_1998_dynamic_handler);
-    ff_register_dynamic_payload_handler(&ff_h263_2000_dynamic_handler);
-    ff_register_dynamic_payload_handler(&ff_h263_rfc2190_dynamic_handler);
-    ff_register_dynamic_payload_handler(&ff_h264_dynamic_handler);
-    ff_register_dynamic_payload_handler(&ff_hevc_dynamic_handler);
-    ff_register_dynamic_payload_handler(&ff_ilbc_dynamic_handler);
-    ff_register_dynamic_payload_handler(&ff_jpeg_dynamic_handler);
-    ff_register_dynamic_payload_handler(&ff_mp4a_latm_dynamic_handler);
-    ff_register_dynamic_payload_handler(&ff_mp4v_es_dynamic_handler);
-    ff_register_dynamic_payload_handler(&ff_mpeg_audio_dynamic_handler);
-    ff_register_dynamic_payload_handler(&ff_mpeg_audio_robust_dynamic_handler);
-    ff_register_dynamic_payload_handler(&ff_mpeg_video_dynamic_handler);
-    ff_register_dynamic_payload_handler(&ff_mpeg4_generic_dynamic_handler);
-    ff_register_dynamic_payload_handler(&ff_mpegts_dynamic_handler);
-    ff_register_dynamic_payload_handler(&ff_ms_rtp_asf_pfa_handler);
-    ff_register_dynamic_payload_handler(&ff_ms_rtp_asf_pfv_handler);
-    ff_register_dynamic_payload_handler(&ff_qcelp_dynamic_handler);
-    ff_register_dynamic_payload_handler(&ff_qdm2_dynamic_handler);
-    ff_register_dynamic_payload_handler(&ff_qt_rtp_aud_handler);
-    ff_register_dynamic_payload_handler(&ff_qt_rtp_vid_handler);
-    ff_register_dynamic_payload_handler(&ff_quicktime_rtp_aud_handler);
-    ff_register_dynamic_payload_handler(&ff_quicktime_rtp_vid_handler);
-    ff_register_dynamic_payload_handler(&ff_rfc4175_rtp_handler);
-    ff_register_dynamic_payload_handler(&ff_svq3_dynamic_handler);
-    ff_register_dynamic_payload_handler(&ff_theora_dynamic_handler);
-    ff_register_dynamic_payload_handler(&ff_vc2hq_dynamic_handler);
-    ff_register_dynamic_payload_handler(&ff_vorbis_dynamic_handler);
-    ff_register_dynamic_payload_handler(&ff_vp8_dynamic_handler);
-    ff_register_dynamic_payload_handler(&ff_vp9_dynamic_handler);
-    ff_register_dynamic_payload_handler(&gsm_dynamic_handler);
-    ff_register_dynamic_payload_handler(&l24_dynamic_handler);
-    ff_register_dynamic_payload_handler(&opus_dynamic_handler);
-    ff_register_dynamic_payload_handler(&realmedia_mp3_dynamic_handler);
-    ff_register_dynamic_payload_handler(&speex_dynamic_handler);
-    ff_register_dynamic_payload_handler(&t140_dynamic_handler);
-}
-
-RTPDynamicProtocolHandler *ff_rtp_handler_find_by_name(const char *name,
+const RTPDynamicProtocolHandler *ff_rtp_handler_find_by_name(const char *name,
                                                        enum AVMediaType codec_type)
 {
-    RTPDynamicProtocolHandler *handler;
-    for (handler = rtp_first_dynamic_payload_handler;
-         handler; handler = handler->next)
+    void *i = 0;
+    const RTPDynamicProtocolHandler *handler;
+    while (handler = ff_rtp_handler_iterate(&i)) {
         if (handler->enc_name &&
             !av_strcasecmp(name, handler->enc_name) &&
             codec_type == handler->codec_type)
             return handler;
+    }
     return NULL;
 }
 
-RTPDynamicProtocolHandler *ff_rtp_handler_find_by_id(int id,
+const RTPDynamicProtocolHandler *ff_rtp_handler_find_by_id(int id,
                                                      enum AVMediaType codec_type)
 {
-    RTPDynamicProtocolHandler *handler;
-    for (handler = rtp_first_dynamic_payload_handler;
-         handler; handler = handler->next)
+    void *i = 0;
+    const RTPDynamicProtocolHandler *handler;
+    while (handler = ff_rtp_handler_iterate(&i)) {
         if (handler->static_payload_id && handler->static_payload_id == id &&
             codec_type == handler->codec_type)
             return handler;
+    }
     return NULL;
 }
 
@@ -385,40 +404,26 @@ int ff_rtp_check_and_send_back_rr(RTPDemuxContext *s, URLContext *fd,
 
 void ff_rtp_send_punch_packets(URLContext *rtp_handle)
 {
-    AVIOContext *pb;
-    uint8_t *buf;
-    int len;
+    uint8_t buf[RTP_MIN_PACKET_LENGTH], *ptr = buf;
 
     /* Send a small RTP packet */
-    if (avio_open_dyn_buf(&pb) < 0)
-        return;
 
-    avio_w8(pb, (RTP_VERSION << 6));
-    avio_w8(pb, 0); /* Payload type */
-    avio_wb16(pb, 0); /* Seq */
-    avio_wb32(pb, 0); /* Timestamp */
-    avio_wb32(pb, 0); /* SSRC */
+    bytestream_put_byte(&ptr, (RTP_VERSION << 6));
+    bytestream_put_byte(&ptr, 0); /* Payload type */
+    bytestream_put_be16(&ptr, 0); /* Seq */
+    bytestream_put_be32(&ptr, 0); /* Timestamp */
+    bytestream_put_be32(&ptr, 0); /* SSRC */
 
-    avio_flush(pb);
-    len = avio_close_dyn_buf(pb, &buf);
-    if ((len > 0) && buf)
-        ffurl_write(rtp_handle, buf, len);
-    av_free(buf);
+    ffurl_write(rtp_handle, buf, ptr - buf);
 
     /* Send a minimal RTCP RR */
-    if (avio_open_dyn_buf(&pb) < 0)
-        return;
+    ptr = buf;
+    bytestream_put_byte(&ptr, (RTP_VERSION << 6));
+    bytestream_put_byte(&ptr, RTCP_RR); /* receiver report */
+    bytestream_put_be16(&ptr, 1); /* length in words - 1 */
+    bytestream_put_be32(&ptr, 0); /* our own SSRC */
 
-    avio_w8(pb, (RTP_VERSION << 6));
-    avio_w8(pb, RTCP_RR); /* receiver report */
-    avio_wb16(pb, 1); /* length in words - 1 */
-    avio_wb32(pb, 0); /* our own SSRC */
-
-    avio_flush(pb);
-    len = avio_close_dyn_buf(pb, &buf);
-    if ((len > 0) && buf)
-        ffurl_write(rtp_handle, buf, len);
-    av_free(buf);
+    ffurl_write(rtp_handle, buf, ptr - buf);
 }
 
 static int find_missing_packets(RTPDemuxContext *s, uint16_t *first_missing,
@@ -515,6 +520,43 @@ int ff_rtp_send_rtcp_feedback(RTPDemuxContext *s, URLContext *fd,
     return 0;
 }
 
+static int opus_write_extradata(AVCodecParameters *codecpar)
+{
+    uint8_t *bs;
+    int ret;
+
+    /* This function writes an extradata with a channel mapping family of 0.
+     * This mapping family only supports mono and stereo layouts. And RFC7587
+     * specifies that the number of channels in the SDP must be 2.
+     */
+    if (codecpar->channels > 2) {
+        return AVERROR_INVALIDDATA;
+    }
+
+    ret = ff_alloc_extradata(codecpar, 19);
+    if (ret < 0)
+        return ret;
+
+    bs = (uint8_t *)codecpar->extradata;
+
+    /* Opus magic */
+    bytestream_put_buffer(&bs, "OpusHead", 8);
+    /* Version */
+    bytestream_put_byte  (&bs, 0x1);
+    /* Channel count */
+    bytestream_put_byte  (&bs, codecpar->channels);
+    /* Pre skip */
+    bytestream_put_le16  (&bs, 0);
+    /* Input sample rate */
+    bytestream_put_le32  (&bs, 48000);
+    /* Output gain */
+    bytestream_put_le16  (&bs, 0x0);
+    /* Mapping family */
+    bytestream_put_byte  (&bs, 0x0);
+
+    return 0;
+}
+
 /**
  * open a new RTP parse context for stream 'st'. 'st' can be NULL for
  * MPEG-2 TS streams.
@@ -523,6 +565,7 @@ RTPDemuxContext *ff_rtp_parse_open(AVFormatContext *s1, AVStream *st,
                                    int payload_type, int queue_size)
 {
     RTPDemuxContext *s;
+    int ret;
 
     s = av_mallocz(sizeof(RTPDemuxContext));
     if (!s)
@@ -546,6 +589,16 @@ RTPDemuxContext *ff_rtp_parse_open(AVFormatContext *s1, AVStream *st,
             if (st->codecpar->sample_rate == 8000)
                 st->codecpar->sample_rate = 16000;
             break;
+        case AV_CODEC_ID_OPUS:
+            ret = opus_write_extradata(st->codecpar);
+            if (ret < 0) {
+                av_log(s1, AV_LOG_ERROR,
+                       "Error creating opus extradata: %s\n",
+                       av_err2str(ret));
+                av_free(s);
+                return NULL;
+            }
+            break;
         default:
             break;
         }
@@ -556,7 +609,7 @@ RTPDemuxContext *ff_rtp_parse_open(AVFormatContext *s1, AVStream *st,
 }
 
 void ff_rtp_parse_set_dynamic_protocol(RTPDemuxContext *s, PayloadContext *ctx,
-                                       RTPDynamicProtocolHandler *handler)
+                                       const RTPDynamicProtocolHandler *handler)
 {
     s->dynamic_protocol_context = ctx;
     s->handler                  = handler;
@@ -911,7 +964,7 @@ int ff_parse_fmtp(AVFormatContext *s,
 int ff_rtp_finalize_packet(AVPacket *pkt, AVIOContext **dyn_buf, int stream_idx)
 {
     int ret;
-    av_init_packet(pkt);
+    av_packet_unref(pkt);
 
     pkt->size         = avio_close_dyn_buf(*dyn_buf, &pkt->data);
     pkt->stream_index = stream_idx;

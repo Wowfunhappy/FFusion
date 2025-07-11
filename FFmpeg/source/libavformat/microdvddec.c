@@ -36,7 +36,7 @@ typedef struct {
 } MicroDVDContext;
 
 
-static int microdvd_probe(AVProbeData *p)
+static int microdvd_probe(const AVProbeData *p)
 {
     unsigned char c;
     const uint8_t *ptr = p->buf;
@@ -65,12 +65,12 @@ static int64_t get_pts(const char *buf)
     return AV_NOPTS_VALUE;
 }
 
-static int get_duration(const char *buf)
+static int64_t get_duration(const char *buf)
 {
     int frame_start, frame_end;
 
     if (sscanf(buf, "{%d}{%d}", &frame_start, &frame_end) == 2)
-        return frame_end - frame_start;
+        return frame_end - (int64_t)frame_start;
     return -1;
 }
 
@@ -103,6 +103,8 @@ static int microdvd_read_header(AVFormatContext *s)
         if (!len)
             break;
         line[strcspn(line, "\r\n")] = 0;
+        if (!*p)
+            continue;
         if (i++ < 3) {
             int frame;
             double fps;
@@ -116,12 +118,11 @@ static int microdvd_read_header(AVFormatContext *s)
                 continue;
             }
             if (!st->codecpar->extradata && sscanf(line, "{DEFAULT}{}%c", &c) == 1) {
-                st->codecpar->extradata = av_strdup(line + 11);
-                if (!st->codecpar->extradata) {
-                    ret = AVERROR(ENOMEM);
+                int size = strlen(line + 11);
+                ret = ff_alloc_extradata(st->codecpar, size);
+                if (ret < 0)
                     goto fail;
-                }
-                st->codecpar->extradata_size = strlen(st->codecpar->extradata) + 1;
+                memcpy(st->codecpar->extradata, line + 11, size);
                 continue;
             }
         }

@@ -129,7 +129,7 @@ static av_cold int tta_decode_init(AVCodecContext * avctx)
 
     s->avctx = avctx;
 
-    // 30bytes includes TTA1 header
+    // 22 bytes for a TTA1 header
     if (avctx->extradata_size < 22)
         return AVERROR_INVALIDDATA;
 
@@ -163,7 +163,7 @@ static av_cold int tta_decode_init(AVCodecContext * avctx)
         s->data_length = get_bits_long(&gb, 32);
         skip_bits_long(&gb, 32); // CRC32 of header
 
-        if (s->channels == 0) {
+        if (s->channels == 0 || s->channels > 16) {
             av_log(avctx, AV_LOG_ERROR, "Invalid number of channels\n");
             return AVERROR_INVALIDDATA;
         } else if (avctx->sample_rate == 0) {
@@ -335,7 +335,7 @@ static int tta_decode_frame(AVCodecContext *avctx, void *data,
             if (s->channels > 1) {
                 int32_t *r = p - 1;
                 for (*p += *r / 2; r > (int32_t*)p - s->channels; r--)
-                    *r = *(r + 1) - *r;
+                    *r = *(r + 1) - (unsigned)*r;
             }
             cur_chan = 0;
             i++;
@@ -371,8 +371,15 @@ static int tta_decode_frame(AVCodecContext *avctx, void *data,
     case 3: {
         // shift samples for 24-bit sample format
         int32_t *samples = (int32_t *)frame->data[0];
-        for (i = 0; i < framelen * s->channels; i++)
-            *samples++ *= 256;
+        int overflow = 0;
+
+        for (i = 0; i < framelen * s->channels; i++) {
+            int scaled = *samples * 256U;
+            overflow += (scaled >> 8 != *samples);
+            *samples++ = scaled;
+        }
+        if (overflow)
+            av_log(avctx, AV_LOG_WARNING, "%d overflows occurred on 24bit upscale\n", overflow);
         // reset decode buffer
         s->decode_buffer = NULL;
         break;
@@ -387,13 +394,6 @@ error:
     if (s->bps == 3)
         s->decode_buffer = NULL;
     return ret;
-}
-
-static int init_thread_copy(AVCodecContext *avctx)
-{
-    TTAContext *s = avctx->priv_data;
-    s->avctx = avctx;
-    return allocate_buffers(avctx);
 }
 
 static av_cold int tta_decode_close(AVCodecContext *avctx) {
@@ -430,7 +430,6 @@ AVCodec ff_tta_decoder = {
     .init           = tta_decode_init,
     .close          = tta_decode_close,
     .decode         = tta_decode_frame,
-    .init_thread_copy = ONLY_IF_THREADS_ENABLED(init_thread_copy),
-    .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_FRAME_THREADS,
+    .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_FRAME_THREADS | AV_CODEC_CAP_CHANNEL_CONF,
     .priv_class     = &tta_decoder_class,
 };

@@ -193,11 +193,13 @@ static av_cold int vble_decode_init(AVCodecContext *avctx)
     ctx->size = av_image_get_buffer_size(avctx->pix_fmt,
                                          avctx->width, avctx->height, 1);
 
+    if (ctx->size < 0)
+        return ctx->size;
+
     ctx->val = av_malloc_array(ctx->size, sizeof(*ctx->val));
 
     if (!ctx->val) {
         av_log(avctx, AV_LOG_ERROR, "Could not allocate values buffer.\n");
-        vble_decode_close(avctx);
         return AVERROR(ENOMEM);
     }
 
@@ -214,6 +216,5 @@ AVCodec ff_vble_decoder = {
     .close          = vble_decode_close,
     .decode         = vble_decode_frame,
     .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_FRAME_THREADS,
-    .init_thread_copy = ONLY_IF_THREADS_ENABLED(vble_decode_init),
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };

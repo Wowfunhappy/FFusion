@@ -168,6 +168,10 @@ static av_always_inline AVRational av_inv_q(AVRational q)
  * In case of infinity, the returned value is expressed as `{1, 0}` or
  * `{-1, 0}` depending on the sign.
  *
+ * In general rational numbers with |num| <= 1<<26 && |den| <= 1<<26
+ * can be recovered exactly from their double representation.
+ * (no exceptions were found within 1B random ones)
+ *
  * @param d   `double` to convert
  * @param max Maximum allowed numerator and denominator
  * @return `d` in AVRational form
@@ -206,6 +210,12 @@ int av_find_nearest_q_idx(AVRational q, const AVRational* q_list);
  * @note The returned value is platform-indepedant.
  */
 uint32_t av_q2intfloat(AVRational q);
+
+/**
+ * Return the best rational so that a and b are multiple of it.
+ * If the resulting denominator is larger than max_den, return def.
+ */
+AVRational av_gcd_q(AVRational a, AVRational b, int max_den, AVRational def);
 
 /**
  * @}

@@ -63,7 +63,7 @@ static int fill_data_min_max(const uint8_t *ptr8, FITSHeader *header, const uint
     int i, j;
 
     header->data_min = DBL_MAX;
-    header->data_max = DBL_MIN;
+    header->data_max = -DBL_MAX;
     switch (header->bitpix) {
 #define CASE_N(a, t, rd) \
     case a: \
@@ -279,7 +279,7 @@ static int fits_decode_frame(AVCodecContext *avctx, void *data, int *got_frame, 
             for (j = 0; j < avctx->width; j++) { \
                 t = rd; \
                 if (!header.blank_found || t != header.blank) { \
-                    *dst++ = ((t - header.data_min) * ((1 << (sizeof(type) * 8)) - 1)) * scale; \
+                    *dst++ = lrint(((t - header.data_min) * ((1 << (sizeof(type) * 8)) - 1)) * scale); \
                 } else { \
                     *dst++ = fitsctx->blank_val; \
                 } \

@@ -19,13 +19,11 @@
  */
 
 #include <stdlib.h>
-#include <string.h>
 
-#include "avcodec.h"
 #include "bsf.h"
+#include "bsf_internal.h"
 
 #include "libavutil/log.h"
-#include "libavutil/mem.h"
 #include "libavutil/opt.h"
 
 typedef struct NoiseContext {
@@ -35,52 +33,50 @@ typedef struct NoiseContext {
     unsigned int state;
 } NoiseContext;
 
-static int noise(AVBSFContext *ctx, AVPacket *out)
+static int noise(AVBSFContext *ctx, AVPacket *pkt)
 {
     NoiseContext *s = ctx->priv_data;
-    AVPacket *in;
     int amount = s->amount > 0 ? s->amount : (s->state % 10001 + 1);
-    int i, ret = 0;
+    int i, ret;
 
     if (amount <= 0)
         return AVERROR(EINVAL);
 
-    ret = ff_bsf_get_packet(ctx, &in);
+    if (ctx->par_in->codec_id == AV_CODEC_ID_WRAPPED_AVFRAME) {
+        av_log(ctx, AV_LOG_ERROR, "Wrapped AVFrame noising is unsupported\n");
+        return AVERROR_PATCHWELCOME;
+    }
+
+    ret = ff_bsf_get_packet_ref(ctx, pkt);
     if (ret < 0)
         return ret;
 
     if (s->dropamount > 0 && s->state % s->dropamount == 0) {
         s->state++;
-        av_packet_free(&in);
+        av_packet_unref(pkt);
         return AVERROR(EAGAIN);
     }
 
-    ret = av_new_packet(out, in->size);
-    if (ret < 0)
-        goto fail;
-
-    ret = av_packet_copy_props(out, in);
-    if (ret < 0)
-        goto fail;
-
-    memcpy(out->data, in->data, in->size);
-
-    for (i = 0; i < out->size; i++) {
-        s->state += out->data[i] + 1;
-        if (s->state % amount == 0)
-            out->data[i] = s->state;
+    ret = av_packet_make_writable(pkt);
+    if (ret < 0) {
+        av_packet_unref(pkt);
+        return ret;
     }
-fail:
-    if (ret < 0)
-        av_packet_unref(out);
-    av_packet_free(&in);
-    return ret;
+
+    for (i = 0; i < pkt->size; i++) {
+        s->state += pkt->data[i] + 1;
+        if (s->state % amount == 0)
+            pkt->data[i] = s->state;
+    }
+
+    return 0;
 }
 
 #define OFFSET(x) offsetof(NoiseContext, x)
+#define FLAGS (AV_OPT_FLAG_VIDEO_PARAM|AV_OPT_FLAG_AUDIO_PARAM|AV_OPT_FLAG_BSF_PARAM)
 static const AVOption options[] = {
-    { "amount", NULL, OFFSET(amount), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX },
-    { "dropamount", NULL, OFFSET(dropamount), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX },
+    { "amount", NULL, OFFSET(amount), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, FLAGS },
+    { "dropamount", NULL, OFFSET(dropamount), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, FLAGS },
     { NULL },
 };
 

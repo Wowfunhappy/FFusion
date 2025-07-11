@@ -19,19 +19,56 @@
 #ifndef AVCODEC_NVENC_H
 #define AVCODEC_NVENC_H
 
-#include "compat/nvenc/nvEncodeAPI.h"
-
 #include "config.h"
+
+#if CONFIG_D3D11VA
+#define COBJMACROS
+#include "libavutil/hwcontext_d3d11va.h"
+#else
+typedef void ID3D11Device;
+#endif
+
+#include <ffnvcodec/nvEncodeAPI.h>
 
 #include "compat/cuda/dynlink_loader.h"
 #include "libavutil/fifo.h"
 #include "libavutil/opt.h"
+#include "hwconfig.h"
 
 #include "avcodec.h"
 
 #define MAX_REGISTERED_FRAMES 64
 #define RC_MODE_DEPRECATED 0x800000
 #define RCD(rc_mode) ((rc_mode) | RC_MODE_DEPRECATED)
+
+#define NVENCAPI_CHECK_VERSION(major, minor) \
+    ((major) < NVENCAPI_MAJOR_VERSION || ((major) == NVENCAPI_MAJOR_VERSION && (minor) <= NVENCAPI_MINOR_VERSION))
+
+// SDK 8.1 compile time feature checks
+#if NVENCAPI_CHECK_VERSION(8, 1)
+#define NVENC_HAVE_BFRAME_REF_MODE
+#define NVENC_HAVE_QP_MAP_MODE
+#endif
+
+// SDK 9.0 compile time feature checks
+#if NVENCAPI_CHECK_VERSION(9, 0)
+#define NVENC_HAVE_HEVC_BFRAME_REF_MODE
+#endif
+
+// SDK 9.1 compile time feature checks
+#if NVENCAPI_CHECK_VERSION(9, 1)
+#define NVENC_HAVE_MULTIPLE_REF_FRAMES
+#define NVENC_HAVE_CUSTREAM_PTR
+#define NVENC_HAVE_GETLASTERRORSTRING
+#endif
+
+// SDK 10.0 compile time feature checks
+#if NVENCAPI_CHECK_VERSION(10, 0)
+#define NVENC_HAVE_NEW_PRESETS
+#define NVENC_HAVE_MULTIPASS
+#define NVENC_HAVE_LDKFS
+#define NVENC_HAVE_H264_LVL6
+#endif
 
 typedef struct NvencSurface
 {
@@ -44,7 +81,6 @@ typedef struct NvencSurface
 
     NV_ENC_OUTPUT_PTR output_surface;
     NV_ENC_BUFFER_FORMAT format;
-    int size;
 } NvencSurface;
 
 typedef struct NvencDynLoadFunctions
@@ -67,8 +103,17 @@ enum {
     PRESET_LOW_LATENCY_DEFAULT ,
     PRESET_LOW_LATENCY_HQ ,
     PRESET_LOW_LATENCY_HP,
-    PRESET_LOSSLESS_DEFAULT, // lossless presets must be the last ones
+    PRESET_LOSSLESS_DEFAULT,
     PRESET_LOSSLESS_HP,
+#ifdef NVENC_HAVE_NEW_PRESETS
+    PRESET_P1,
+    PRESET_P2,
+    PRESET_P3,
+    PRESET_P4,
+    PRESET_P5,
+    PRESET_P6,
+    PRESET_P7,
+#endif
 };
 
 enum {
@@ -89,6 +134,8 @@ enum {
     NVENC_LOSSLESS   = 2,
     NVENC_ONE_PASS   = 4,
     NVENC_TWO_PASSES = 8,
+
+    NVENC_DEPRECATED_PRESET = 0x8000,
 };
 
 enum {
@@ -106,6 +153,10 @@ typedef struct NvencContext
     NV_ENC_CONFIG encode_config;
     CUcontext cu_context;
     CUcontext cu_context_internal;
+    CUstream cu_stream;
+    ID3D11Device *d3d11_device;
+
+    AVFrame *frame;
 
     int nb_surfaces;
     NvencSurface *surfaces;
@@ -115,10 +166,9 @@ typedef struct NvencContext
     AVFifoBuffer *output_surface_ready_queue;
     AVFifoBuffer *timestamp_list;
 
-    int encoder_flushing;
-
     struct {
-        CUdeviceptr ptr;
+        void *ptr;
+        int ptr_index;
         NV_ENC_REGISTERED_PTR regptr;
         int mapped;
         NV_ENC_MAP_INPUT_RESOURCE in_map;
@@ -129,10 +179,7 @@ typedef struct NvencContext
      * AVCodecContext.pix_fmt when using hwaccel frames on input */
     enum AVPixelFormat data_pix_fmt;
 
-    /* timestamps of the first two frames, for computing the first dts
-     * when B-frames are present */
-    int64_t initial_pts[2];
-    int first_packet_output;
+    int support_dyn_bitrate;
 
     void *nvencoder;
 
@@ -165,19 +212,24 @@ typedef struct NvencContext
     int cqp;
     int weighted_pred;
     int coder;
+    int b_ref_mode;
+    int a53_cc;
+    int s12m_tc;
+    int dpb_size;
+    int tuning_info;
+    int multipass;
+    int ldkfs;
 } NvencContext;
 
 int ff_nvenc_encode_init(AVCodecContext *avctx);
 
 int ff_nvenc_encode_close(AVCodecContext *avctx);
 
-int ff_nvenc_send_frame(AVCodecContext *avctx, const AVFrame *frame);
-
 int ff_nvenc_receive_packet(AVCodecContext *avctx, AVPacket *pkt);
 
-int ff_nvenc_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
-                          const AVFrame *frame, int *got_packet);
+void ff_nvenc_encode_flush(AVCodecContext *avctx);
 
 extern const enum AVPixelFormat ff_nvenc_pix_fmts[];
+extern const AVCodecHWConfigInternal *const ff_nvenc_hw_configs[];
 
 #endif /* AVCODEC_NVENC_H */

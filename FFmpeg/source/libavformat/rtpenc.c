@@ -66,6 +66,7 @@ static int is_supported(enum AVCodecID id)
     case AV_CODEC_ID_PCM_S8:
     case AV_CODEC_ID_PCM_S16BE:
     case AV_CODEC_ID_PCM_S16LE:
+    case AV_CODEC_ID_PCM_S24BE:
     case AV_CODEC_ID_PCM_U16BE:
     case AV_CODEC_ID_PCM_U16LE:
     case AV_CODEC_ID_PCM_U8:
@@ -544,6 +545,8 @@ static int rtp_write_packet(AVFormatContext *s1, AVPacket *pkt)
     case AV_CODEC_ID_PCM_S16BE:
     case AV_CODEC_ID_PCM_S16LE:
         return rtp_send_samples(s1, pkt->data, size, 16 * st->codecpar->channels);
+    case AV_CODEC_ID_PCM_S24BE:
+        return rtp_send_samples(s1, pkt->data, size, 24 * st->codecpar->channels);
     case AV_CODEC_ID_ADPCM_G722:
         /* The actual sample size is half a byte per sample, but since the
          * stream clock rate is 8000 Hz while the sample rate is 16000 Hz,
@@ -586,7 +589,7 @@ static int rtp_write_packet(AVFormatContext *s1, AVPacket *pkt)
         break;
     case AV_CODEC_ID_H263:
         if (s->flags & FF_RTP_FLAG_RFC2190) {
-            int mb_info_size = 0;
+            buffer_size_t mb_info_size;
             const uint8_t *mb_info =
                 av_packet_get_side_data(pkt, AV_PKT_DATA_H263_MB_INFO,
                                         &mb_info_size);

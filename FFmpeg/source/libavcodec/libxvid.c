@@ -40,8 +40,8 @@
 
 #include "avcodec.h"
 #include "internal.h"
-#include "libxvid.h"
 #include "mpegutils.h"
+#include "packet_internal.h"
 
 #if HAVE_UNISTD_H
 #include <unistd.h>
@@ -418,30 +418,6 @@ static av_cold int xvid_encode_init(AVCodecContext *avctx)
     case 1:
         x->me_flags |= XVID_ME_ADVANCEDDIAMOND16 |
                        XVID_ME_HALFPELREFINE16;
-#if FF_API_MOTION_EST
-FF_DISABLE_DEPRECATION_WARNINGS
-        break;
-    default:
-        switch (avctx->me_method) {
-        case ME_FULL:   /* Quality 6 */
-             x->me_flags |= XVID_ME_EXTSEARCH16 |
-                            XVID_ME_EXTSEARCH8;
-        case ME_EPZS:   /* Quality 4 */
-             x->me_flags |= XVID_ME_ADVANCEDDIAMOND8 |
-                            XVID_ME_HALFPELREFINE8   |
-                            XVID_ME_CHROMA_PVOP      |
-                            XVID_ME_CHROMA_BVOP;
-        case ME_LOG:    /* Quality 2 */
-        case ME_PHODS:
-        case ME_X1:
-             x->me_flags |= XVID_ME_ADVANCEDDIAMOND16 |
-                            XVID_ME_HALFPELREFINE16;
-        case ME_ZERO:   /* Quality 0 */
-        default:
-            break;
-        }
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
     }
 
     /* Decide how we should decide blocks */
@@ -462,11 +438,6 @@ FF_ENABLE_DEPRECATION_WARNINGS
     }
 
     /* Bring in VOL flags from ffmpeg command-line */
-#if FF_API_GMC
-    if (avctx->flags & CODEC_FLAG_GMC)
-        x->gmc = 1;
-#endif
-
     x->vol_flags = 0;
     if (x->gmc) {
         x->vol_flags |= XVID_VOL_GMC;
@@ -713,17 +684,22 @@ FF_ENABLE_DEPRECATION_WARNINGS
     /* Encode a dummy frame to get the extradata immediately */
     if (x->quicktime_format) {
         AVFrame *picture;
-        AVPacket packet = {0};
-        int size, got_packet, ret;
+        AVPacket *packet;
+        int size, got_packet;
 
-        av_init_packet(&packet);
+        packet = av_packet_alloc();
+        if (!packet)
+            return AVERROR(ENOMEM);
 
         picture = av_frame_alloc();
-        if (!picture)
+        if (!picture) {
+            av_packet_free(&packet);
             return AVERROR(ENOMEM);
+        }
 
         xerr = xvid_encore(NULL, XVID_ENC_CREATE, &xvid_enc_create, NULL);
         if( xerr ) {
+            av_packet_free(&packet);
             av_frame_free(&picture);
             av_log(avctx, AV_LOG_ERROR, "Xvid: Could not create encoder reference\n");
             return AVERROR_EXTERNAL;
@@ -732,6 +708,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
         size = ((avctx->width + 1) & ~1) * ((avctx->height + 1) & ~1);
         picture->data[0] = av_malloc(size + size / 2);
         if (!picture->data[0]) {
+            av_packet_free(&packet);
             av_frame_free(&picture);
             return AVERROR(ENOMEM);
         }
@@ -739,9 +716,8 @@ FF_ENABLE_DEPRECATION_WARNINGS
         picture->data[2] = picture->data[1] + size / 4;
         memset(picture->data[0], 0, size);
         memset(picture->data[1], 128, size / 2);
-        ret = xvid_encode_frame(avctx, &packet, picture, &got_packet);
-        if (!ret && got_packet)
-            av_packet_unref(&packet);
+        xvid_encode_frame(avctx, packet, picture, &got_packet);
+        av_packet_free(&packet);
         av_free(picture->data[0]);
         av_frame_free(&picture);
         xvid_encore(x->encoder_handle, XVID_ENC_DESTROY, NULL, NULL);
@@ -938,7 +914,7 @@ static const AVOption options[] = {
     { "frame",       NULL,                                                0, AV_OPT_TYPE_CONST, { .i64 = 2 }, INT_MIN, INT_MAX, VE, "ssim" },
     { "ssim_acc",    "SSIM accuracy",                   OFFSET(ssim_acc),    AV_OPT_TYPE_INT,   { .i64 = 2 },       0,       4, VE         },
     { "gmc",         "use GMC",                         OFFSET(gmc),         AV_OPT_TYPE_INT,   { .i64 = 0 },       0,       1, VE         },
-    { "me_quality",  "Motion estimation quality",       OFFSET(me_quality),  AV_OPT_TYPE_INT,   { .i64 = 0 },       0,       6, VE         },
+    { "me_quality",  "Motion estimation quality",       OFFSET(me_quality),  AV_OPT_TYPE_INT,   { .i64 = 4 },       0,       6, VE         },
     { "mpeg_quant",  "Use MPEG quantizers instead of H.263", OFFSET(mpeg_quant), AV_OPT_TYPE_INT, { .i64 = 0 },     0,       1, VE         },
     { NULL },
 };
@@ -963,4 +939,5 @@ AVCodec ff_libxvid_encoder = {
     .priv_class     = &xvid_class,
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE |
                       FF_CODEC_CAP_INIT_CLEANUP,
+    .wrapper_name   = "libxvid",
 };

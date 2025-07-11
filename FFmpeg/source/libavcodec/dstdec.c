@@ -27,6 +27,7 @@
 
 #include "libavutil/avassert.h"
 #include "libavutil/intreadwrite.h"
+#include "libavutil/mem_internal.h"
 #include "internal.h"
 #include "get_bits.h"
 #include "avcodec.h"
@@ -70,7 +71,7 @@ typedef struct DSTContext {
     GetBitContext gb;
     ArithCoder ac;
     Table fsets, probs;
-    DECLARE_ALIGNED(64, uint8_t, status)[DST_MAX_CHANNELS][16];
+    DECLARE_ALIGNED(16, uint8_t, status)[DST_MAX_CHANNELS][16];
     DECLARE_ALIGNED(16, int16_t, filter)[DST_MAX_ELEMENTS][16][256];
     DSDContext dsdctx[DST_MAX_CHANNELS];
 } DSTContext;
@@ -214,7 +215,7 @@ static uint8_t prob_dst_x_bit(int c)
     return (ff_reverse[c & 127] >> 1) + 1;
 }
 
-static void build_filter(int16_t table[DST_MAX_ELEMENTS][16][256], const Table *fsets)
+static int build_filter(int16_t table[DST_MAX_ELEMENTS][16][256], const Table *fsets)
 {
     int i, j, k, l;
 
@@ -225,14 +226,17 @@ static void build_filter(int16_t table[DST_MAX_ELEMENTS][16][256], const Table *
             int total = av_clip(length - j * 8, 0, 8);
 
             for (k = 0; k < 256; k++) {
-                int v = 0;
+                int64_t v = 0;
 
                 for (l = 0; l < total; l++)
                     v += (((k >> l) & 1) * 2 - 1) * fsets->coeff[i][j * 8 + l];
+                if ((int16_t)v != v)
+                    return AVERROR_INVALIDDATA;
                 table[i][j][k] = v;
             }
         }
     }
+    return 0;
 }
 
 static int decode_frame(AVCodecContext *avctx, void *data,
@@ -268,7 +272,7 @@ static int decode_frame(AVCodecContext *avctx, void *data,
         skip_bits1(gb);
         if (get_bits(gb, 6))
             return AVERROR_INVALIDDATA;
-        memcpy(frame->data[0], avpkt->data + 1, FFMIN(avpkt->size - 1, frame->nb_samples * avctx->channels));
+        memcpy(frame->data[0], avpkt->data + 1, FFMIN(avpkt->size - 1, frame->nb_samples * channels));
         goto dsd;
     }
 
@@ -293,7 +297,7 @@ static int decode_frame(AVCodecContext *avctx, void *data,
 
     same_map = get_bits1(gb);
 
-    if ((ret = read_map(gb, &s->fsets, map_ch_to_felem, avctx->channels)) < 0)
+    if ((ret = read_map(gb, &s->fsets, map_ch_to_felem, channels)) < 0)
         return ret;
 
     if (same_map) {
@@ -301,13 +305,13 @@ static int decode_frame(AVCodecContext *avctx, void *data,
         memcpy(map_ch_to_pelem, map_ch_to_felem, sizeof(map_ch_to_felem));
     } else {
         avpriv_request_sample(avctx, "Not Same Mapping");
-        if ((ret = read_map(gb, &s->probs, map_ch_to_pelem, avctx->channels)) < 0)
+        if ((ret = read_map(gb, &s->probs, map_ch_to_pelem, channels)) < 0)
             return ret;
     }
 
     /* Half Probability (10.10) */
 
-    for (ch = 0; ch < avctx->channels; ch++)
+    for (ch = 0; ch < channels; ch++)
         half_prob[ch] = get_bits1(gb);
 
     /* Filter Coef Sets (10.12) */
@@ -328,10 +332,12 @@ static int decode_frame(AVCodecContext *avctx, void *data,
         return AVERROR_INVALIDDATA;
     ac_init(ac, gb);
 
-    build_filter(s->filter, &s->fsets);
+    ret = build_filter(s->filter, &s->fsets);
+    if (ret < 0)
+        return ret;
 
     memset(s->status, 0xAA, sizeof(s->status));
-    memset(dsd, 0, frame->nb_samples * 4 * avctx->channels);
+    memset(dsd, 0, frame->nb_samples * 4 * channels);
 
     ac_get(ac, gb, prob_dst_x_bit(s->fsets.coeff[0][0]), &dst_x_bit);
 
@@ -361,16 +367,16 @@ static int decode_frame(AVCodecContext *avctx, void *data,
             v = ((predict >> 15) ^ residual) & 1;
             dsd[((i >> 3) * channels + ch) << 2] |= v << (7 - (i & 0x7 ));
 
-            AV_WN64A(status + 8, (AV_RN64A(status + 8) << 1) | ((AV_RN64A(status) >> 63) & 1));
-            AV_WN64A(status, (AV_RN64A(status) << 1) | v);
+            AV_WL64A(status + 8, (AV_RL64A(status + 8) << 1) | ((AV_RL64A(status) >> 63) & 1));
+            AV_WL64A(status, (AV_RL64A(status) << 1) | v);
         }
     }
 
 dsd:
-    for (i = 0; i < avctx->channels; i++) {
+    for (i = 0; i < channels; i++) {
         ff_dsd2pcm_translate(&s->dsdctx[i], frame->nb_samples, 0,
                              frame->data[0] + i * 4,
-                             avctx->channels * 4, pcm + i, avctx->channels);
+                             channels * 4, pcm + i, channels);
     }
 
     *got_frame_ptr = 1;
@@ -389,4 +395,5 @@ AVCodec ff_dst_decoder = {
     .capabilities   = AV_CODEC_CAP_DR1,
     .sample_fmts    = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_FLT,
                                                       AV_SAMPLE_FMT_NONE },
+    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };

@@ -225,14 +225,14 @@ static void bktr_getframe(uint64_t per_frame)
 {
     uint64_t curtime;
 
-    curtime = av_gettime();
+    curtime = av_gettime_relative();
     if (!last_frame_time
         || ((last_frame_time + per_frame) > curtime)) {
         if (!usleep(last_frame_time + per_frame + per_frame / 8 - curtime)) {
             if (!nsignals)
                 av_log(NULL, AV_LOG_INFO,
                        "SLEPT NO signals - %d microseconds late\n",
-                       (int)(av_gettime() - last_frame_time - per_frame));
+                       (int)(av_gettime_relative() - last_frame_time - per_frame));
         }
     }
     nsignals = 0;
@@ -294,7 +294,7 @@ static int grab_read_header(AVFormatContext *s1)
     st->codecpar->height = s->height;
     st->avg_frame_rate = framerate;
 
-    if (bktr_init(s1->filename, s->width, s->height, s->standard,
+    if (bktr_init(s1->url, s->width, s->height, s->standard,
                   &s->video_fd, &s->tuner_fd, -1, 0.0) < 0) {
         ret = AVERROR(EIO);
         goto out;
@@ -341,7 +341,7 @@ static const AVOption options[] = {
 };
 
 static const AVClass bktr_class = {
-    .class_name = "BKTR grab interface",
+    .class_name = "BKTR grab indev",
     .item_name  = av_default_item_name,
     .option     = options,
     .version    = LIBAVUTIL_VERSION_INT,

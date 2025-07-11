@@ -40,7 +40,7 @@ static void print_formats(AVFilterContext *filter_ctx)
     for (i = 0; i < filter_ctx->nb_##inout##puts; i++) {                     \
         if (filter_ctx->inout##puts[i]->type == AVMEDIA_TYPE_VIDEO) {   \
             AVFilterFormats *fmts =                                     \
-                filter_ctx->inout##puts[i]->outin##_formats;            \
+                filter_ctx->inout##puts[i]->outin##cfg.formats;            \
             for (j = 0; j < fmts->nb_formats; j++)                    \
                 if(av_get_pix_fmt_name(fmts->formats[j]))               \
                 printf(#INOUT "PUT[%d] %s: fmt:%s\n",                   \
@@ -50,13 +50,13 @@ static void print_formats(AVFilterContext *filter_ctx)
             AVFilterFormats *fmts;                                      \
             AVFilterChannelLayouts *layouts;                            \
                                                                         \
-            fmts = filter_ctx->inout##puts[i]->outin##_formats;         \
+            fmts = filter_ctx->inout##puts[i]->outin##cfg.formats;         \
             for (j = 0; j < fmts->nb_formats; j++)                    \
                 printf(#INOUT "PUT[%d] %s: fmt:%s\n",                   \
                        i, avfilter_pad_get_name(filter_ctx->inout##put_pads, i),      \
                        av_get_sample_fmt_name(fmts->formats[j]));       \
                                                                         \
-            layouts = filter_ctx->inout##puts[i]->outin##_channel_layouts; \
+            layouts = filter_ctx->inout##puts[i]->outin##cfg.channel_layouts; \
             for (j = 0; j < layouts->nb_channel_layouts; j++) {                  \
                 char buf[256];                                          \
                 av_get_channel_layout_string(buf, sizeof(buf), -1,      \
@@ -73,7 +73,7 @@ static void print_formats(AVFilterContext *filter_ctx)
 
 int main(int argc, char **argv)
 {
-    AVFilter *filter;
+    const AVFilter *filter;
     AVFilterContext *filter_ctx;
     AVFilterGraph *graph_ctx;
     const char *filter_name;
@@ -96,8 +96,6 @@ int main(int argc, char **argv)
     graph_ctx = avfilter_graph_alloc();
     if (!graph_ctx)
         return 1;
-
-    avfilter_register_all();
 
     /* get a corresponding filter and open it */
     if (!(filter = avfilter_get_by_name(filter_name))) {
@@ -140,9 +138,9 @@ int main(int argc, char **argv)
     }
 
     if (filter->query_formats)
-        filter->query_formats(filter_ctx);
+        ret = filter->query_formats(filter_ctx);
     else
-        ff_default_query_formats(filter_ctx);
+        ret = ff_default_query_formats(filter_ctx);
 
     print_formats(filter_ctx);
 

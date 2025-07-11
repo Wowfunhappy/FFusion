@@ -145,10 +145,21 @@ int i, j;
 
     if (((intptr_t)dst | (intptr_t)src | stride_dst | stride_src) & 15) {
         for (i = 0; i < height; i++) {
-            for (j = 0; j < width; j+=8)
+            for (j = 0; j < width - 7; j+=8)
                 AV_COPY64U(dst+j, src+j);
             dst += stride_dst;
             src += stride_src;
+        }
+        if (width&7) {
+            dst += ((width>>3)<<3) - stride_dst * height;
+            src += ((width>>3)<<3) - stride_src * height;
+            width &= 7;
+            for (i = 0; i < height; i++) {
+                for (j = 0; j < width; j++)
+                    dst[j] = src[j];
+                dst += stride_dst;
+                src += stride_src;
+            }
         }
     } else {
         for (i = 0; i < height; i++) {
@@ -842,9 +853,20 @@ void ff_hevc_deblocking_boundary_strengths(HEVCContext *s, int x0, int y0,
 void ff_hevc_hls_filter(HEVCContext *s, int x, int y, int ctb_size)
 {
     int x_end = x >= s->ps.sps->width  - ctb_size;
-    if (s->avctx->skip_loop_filter < AVDISCARD_ALL)
+    int skip = 0;
+    if (s->avctx->skip_loop_filter >= AVDISCARD_ALL ||
+        (s->avctx->skip_loop_filter >= AVDISCARD_NONKEY && !IS_IDR(s)) ||
+        (s->avctx->skip_loop_filter >= AVDISCARD_NONINTRA &&
+         s->sh.slice_type != HEVC_SLICE_I) ||
+        (s->avctx->skip_loop_filter >= AVDISCARD_BIDIR &&
+         s->sh.slice_type == HEVC_SLICE_B) ||
+        (s->avctx->skip_loop_filter >= AVDISCARD_NONREF &&
+        ff_hevc_nal_is_nonref(s->nal_unit_type)))
+        skip = 1;
+
+    if (!skip)
         deblocking_filter_CTB(s, x, y);
-    if (s->ps.sps->sao_enabled) {
+    if (s->ps.sps->sao_enabled && !skip) {
         int y_end = y >= s->ps.sps->height - ctb_size;
         if (y && x)
             sao_filter_CTB(s, x - ctb_size, y - ctb_size);

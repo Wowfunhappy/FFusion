@@ -18,10 +18,6 @@
 
 #include <windows.h>
 
-#if !defined(_WIN32_WINNT) || _WIN32_WINNT < 0x0600
-#undef _WIN32_WINNT
-#define _WIN32_WINNT 0x0600
-#endif
 #define DXVA2API_USE_BITFIELDS
 #define COBJMACROS
 
@@ -128,7 +124,7 @@ static void dxva2_pool_release_dummy(void *opaque, uint8_t *data)
     // released in dxva2_frames_uninit()
 }
 
-static AVBufferRef *dxva2_pool_alloc(void *opaque, int size)
+static AVBufferRef *dxva2_pool_alloc(void *opaque, buffer_size_t size)
 {
     AVHWFramesContext      *ctx = (AVHWFramesContext*)opaque;
     DXVA2FramesContext       *s = ctx->internal->priv;
@@ -137,7 +133,7 @@ static AVBufferRef *dxva2_pool_alloc(void *opaque, int size)
     if (s->nb_surfaces_used < hwctx->nb_surfaces) {
         s->nb_surfaces_used++;
         return av_buffer_create((uint8_t*)s->surfaces_internal[s->nb_surfaces_used - 1],
-                                sizeof(*hwctx->surfaces), dxva2_pool_release_dummy, 0, 0);
+                                sizeof(**hwctx->surfaces), dxva2_pool_release_dummy, 0, 0);
     }
 
     return NULL;
@@ -352,7 +348,7 @@ static int dxva2_transfer_data_to(AVHWFramesContext *ctx, AVFrame *dst,
     if (ret < 0)
         goto fail;
 
-    av_image_copy(map->data, map->linesize, src->data, src->linesize,
+    av_image_copy(map->data, map->linesize, (const uint8_t **)src->data, src->linesize,
                   ctx->sw_format, src->width, src->height);
 
 fail:
@@ -383,7 +379,7 @@ static int dxva2_transfer_data_from(AVHWFramesContext *ctx, AVFrame *dst,
         dst_linesize[i] = dst->linesize[i];
         src_linesize[i] = map->linesize[i];
     }
-    av_image_copy_uc_from(dst->data, dst_linesize, map->data, src_linesize,
+    av_image_copy_uc_from(dst->data, dst_linesize, (const uint8_t **)map->data, src_linesize,
                           ctx->sw_format, src->width, src->height);
 fail:
     av_frame_free(&map);

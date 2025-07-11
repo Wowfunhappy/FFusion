@@ -35,7 +35,7 @@ typedef struct TTAContext {
     int last_frame_size;
 } TTAContext;
 
-static int tta_probe(AVProbeData *p)
+static int tta_probe(const AVProbeData *p)
 {
     if (AV_RL32(&p->buf[0]) == MKTAG('T', 'T', 'A', '1') &&
         (AV_RL16(&p->buf[4]) == 1 || AV_RL16(&p->buf[4]) == 2) &&
@@ -91,7 +91,7 @@ static int tta_read_header(AVFormatContext *s)
     c->totalframes = nb_samples / c->frame_size + (c->last_frame_size < c->frame_size);
     c->currentframe = 0;
 
-    if(c->totalframes >= UINT_MAX/sizeof(uint32_t) || c->totalframes <= 0){
+    if(c->totalframes >= (INT_MAX - 4)/sizeof(uint32_t) || c->totalframes <= 0){
         av_log(s, AV_LOG_ERROR, "totalframes %d invalid\n", c->totalframes);
         return AVERROR_INVALIDDATA;
     }
@@ -119,7 +119,9 @@ static int tta_read_header(AVFormatContext *s)
     for (i = 0; i < c->totalframes; i++) {
         uint32_t size = avio_rl32(s->pb);
         int r;
-        if ((r = av_add_index_entry(st, framepos, i * c->frame_size, size, 0,
+        if (avio_feof(s->pb))
+            return AVERROR_INVALIDDATA;
+        if ((r = av_add_index_entry(st, framepos, i * (int64_t)c->frame_size, size, 0,
                                     AVINDEX_KEYFRAME)) < 0)
             return r;
         framepos += size;

@@ -42,6 +42,7 @@
 
 typedef struct OpusEncOptions {
     float max_delay_ms;
+    int apply_phase_inv;
 } OpusEncOptions;
 
 typedef struct OpusPacketInfo {
@@ -50,7 +51,5 @@ typedef struct OpusPacketInfo {
     int framesize;
     int frames;
 } OpusPacketInfo;
-
-void ff_celt_enc_bitalloc(OpusRangeCoder *rc, CeltFrame *f);
 
 #endif /* AVCODEC_OPUSENC_H */

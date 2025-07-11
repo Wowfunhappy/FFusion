@@ -32,27 +32,6 @@
 #include "pixfmt.h"
 #include "pixdesc.h"
 
-typedef struct VDPAUDeviceContext {
-    VdpVideoSurfaceQueryGetPutBitsYCbCrCapabilities *get_transfer_caps;
-    VdpVideoSurfaceGetBitsYCbCr                     *get_data;
-    VdpVideoSurfacePutBitsYCbCr                     *put_data;
-    VdpVideoSurfaceCreate                           *surf_create;
-    VdpVideoSurfaceDestroy                          *surf_destroy;
-
-    enum AVPixelFormat *pix_fmts[3];
-    int              nb_pix_fmts[3];
-} VDPAUDeviceContext;
-
-typedef struct VDPAUFramesContext {
-    VdpVideoSurfaceGetBitsYCbCr *get_data;
-    VdpVideoSurfacePutBitsYCbCr *put_data;
-    VdpChromaType chroma_type;
-    int chroma_idx;
-
-    const enum AVPixelFormat *pix_fmts;
-    int                       nb_pix_fmts;
-} VDPAUFramesContext;
-
 typedef struct VDPAUPixFmtMap {
     VdpYCbCrFormat vdpau_fmt;
     enum AVPixelFormat pix_fmt;
@@ -61,6 +40,10 @@ typedef struct VDPAUPixFmtMap {
 static const VDPAUPixFmtMap pix_fmts_420[] = {
     { VDP_YCBCR_FORMAT_NV12, AV_PIX_FMT_NV12    },
     { VDP_YCBCR_FORMAT_YV12, AV_PIX_FMT_YUV420P },
+#ifdef VDP_YCBCR_FORMAT_P016
+    { VDP_YCBCR_FORMAT_P016, AV_PIX_FMT_P016    },
+    { VDP_YCBCR_FORMAT_P010, AV_PIX_FMT_P010    },
+#endif
     { 0,                     AV_PIX_FMT_NONE,   },
 };
 
@@ -73,18 +56,52 @@ static const VDPAUPixFmtMap pix_fmts_422[] = {
 };
 
 static const VDPAUPixFmtMap pix_fmts_444[] = {
-    { VDP_YCBCR_FORMAT_YV12, AV_PIX_FMT_YUV444P },
-    { 0,                     AV_PIX_FMT_NONE,   },
+#ifdef VDP_YCBCR_FORMAT_Y_U_V_444
+    { VDP_YCBCR_FORMAT_Y_U_V_444, AV_PIX_FMT_YUV444P },
+#endif
+#ifdef VDP_YCBCR_FORMAT_P016
+    {VDP_YCBCR_FORMAT_Y_U_V_444_16, AV_PIX_FMT_YUV444P16},
+#endif
+    { 0,                          AV_PIX_FMT_NONE,   },
 };
 
 static const struct {
     VdpChromaType chroma_type;
+    enum AVPixelFormat frames_sw_format;
     const VDPAUPixFmtMap *map;
 } vdpau_pix_fmts[] = {
-    { VDP_CHROMA_TYPE_420, pix_fmts_420 },
-    { VDP_CHROMA_TYPE_422, pix_fmts_422 },
-    { VDP_CHROMA_TYPE_444, pix_fmts_444 },
+    { VDP_CHROMA_TYPE_420, AV_PIX_FMT_YUV420P, pix_fmts_420 },
+    { VDP_CHROMA_TYPE_422, AV_PIX_FMT_YUV422P, pix_fmts_422 },
+    { VDP_CHROMA_TYPE_444, AV_PIX_FMT_YUV444P, pix_fmts_444 },
+#ifdef VDP_YCBCR_FORMAT_P016
+    { VDP_CHROMA_TYPE_420_16, AV_PIX_FMT_YUV420P10, pix_fmts_420 },
+    { VDP_CHROMA_TYPE_420_16, AV_PIX_FMT_YUV420P12, pix_fmts_420 },
+    { VDP_CHROMA_TYPE_422_16, AV_PIX_FMT_YUV422P10, pix_fmts_422 },
+    { VDP_CHROMA_TYPE_444_16, AV_PIX_FMT_YUV444P10, pix_fmts_444 },
+    { VDP_CHROMA_TYPE_444_16, AV_PIX_FMT_YUV444P12, pix_fmts_444 },
+#endif
 };
+
+typedef struct VDPAUDeviceContext {
+    VdpVideoSurfaceQueryGetPutBitsYCbCrCapabilities *get_transfer_caps;
+    VdpVideoSurfaceGetBitsYCbCr                     *get_data;
+    VdpVideoSurfacePutBitsYCbCr                     *put_data;
+    VdpVideoSurfaceCreate                           *surf_create;
+    VdpVideoSurfaceDestroy                          *surf_destroy;
+
+    enum AVPixelFormat *pix_fmts[FF_ARRAY_ELEMS(vdpau_pix_fmts)];
+    int              nb_pix_fmts[FF_ARRAY_ELEMS(vdpau_pix_fmts)];
+} VDPAUDeviceContext;
+
+typedef struct VDPAUFramesContext {
+    VdpVideoSurfaceGetBitsYCbCr *get_data;
+    VdpVideoSurfacePutBitsYCbCr *put_data;
+    VdpChromaType chroma_type;
+    int chroma_idx;
+
+    const enum AVPixelFormat *pix_fmts;
+    int                       nb_pix_fmts;
+} VDPAUFramesContext;
 
 static int count_pixfmts(const VDPAUPixFmtMap *map)
 {
@@ -170,6 +187,35 @@ static void vdpau_device_uninit(AVHWDeviceContext *ctx)
         av_freep(&priv->pix_fmts[i]);
 }
 
+static int vdpau_frames_get_constraints(AVHWDeviceContext *ctx,
+                                        const void *hwconfig,
+                                        AVHWFramesConstraints *constraints)
+{
+    VDPAUDeviceContext   *priv  = ctx->internal->priv;
+    int nb_sw_formats = 0;
+    int i;
+
+    constraints->valid_sw_formats = av_malloc_array(FF_ARRAY_ELEMS(vdpau_pix_fmts) + 1,
+                                                    sizeof(*constraints->valid_sw_formats));
+    if (!constraints->valid_sw_formats)
+        return AVERROR(ENOMEM);
+
+    for (i = 0; i < FF_ARRAY_ELEMS(vdpau_pix_fmts); i++) {
+        if (priv->nb_pix_fmts[i] > 1)
+            constraints->valid_sw_formats[nb_sw_formats++] = vdpau_pix_fmts[i].frames_sw_format;
+    }
+    constraints->valid_sw_formats[nb_sw_formats] = AV_PIX_FMT_NONE;
+
+    constraints->valid_hw_formats = av_malloc_array(2, sizeof(*constraints->valid_hw_formats));
+    if (!constraints->valid_hw_formats)
+        return AVERROR(ENOMEM);
+
+    constraints->valid_hw_formats[0] = AV_PIX_FMT_VDPAU;
+    constraints->valid_hw_formats[1] = AV_PIX_FMT_NONE;
+
+    return 0;
+}
+
 static void vdpau_buffer_free(void *opaque, uint8_t *data)
 {
     AVHWFramesContext          *ctx = opaque;
@@ -179,7 +225,7 @@ static void vdpau_buffer_free(void *opaque, uint8_t *data)
     device_priv->surf_destroy(surf);
 }
 
-static AVBufferRef *vdpau_pool_alloc(void *opaque, int size)
+static AVBufferRef *vdpau_pool_alloc(void *opaque, buffer_size_t size)
 {
     AVHWFramesContext             *ctx = opaque;
     VDPAUFramesContext           *priv = ctx->internal->priv;
@@ -214,26 +260,18 @@ static int vdpau_frames_init(AVHWFramesContext *ctx)
 
     int i;
 
-    switch (ctx->sw_format) {
-    case AV_PIX_FMT_YUV420P: priv->chroma_type = VDP_CHROMA_TYPE_420; break;
-    case AV_PIX_FMT_YUV422P: priv->chroma_type = VDP_CHROMA_TYPE_422; break;
-    case AV_PIX_FMT_YUV444P: priv->chroma_type = VDP_CHROMA_TYPE_444; break;
-    default:
-        av_log(ctx, AV_LOG_ERROR, "Unsupported data layout: %s\n",
-               av_get_pix_fmt_name(ctx->sw_format));
-        return AVERROR(ENOSYS);
-    }
-
     for (i = 0; i < FF_ARRAY_ELEMS(vdpau_pix_fmts); i++) {
-        if (vdpau_pix_fmts[i].chroma_type == priv->chroma_type) {
+        if (vdpau_pix_fmts[i].frames_sw_format == ctx->sw_format) {
+            priv->chroma_type = vdpau_pix_fmts[i].chroma_type;
             priv->chroma_idx  = i;
             priv->pix_fmts    = device_priv->pix_fmts[i];
             priv->nb_pix_fmts = device_priv->nb_pix_fmts[i];
             break;
         }
     }
-    if (!priv->pix_fmts) {
-        av_log(ctx, AV_LOG_ERROR, "Unsupported chroma type: %d\n", priv->chroma_type);
+    if (priv->nb_pix_fmts < 2) {
+        av_log(ctx, AV_LOG_ERROR, "Unsupported sw format: %s\n",
+               av_get_pix_fmt_name(ctx->sw_format));
         return AVERROR(ENOSYS);
     }
 
@@ -327,7 +365,14 @@ static int vdpau_transfer_data_from(AVHWFramesContext *ctx, AVFrame *dst,
         return AVERROR(EINVAL);
     }
 
-    if (vdpau_format == VDP_YCBCR_FORMAT_YV12)
+    if ((vdpau_format == VDP_YCBCR_FORMAT_YV12)
+#ifdef VDP_YCBCR_FORMAT_Y_U_V_444
+            || (vdpau_format == VDP_YCBCR_FORMAT_Y_U_V_444)
+#endif
+#ifdef VDP_YCBCR_FORMAT_P016
+            || (vdpau_format == VDP_YCBCR_FORMAT_Y_U_V_444_16)
+#endif
+            )
         FFSWAP(void*, data[1], data[2]);
 
     err = priv->get_data(surf, vdpau_format, data, linesize);
@@ -378,7 +423,11 @@ static int vdpau_transfer_data_to(AVHWFramesContext *ctx, AVFrame *dst,
         return AVERROR(EINVAL);
     }
 
-    if (vdpau_format == VDP_YCBCR_FORMAT_YV12)
+    if ((vdpau_format == VDP_YCBCR_FORMAT_YV12)
+#ifdef VDP_YCBCR_FORMAT_Y_U_V_444
+            || (vdpau_format == VDP_YCBCR_FORMAT_Y_U_V_444)
+#endif
+            )
         FFSWAP(const void*, data[1], data[2]);
 
     err = priv->put_data(surf, vdpau_format, data, linesize);
@@ -468,6 +517,7 @@ const HWContextType ff_hwcontext_type_vdpau = {
 #endif
     .device_init          = vdpau_device_init,
     .device_uninit        = vdpau_device_uninit,
+    .frames_get_constraints = vdpau_frames_get_constraints,
     .frames_init          = vdpau_frames_init,
     .frames_get_buffer    = vdpau_get_buffer,
     .transfer_get_formats = vdpau_transfer_get_formats,

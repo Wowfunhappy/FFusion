@@ -100,16 +100,12 @@ static av_cold int xan_decode_init(AVCodecContext *avctx)
         return AVERROR(ENOMEM);
     s->buffer2_size = avctx->width * avctx->height;
     s->buffer2 = av_malloc(s->buffer2_size + 130);
-    if (!s->buffer2) {
-        av_freep(&s->buffer1);
+    if (!s->buffer2)
         return AVERROR(ENOMEM);
-    }
 
     s->last_frame = av_frame_alloc();
-    if (!s->last_frame) {
-        xan_decode_end(avctx);
+    if (!s->last_frame)
         return AVERROR(ENOMEM);
-    }
 
     return 0;
 }
@@ -614,6 +610,9 @@ static int xan_decode_frame(AVCodecContext *avctx,
         return AVERROR_INVALIDDATA;
     }
 
+    if (buf_size < 9)
+        return AVERROR_INVALIDDATA;
+
     if ((ret = ff_get_buffer(avctx, frame, AV_GET_BUFFER_FLAG_REF)) < 0)
         return ret;
 
@@ -649,4 +648,5 @@ AVCodec ff_xan_wc3_decoder = {
     .close          = xan_decode_end,
     .decode         = xan_decode_frame,
     .capabilities   = AV_CODEC_CAP_DR1,
+    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP | FF_CODEC_CAP_INIT_THREADSAFE,
 };

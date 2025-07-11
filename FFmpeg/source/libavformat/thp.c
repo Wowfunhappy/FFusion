@@ -45,7 +45,7 @@ typedef struct ThpDemuxContext {
 } ThpDemuxContext;
 
 
-static int thp_probe(AVProbeData *p)
+static int thp_probe(const AVProbeData *p)
 {
     double d;
     /* check file header */
@@ -189,7 +189,6 @@ static int thp_read_packet(AVFormatContext *s,
         if (ret < 0)
             return ret;
         if (ret != size) {
-            av_packet_unref(pkt);
             return AVERROR(EIO);
         }
 
@@ -199,7 +198,6 @@ static int thp_read_packet(AVFormatContext *s,
         if (ret < 0)
             return ret;
         if (ret != thp->audiosize) {
-            av_packet_unref(pkt);
             return AVERROR(EIO);
         }
 

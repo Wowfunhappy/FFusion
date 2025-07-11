@@ -51,7 +51,7 @@
 #endif
 
 #ifndef emms_c
-#   define emms_c() while(0)
+#   define emms_c() do {} while(0)
 #endif
 
 #ifndef attribute_align_arg
@@ -62,10 +62,10 @@
 #endif
 #endif
 
-#if defined(_MSC_VER) && CONFIG_SHARED
-#    define av_export __declspec(dllimport)
+#if defined(_WIN32) && CONFIG_SHARED && !defined(BUILDING_avutil)
+#    define av_export_avutil __declspec(dllimport)
 #else
-#    define av_export
+#    define av_export_avutil
 #endif
 
 #if HAVE_PRAGMA_DEPRECATED
@@ -76,8 +76,8 @@
 #        define FF_DISABLE_DEPRECATION_WARNINGS __pragma(warning(push)) __pragma(warning(disable:4996))
 #        define FF_ENABLE_DEPRECATION_WARNINGS  __pragma(warning(pop))
 #    else
-#        define FF_DISABLE_DEPRECATION_WARNINGS _Pragma("GCC diagnostic ignored \"-Wdeprecated-declarations\"")
-#        define FF_ENABLE_DEPRECATION_WARNINGS  _Pragma("GCC diagnostic warning \"-Wdeprecated-declarations\"")
+#        define FF_DISABLE_DEPRECATION_WARNINGS _Pragma("GCC diagnostic push") _Pragma("GCC diagnostic ignored \"-Wdeprecated-declarations\"")
+#        define FF_ENABLE_DEPRECATION_WARNINGS  _Pragma("GCC diagnostic pop")
 #    endif
 #else
 #    define FF_DISABLE_DEPRECATION_WARNINGS
@@ -91,10 +91,6 @@
     type av_##name##_get_##field(const str *s) { return s->field; } \
     void av_##name##_set_##field(str *s, type v) { s->field = v; }
 
-// Some broken preprocessors need a second expansion
-// to be forced to tokenize __VA_ARGS__
-#define E1(x) x
-
 /* Check if the hard coded offset of a struct member still matches reality.
  * Induce a compilation failure if not.
  */
@@ -102,69 +98,11 @@
         int x_##o[offsetof(s, m) == o? 1: -1];         \
     }
 
-#define LOCAL_ALIGNED_A(a, t, v, s, o, ...)             \
-    uint8_t la_##v[sizeof(t s o) + (a)];                \
-    t (*v) o = (void *)FFALIGN((uintptr_t)la_##v, a)
 
-#define LOCAL_ALIGNED_D(a, t, v, s, o, ...)             \
-    DECLARE_ALIGNED(a, t, la_##v) s o;                  \
-    t (*v) o = la_##v
+#define FF_ALLOC_TYPED_ARRAY(p, nelem)  (p = av_malloc_array(nelem, sizeof(*p)))
+#define FF_ALLOCZ_TYPED_ARRAY(p, nelem) (p = av_mallocz_array(nelem, sizeof(*p)))
 
-#define LOCAL_ALIGNED(a, t, v, ...) E1(LOCAL_ALIGNED_A(a, t, v, __VA_ARGS__,,))
-
-#if HAVE_LOCAL_ALIGNED_8
-#   define LOCAL_ALIGNED_8(t, v, ...) E1(LOCAL_ALIGNED_D(8, t, v, __VA_ARGS__,,))
-#else
-#   define LOCAL_ALIGNED_8(t, v, ...) LOCAL_ALIGNED(8, t, v, __VA_ARGS__)
-#endif
-
-#if HAVE_LOCAL_ALIGNED_16
-#   define LOCAL_ALIGNED_16(t, v, ...) E1(LOCAL_ALIGNED_D(16, t, v, __VA_ARGS__,,))
-#else
-#   define LOCAL_ALIGNED_16(t, v, ...) LOCAL_ALIGNED(16, t, v, __VA_ARGS__)
-#endif
-
-#if HAVE_LOCAL_ALIGNED_32
-#   define LOCAL_ALIGNED_32(t, v, ...) E1(LOCAL_ALIGNED_D(32, t, v, __VA_ARGS__,,))
-#else
-#   define LOCAL_ALIGNED_32(t, v, ...) LOCAL_ALIGNED(32, t, v, __VA_ARGS__)
-#endif
-
-#define FF_ALLOC_OR_GOTO(ctx, p, size, label)\
-{\
-    p = av_malloc(size);\
-    if (!(p) && (size) != 0) {\
-        av_log(ctx, AV_LOG_ERROR, "Cannot allocate memory.\n");\
-        goto label;\
-    }\
-}
-
-#define FF_ALLOCZ_OR_GOTO(ctx, p, size, label)\
-{\
-    p = av_mallocz(size);\
-    if (!(p) && (size) != 0) {\
-        av_log(ctx, AV_LOG_ERROR, "Cannot allocate memory.\n");\
-        goto label;\
-    }\
-}
-
-#define FF_ALLOC_ARRAY_OR_GOTO(ctx, p, nelem, elsize, label)\
-{\
-    p = av_malloc_array(nelem, elsize);\
-    if (!p) {\
-        av_log(ctx, AV_LOG_ERROR, "Cannot allocate memory.\n");\
-        goto label;\
-    }\
-}
-
-#define FF_ALLOCZ_ARRAY_OR_GOTO(ctx, p, nelem, elsize, label)\
-{\
-    p = av_mallocz_array(nelem, elsize);\
-    if (!p) {\
-        av_log(ctx, AV_LOG_ERROR, "Cannot allocate memory.\n");\
-        goto label;\
-    }\
-}
+#define FF_PTR_ADD(ptr, off) ((off) ? (ptr) + (off) : (ptr))
 
 #include "libm.h"
 
@@ -346,11 +284,28 @@ void ff_check_pixfmt_descriptors(void);
 /**
  * Set a dictionary value to an ISO-8601 compliant timestamp string.
  *
- * @param s AVFormatContext
+ * @param dict pointer to a pointer to a dictionary struct. If *dict is NULL
+ *             a dictionary struct is allocated and put in *dict.
  * @param key metadata key
  * @param timestamp unix timestamp in microseconds
  * @return <0 on error
  */
 int avpriv_dict_set_timestamp(AVDictionary **dict, const char *key, int64_t timestamp);
+
+// Helper macro for AV_PIX_FMT_FLAG_PSEUDOPAL deprecation. Code inside FFmpeg
+// should always use FF_PSEUDOPAL. Once the public API flag gets removed, all
+// code using it is dead code.
+#if FF_API_PSEUDOPAL
+#define FF_PSEUDOPAL AV_PIX_FMT_FLAG_PSEUDOPAL
+#else
+#define FF_PSEUDOPAL 0
+#endif
+
+// Temporary typedef to simplify porting all AVBufferRef users to size_t
+#if FF_API_BUFFER_SIZE_T
+typedef int buffer_size_t;
+#else
+typedef size_t buffer_size_t;
+#endif
 
 #endif /* AVUTIL_INTERNAL_H */

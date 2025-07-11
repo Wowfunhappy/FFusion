@@ -38,6 +38,7 @@
 #include "libavutil/common.h"
 #include "libavutil/internal.h"
 #include "libavutil/lfg.h"
+#include "libavutil/mem_internal.h"
 #include "libavutil/time.h"
 
 #include "libavcodec/dct.h"
@@ -73,7 +74,7 @@ static void ff_prores_idct_wrap(int16_t *dst){
     for(i=0; i<64; i++){
         qmat[i]=4;
     }
-    ff_prores_idct(dst, qmat);
+    ff_prores_idct_10(dst, qmat);
     for(i=0; i<64; i++) {
          dst[i] -= 512;
     }
@@ -82,9 +83,9 @@ static void ff_prores_idct_wrap(int16_t *dst){
 static const struct algo idct_tab[] = {
     { "REF-DBL",     ff_ref_idct,          FF_IDCT_PERM_NONE },
     { "INT",         ff_j_rev_dct,         FF_IDCT_PERM_LIBMPEG2 },
-    { "SIMPLE-C",    ff_simple_idct_8,     FF_IDCT_PERM_NONE },
-    { "SIMPLE-C10",  ff_simple_idct_10,    FF_IDCT_PERM_NONE },
-    { "SIMPLE-C12",  ff_simple_idct_12,    FF_IDCT_PERM_NONE, 0, 1 },
+    { "SIMPLE-C",    ff_simple_idct_int16_8bit,     FF_IDCT_PERM_NONE },
+    { "SIMPLE-C10",  ff_simple_idct_int16_10bit,    FF_IDCT_PERM_NONE },
+    { "SIMPLE-C12",  ff_simple_idct_int16_12bit,    FF_IDCT_PERM_NONE, 0, 1 },
     { "PR-C",        ff_prores_idct_wrap,  FF_IDCT_PERM_NONE, 0, 1 },
 #if CONFIG_FAANIDCT
     { "FAANI",       ff_faanidct,          FF_IDCT_PERM_NONE },
@@ -222,8 +223,8 @@ static int dct_error(const struct algo *dct, int test, int is_idct, int speed, c
             v = abs(err);
             if (v > err_inf)
                 err_inf = v;
-            err2_matrix[i] += v * v;
-            err2 += v * v;
+            err2_matrix[i] += v * (int64_t)v;
+            err2 += v * (int64_t)v;
             sysErr[i] += block[i] - block1[i];
             blockSumErr += v;
             if (abs(block[i]) > maxout)

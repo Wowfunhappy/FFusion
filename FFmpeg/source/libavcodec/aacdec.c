@@ -50,11 +50,11 @@
 #include "aac.h"
 #include "aactab.h"
 #include "aacdectab.h"
+#include "adts_header.h"
 #include "cbrt_data.h"
 #include "sbr.h"
 #include "aacsbr.h"
 #include "mpeg4audio.h"
-#include "aacadtsdec.h"
 #include "profiles.h"
 #include "libavutil/intfloat.h"
 
@@ -68,6 +68,11 @@
 #elif ARCH_MIPS
 #   include "mips/aacdec_mips.h"
 #endif
+
+DECLARE_ALIGNED(32, static INTFLOAT, AAC_RENAME(sine_120))[120];
+DECLARE_ALIGNED(32, static INTFLOAT, AAC_RENAME(sine_960))[960];
+DECLARE_ALIGNED(32, static INTFLOAT, AAC_RENAME(aac_kbd_long_960))[960];
+DECLARE_ALIGNED(32, static INTFLOAT, AAC_RENAME(aac_kbd_short_120))[120];
 
 static av_always_inline void reset_predict_state(PredictorState *ps)
 {
@@ -247,14 +252,12 @@ static void apply_independent_coupling(AACContext *ac,
                                        SingleChannelElement *target,
                                        ChannelElement *cce, int index)
 {
-    int i;
     const float gain = cce->coup.gain[index][0];
     const float *src = cce->ch[0].ret;
     float *dest = target->ret;
     const int len = 1024 << (ac->oc[1].m4ac.sbr == 1);
 
-    for (i = 0; i < len; i++)
-        dest[i] += gain * src[i];
+    ac->fdsp->vector_fmac_scalar(dest, src, gain, len);
 }
 
 #include "aacdec_template.c"
@@ -318,8 +321,8 @@ static int latm_decode_audio_specific_config(struct LATMContext *latmctx,
         ac->oc[1].m4ac.sample_rate != m4ac.sample_rate ||
         ac->oc[1].m4ac.chan_config != m4ac.chan_config) {
 
-        if(latmctx->initialized) {
-            av_log(avctx, AV_LOG_INFO, "audio config changed\n");
+        if (latmctx->initialized) {
+            av_log(avctx, AV_LOG_INFO, "audio config changed (sample_rate=%d, chan_config=%d)\n", m4ac.sample_rate, m4ac.chan_config);
         } else {
             av_log(avctx, AV_LOG_DEBUG, "initializing latmctx\n");
         }

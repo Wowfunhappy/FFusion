@@ -603,7 +603,7 @@ null_chunk_retry:
         pkt = &nsv->ahead[NSV_ST_AUDIO];
         /* read raw audio specific header on the first audio chunk... */
         /* on ALL audio chunks ?? seems so! */
-        if (asize && st[NSV_ST_AUDIO]->codecpar->codec_tag == MKTAG('P', 'C', 'M', ' ')/* && fill_header*/) {
+        if (asize >= 4 && st[NSV_ST_AUDIO]->codecpar->codec_tag == MKTAG('P', 'C', 'M', ' ')/* && fill_header*/) {
             uint8_t bps;
             uint8_t channels;
             uint16_t samplerate;
@@ -662,10 +662,8 @@ static int nsv_read_packet(AVFormatContext *s, AVPacket *pkt)
     /* now pick one of the plates */
     for (i = 0; i < 2; i++) {
         if (nsv->ahead[i].data) {
-            /* avoid the cost of new_packet + memcpy(->data) */
-            memcpy(pkt, &nsv->ahead[i], sizeof(AVPacket));
-            nsv->ahead[i].data = NULL; /* we ate that one */
-            return pkt->size;
+            av_packet_move_ref(pkt, &nsv->ahead[i]);
+            return 0;
         }
     }
 
@@ -705,7 +703,7 @@ static int nsv_read_close(AVFormatContext *s)
     return 0;
 }
 
-static int nsv_probe(AVProbeData *p)
+static int nsv_probe(const AVProbeData *p)
 {
     int i, score = 0;
 

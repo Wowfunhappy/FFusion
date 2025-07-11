@@ -21,23 +21,10 @@
  * Null bitstream filter -- pass the input through unchanged.
  */
 
-#include "avcodec.h"
 #include "bsf.h"
-
-static int null_filter(AVBSFContext *ctx, AVPacket *out)
-{
-    AVPacket *in;
-    int ret;
-
-    ret = ff_bsf_get_packet(ctx, &in);
-    if (ret < 0)
-        return ret;
-    av_packet_move_ref(out, in);
-    av_packet_free(&in);
-    return 0;
-}
+#include "bsf_internal.h"
 
 const AVBitStreamFilter ff_null_bsf = {
     .name           = "null",
-    .filter         = null_filter,
+    .filter         = ff_bsf_get_packet_ref,
 };

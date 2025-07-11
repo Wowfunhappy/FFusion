@@ -26,11 +26,11 @@
 #include "libavutil/motion_vector.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
-#include "libavutil/pixelutils.h"
 #include "avfilter.h"
 #include "formats.h"
 #include "internal.h"
 #include "video.h"
+#include "scene_sad.h"
 
 #define ME_MODE_BIDIR 0
 #define ME_MODE_BILAT 1
@@ -145,12 +145,18 @@ typedef struct Block {
     struct Block *subs;
 } Block;
 
-typedef struct Pixel {
+typedef struct PixelMVS {
     int16_t mvs[NB_PIXEL_MVS][2];
+} PixelMVS;
+
+typedef struct PixelWeights {
     uint32_t weights[NB_PIXEL_MVS];
+} PixelWeights;
+
+typedef struct PixelRefs {
     int8_t refs[NB_PIXEL_MVS];
     int nb;
-} Pixel;
+} PixelRefs;
 
 typedef struct Frame {
     AVFrame *avf;
@@ -172,15 +178,18 @@ typedef struct MIContext {
     Frame frames[NB_FRAMES];
     Cluster clusters[NB_CLUSTERS];
     Block *int_blocks;
-    Pixel *pixels;
+    PixelMVS *pixel_mvs;
+    PixelWeights *pixel_weights;
+    PixelRefs *pixel_refs;
     int (*mv_table[3])[2][2];
     int64_t out_pts;
     int b_width, b_height, b_count;
     int log2_mb_size;
+    int bitdepth;
 
     int scd_method;
     int scene_changed;
-    av_pixelutils_sad_fn sad;
+    ff_scene_sad_fn sad;
     double prev_mafd;
     double scd_threshold;
 
@@ -221,7 +230,7 @@ static const AVOption minterpolate_options[] = {
     { "scd", "scene change detection method", OFFSET(scd_method), AV_OPT_TYPE_INT, {.i64 = SCD_METHOD_FDIFF}, SCD_METHOD_NONE, SCD_METHOD_FDIFF, FLAGS, "scene" },
         CONST("none",   "disable detection",                    SCD_METHOD_NONE,        "scene"),
         CONST("fdiff",  "frame difference",                     SCD_METHOD_FDIFF,       "scene"),
-    { "scd_threshold", "scene change threshold", OFFSET(scd_threshold), AV_OPT_TYPE_DOUBLE, {.dbl = 5.0}, 0, 100.0, FLAGS },
+    { "scd_threshold", "scene change threshold", OFFSET(scd_threshold), AV_OPT_TYPE_DOUBLE, {.dbl = 10.}, 0, 100.0, FLAGS },
     { NULL }
 };
 
@@ -335,6 +344,7 @@ static int config_input(AVFilterLink *inlink)
 
     mi_ctx->log2_chroma_h = desc->log2_chroma_h;
     mi_ctx->log2_chroma_w = desc->log2_chroma_w;
+    mi_ctx->bitdepth = desc->comp[0].depth;
 
     mi_ctx->nb_planes = av_pix_fmt_count_planes(inlink->format);
 
@@ -353,7 +363,24 @@ static int config_input(AVFilterLink *inlink)
     }
 
     if (mi_ctx->mi_mode == MI_MODE_MCI) {
-        if (!(mi_ctx->pixels = av_mallocz_array(width * height, sizeof(Pixel))))
+        if (mi_ctx->b_width < 2 || mi_ctx->b_height < 2) {
+            av_log(inlink->dst, AV_LOG_ERROR, "Height or width < %d\n",
+                   2 * mi_ctx->mb_size);
+            return AVERROR(EINVAL);
+        }
+        ff_me_init_context(me_ctx, mi_ctx->mb_size, mi_ctx->search_param,
+                           width, height, 0, (mi_ctx->b_width - 1) << mi_ctx->log2_mb_size,
+                           0, (mi_ctx->b_height - 1) << mi_ctx->log2_mb_size);
+
+        if (mi_ctx->me_mode == ME_MODE_BIDIR)
+            me_ctx->get_cost = &get_sad_ob;
+        else if (mi_ctx->me_mode == ME_MODE_BILAT)
+            me_ctx->get_cost = &get_sbad_ob;
+
+        mi_ctx->pixel_mvs = av_mallocz_array(width * height, sizeof(PixelMVS));
+        mi_ctx->pixel_weights = av_mallocz_array(width * height, sizeof(PixelWeights));
+        mi_ctx->pixel_refs = av_mallocz_array(width * height, sizeof(PixelRefs));
+        if (!mi_ctx->pixel_mvs || !mi_ctx->pixel_weights || !mi_ctx->pixel_refs)
             return AVERROR(ENOMEM);
 
         if (mi_ctx->me_mode == ME_MODE_BILAT)
@@ -370,17 +397,10 @@ static int config_input(AVFilterLink *inlink)
     }
 
     if (mi_ctx->scd_method == SCD_METHOD_FDIFF) {
-        mi_ctx->sad = av_pixelutils_get_sad_fn(3, 3, 2, mi_ctx);
+        mi_ctx->sad = ff_scene_sad_get_fn(mi_ctx->bitdepth == 8 ? 8 : 16);
         if (!mi_ctx->sad)
             return AVERROR(EINVAL);
     }
-
-    ff_me_init_context(me_ctx, mi_ctx->mb_size, mi_ctx->search_param, width, height, 0, (mi_ctx->b_width - 1) << mi_ctx->log2_mb_size, 0, (mi_ctx->b_height - 1) << mi_ctx->log2_mb_size);
-
-    if (mi_ctx->me_mode == ME_MODE_BIDIR)
-        me_ctx->get_cost = &get_sad_ob;
-    else if (mi_ctx->me_mode == ME_MODE_BILAT)
-        me_ctx->get_cost = &get_sbad_ob;
 
     return 0;
 }
@@ -803,24 +823,21 @@ static int inject_frame(AVFilterLink *inlink, AVFrame *avf_in)
     return 0;
 }
 
-static int detect_scene_change(MIContext *mi_ctx)
+static int detect_scene_change(AVFilterContext *ctx)
 {
-    AVMotionEstContext *me_ctx = &mi_ctx->me_ctx;
-    int x, y;
-    int linesize = me_ctx->linesize;
+    MIContext *mi_ctx = ctx->priv;
+    AVFilterLink *input = ctx->inputs[0];
     uint8_t *p1 = mi_ctx->frames[1].avf->data[0];
+    ptrdiff_t linesize1 = mi_ctx->frames[1].avf->linesize[0];
     uint8_t *p2 = mi_ctx->frames[2].avf->data[0];
+    ptrdiff_t linesize2 = mi_ctx->frames[2].avf->linesize[0];
 
     if (mi_ctx->scd_method == SCD_METHOD_FDIFF) {
         double ret = 0, mafd, diff;
-        int64_t sad;
-
-        for (sad = y = 0; y < me_ctx->height; y += 8)
-            for (x = 0; x < linesize; x += 8)
-                sad += mi_ctx->sad(p1 + x + y * linesize, linesize, p2 + x + y * linesize, linesize);
-
+        uint64_t sad;
+        mi_ctx->sad(p1, linesize1, p2, linesize2, input->w, input->h, &sad);
         emms_c();
-        mafd = (double) sad / (me_ctx->height * me_ctx->width * 3);
+        mafd = (double) sad * 100.0 / (input->h * input->w) / (1 << mi_ctx->bitdepth);
         diff = fabs(mafd - mi_ctx->prev_mafd);
         ret  = av_clipf(FFMIN(mafd, diff), 0, 100.0);
         mi_ctx->prev_mafd = mafd;
@@ -833,18 +850,18 @@ static int detect_scene_change(MIContext *mi_ctx)
 
 #define ADD_PIXELS(b_weight, mv_x, mv_y)\
     do {\
-        if (!b_weight || pixel->nb + 1 >= NB_PIXEL_MVS)\
+        if (!b_weight || pixel_refs->nb + 1 >= NB_PIXEL_MVS)\
             continue;\
-        pixel->refs[pixel->nb] = 1;\
-        pixel->weights[pixel->nb] = b_weight * (ALPHA_MAX - alpha);\
-        pixel->mvs[pixel->nb][0] = av_clip((mv_x * alpha) / ALPHA_MAX, x_min, x_max);\
-        pixel->mvs[pixel->nb][1] = av_clip((mv_y * alpha) / ALPHA_MAX, y_min, y_max);\
-        pixel->nb++;\
-        pixel->refs[pixel->nb] = 2;\
-        pixel->weights[pixel->nb] = b_weight * alpha;\
-        pixel->mvs[pixel->nb][0] = av_clip(-mv_x * (ALPHA_MAX - alpha) / ALPHA_MAX, x_min, x_max);\
-        pixel->mvs[pixel->nb][1] = av_clip(-mv_y * (ALPHA_MAX - alpha) / ALPHA_MAX, y_min, y_max);\
-        pixel->nb++;\
+        pixel_refs->refs[pixel_refs->nb] = 1;\
+        pixel_weights->weights[pixel_refs->nb] = b_weight * (ALPHA_MAX - alpha);\
+        pixel_mvs->mvs[pixel_refs->nb][0] = av_clip((mv_x * alpha) / ALPHA_MAX, x_min, x_max);\
+        pixel_mvs->mvs[pixel_refs->nb][1] = av_clip((mv_y * alpha) / ALPHA_MAX, y_min, y_max);\
+        pixel_refs->nb++;\
+        pixel_refs->refs[pixel_refs->nb] = 2;\
+        pixel_weights->weights[pixel_refs->nb] = b_weight * alpha;\
+        pixel_mvs->mvs[pixel_refs->nb][0] = av_clip(-mv_x * (ALPHA_MAX - alpha) / ALPHA_MAX, x_min, x_max);\
+        pixel_mvs->mvs[pixel_refs->nb][1] = av_clip(-mv_y * (ALPHA_MAX - alpha) / ALPHA_MAX, y_min, y_max);\
+        pixel_refs->nb++;\
     } while(0)
 
 static void bidirectional_obmc(MIContext *mi_ctx, int alpha)
@@ -856,7 +873,7 @@ static void bidirectional_obmc(MIContext *mi_ctx, int alpha)
 
     for (y = 0; y < height; y++)
         for (x = 0; x < width; x++)
-            mi_ctx->pixels[x + y * width].nb = 0;
+            mi_ctx->pixel_refs[x + y * width].nb = 0;
 
     for (dir = 0; dir < 2; dir++)
         for (mb_y = 0; mb_y < mi_ctx->b_height; mb_y++)
@@ -887,7 +904,9 @@ static void bidirectional_obmc(MIContext *mi_ctx, int alpha)
                         int x_min = -x;
                         int x_max = width - x - 1;
                         int obmc_weight = obmc_tab_linear[4 - mi_ctx->log2_mb_size][(x - start_x) + ((y - start_y) << (mi_ctx->log2_mb_size + 1))];
-                        Pixel *pixel = &mi_ctx->pixels[x + y * width];
+                        PixelMVS *pixel_mvs = &mi_ctx->pixel_mvs[x + y * width];
+                        PixelWeights *pixel_weights = &mi_ctx->pixel_weights[x + y * width];
+                        PixelRefs *pixel_refs = &mi_ctx->pixel_refs[x + y * width];
 
                         ADD_PIXELS(obmc_weight, mv_x, mv_y);
                     }
@@ -909,36 +928,38 @@ static void set_frame_data(MIContext *mi_ctx, int alpha, AVFrame *avf_out)
                 int x_mv, y_mv;
                 int weight_sum = 0;
                 int i, val = 0;
-                Pixel *pixel = &mi_ctx->pixels[x + y * avf_out->width];
+                PixelMVS *pixel_mvs = &mi_ctx->pixel_mvs[x + y * avf_out->width];
+                PixelWeights *pixel_weights = &mi_ctx->pixel_weights[x + y * avf_out->width];
+                PixelRefs *pixel_refs = &mi_ctx->pixel_refs[x + y * avf_out->width];
 
-                for (i = 0; i < pixel->nb; i++)
-                    weight_sum += pixel->weights[i];
+                for (i = 0; i < pixel_refs->nb; i++)
+                    weight_sum += pixel_weights->weights[i];
 
-                if (!weight_sum || !pixel->nb) {
-                    pixel->weights[0] = ALPHA_MAX - alpha;
-                    pixel->refs[0] = 1;
-                    pixel->mvs[0][0] = 0;
-                    pixel->mvs[0][1] = 0;
-                    pixel->weights[1] = alpha;
-                    pixel->refs[1] = 2;
-                    pixel->mvs[1][0] = 0;
-                    pixel->mvs[1][1] = 0;
-                    pixel->nb = 2;
+                if (!weight_sum || !pixel_refs->nb) {
+                    pixel_weights->weights[0] = ALPHA_MAX - alpha;
+                    pixel_refs->refs[0] = 1;
+                    pixel_mvs->mvs[0][0] = 0;
+                    pixel_mvs->mvs[0][1] = 0;
+                    pixel_weights->weights[1] = alpha;
+                    pixel_refs->refs[1] = 2;
+                    pixel_mvs->mvs[1][0] = 0;
+                    pixel_mvs->mvs[1][1] = 0;
+                    pixel_refs->nb = 2;
 
                     weight_sum = ALPHA_MAX;
                 }
 
-                for (i = 0; i < pixel->nb; i++) {
-                    Frame *frame = &mi_ctx->frames[pixel->refs[i]];
+                for (i = 0; i < pixel_refs->nb; i++) {
+                    Frame *frame = &mi_ctx->frames[pixel_refs->refs[i]];
                     if (chroma) {
-                        x_mv = (x >> mi_ctx->log2_chroma_w) + pixel->mvs[i][0] / (1 << mi_ctx->log2_chroma_w);
-                        y_mv = (y >> mi_ctx->log2_chroma_h) + pixel->mvs[i][1] / (1 << mi_ctx->log2_chroma_h);
+                        x_mv = (x >> mi_ctx->log2_chroma_w) + pixel_mvs->mvs[i][0] / (1 << mi_ctx->log2_chroma_w);
+                        y_mv = (y >> mi_ctx->log2_chroma_h) + pixel_mvs->mvs[i][1] / (1 << mi_ctx->log2_chroma_h);
                     } else {
-                        x_mv = x + pixel->mvs[i][0];
-                        y_mv = y + pixel->mvs[i][1];
+                        x_mv = x + pixel_mvs->mvs[i][0];
+                        y_mv = y + pixel_mvs->mvs[i][1];
                     }
 
-                    val += pixel->weights[i] * frame->avf->data[plane][x_mv + y_mv * frame->avf->linesize[plane]];
+                    val += pixel_weights->weights[i] * frame->avf->data[plane][x_mv + y_mv * frame->avf->linesize[plane]];
                 }
 
                 val = ROUNDED_DIV(val, weight_sum);
@@ -979,7 +1000,9 @@ static void var_size_bmc(MIContext *mi_ctx, Block *block, int x_mb, int y_mb, in
                     for (x = start_x; x < end_x; x++) {
                         int x_min = -x;
                         int x_max = width - x - 1;
-                        Pixel *pixel = &mi_ctx->pixels[x + y * width];
+                        PixelMVS *pixel_mvs = &mi_ctx->pixel_mvs[x + y * width];
+                        PixelWeights *pixel_weights = &mi_ctx->pixel_weights[x + y * width];
+                        PixelRefs *pixel_refs = &mi_ctx->pixel_refs[x + y * width];
 
                         ADD_PIXELS(PX_WEIGHT_MAX, mv_x, mv_y);
                     }
@@ -1028,7 +1051,9 @@ static void bilateral_obmc(MIContext *mi_ctx, Block *block, int mb_x, int mb_y, 
             int x_min = -x;
             int x_max = width - x - 1;
             int obmc_weight = obmc_tab_linear[4 - mi_ctx->log2_mb_size][(x - start_x) + ((y - start_y) << (mi_ctx->log2_mb_size + 1))];
-            Pixel *pixel = &mi_ctx->pixels[x + y * width];
+            PixelMVS *pixel_mvs = &mi_ctx->pixel_mvs[x + y * width];
+            PixelWeights *pixel_weights = &mi_ctx->pixel_weights[x + y * width];
+            PixelRefs *pixel_refs = &mi_ctx->pixel_refs[x + y * width];
 
             if (mi_ctx->mc_mode == MC_MODE_AOBMC) {
                 nb_x = (((x - start_x) >> (mi_ctx->log2_mb_size - 1)) * 2 - 3) / 2;
@@ -1062,8 +1087,13 @@ static void interpolate(AVFilterLink *inlink, AVFrame *avf_out)
     pts = av_rescale(avf_out->pts, (int64_t) ALPHA_MAX * outlink->time_base.num * inlink->time_base.den,
                                    (int64_t)             outlink->time_base.den * inlink->time_base.num);
 
-    alpha = (pts - mi_ctx->frames[1].avf->pts * ALPHA_MAX) / (mi_ctx->frames[2].avf->pts - mi_ctx->frames[1].avf->pts);
-    alpha = av_clip(alpha, 0, ALPHA_MAX);
+    if (mi_ctx->frames[2].avf->pts > mi_ctx->frames[1].avf->pts) {
+        alpha = (pts - mi_ctx->frames[1].avf->pts * ALPHA_MAX) / (mi_ctx->frames[2].avf->pts - mi_ctx->frames[1].avf->pts);
+        alpha = av_clip(alpha, 0, ALPHA_MAX);
+    } else {
+        av_log(ctx, AV_LOG_DEBUG, "duplicate input PTS detected\n");
+        alpha = 0;
+    }
 
     if (alpha == 0 || alpha == ALPHA_MAX) {
         av_frame_copy(avf_out, alpha ? mi_ctx->frames[2].avf : mi_ctx->frames[1].avf);
@@ -1071,6 +1101,7 @@ static void interpolate(AVFilterLink *inlink, AVFrame *avf_out)
     }
 
     if (mi_ctx->scene_changed) {
+        av_log(ctx, AV_LOG_DEBUG, "scene changed, input pts %"PRId64"\n", mi_ctx->frames[1].avf->pts);
         /* duplicate frame */
         av_frame_copy(avf_out, alpha > ALPHA_MAX / 2 ? mi_ctx->frames[2].avf : mi_ctx->frames[1].avf);
         return;
@@ -1094,8 +1125,8 @@ static void interpolate(AVFilterLink *inlink, AVFrame *avf_out)
                 for (y = 0; y < height; y++) {
                     for (x = 0; x < width; x++) {
                         avf_out->data[plane][x + y * avf_out->linesize[plane]] =
-                                          alpha  * mi_ctx->frames[2].avf->data[plane][x + y * mi_ctx->frames[2].avf->linesize[plane]] +
-                            ((ALPHA_MAX - alpha) * mi_ctx->frames[1].avf->data[plane][x + y * mi_ctx->frames[1].avf->linesize[plane]] + 512) >> 10;
+                            (alpha  * mi_ctx->frames[2].avf->data[plane][x + y * mi_ctx->frames[2].avf->linesize[plane]] +
+                             (ALPHA_MAX - alpha) * mi_ctx->frames[1].avf->data[plane][x + y * mi_ctx->frames[1].avf->linesize[plane]] + 512) >> 10;
                     }
                 }
             }
@@ -1112,7 +1143,7 @@ static void interpolate(AVFilterLink *inlink, AVFrame *avf_out)
 
                 for (y = 0; y < mi_ctx->frames[0].avf->height; y++)
                     for (x = 0; x < mi_ctx->frames[0].avf->width; x++)
-                        mi_ctx->pixels[x + y * mi_ctx->frames[0].avf->width].nb = 0;
+                        mi_ctx->pixel_refs[x + y * mi_ctx->frames[0].avf->width].nb = 0;
 
                 for (mb_y = 0; mb_y < mi_ctx->b_height; mb_y++)
                     for (mb_x = 0; mb_x < mi_ctx->b_width; mb_x++) {
@@ -1159,7 +1190,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *avf_in)
     if (!mi_ctx->frames[0].avf)
         return 0;
 
-    mi_ctx->scene_changed = detect_scene_change(mi_ctx);
+    mi_ctx->scene_changed = detect_scene_change(ctx);
 
     for (;;) {
         AVFrame *avf_out;
@@ -1195,7 +1226,9 @@ static av_cold void uninit(AVFilterContext *ctx)
     MIContext *mi_ctx = ctx->priv;
     int i, m;
 
-    av_freep(&mi_ctx->pixels);
+    av_freep(&mi_ctx->pixel_mvs);
+    av_freep(&mi_ctx->pixel_weights);
+    av_freep(&mi_ctx->pixel_refs);
     if (mi_ctx->int_blocks)
         for (m = 0; m < mi_ctx->b_count; m++)
             free_blocks(&mi_ctx->int_blocks[m], 0);

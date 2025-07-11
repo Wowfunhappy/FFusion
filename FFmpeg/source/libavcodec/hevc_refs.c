@@ -208,9 +208,6 @@ int ff_hevc_output_frame(HEVCContext *s, AVFrame *out, int flush)
         if (nb_output) {
             HEVCFrame *frame = &s->DPB[min_idx];
 
-            if (frame->frame->format == AV_PIX_FMT_VIDEOTOOLBOX && frame->frame->buf[0]->size == 1)
-                return 0;
-
             ret = av_frame_ref(out, frame->frame);
             if (frame->flags & HEVC_FRAME_FLAG_BUMPING)
                 ff_hevc_unref_frame(s, frame, HEVC_FRAME_FLAG_OUTPUT | HEVC_FRAME_FLAG_BUMPING);
@@ -361,23 +358,15 @@ int ff_hevc_slice_rpl(HEVCContext *s)
     return 0;
 }
 
-static HEVCFrame *find_ref_idx(HEVCContext *s, int poc)
+static HEVCFrame *find_ref_idx(HEVCContext *s, int poc, uint8_t use_msb)
 {
+    int mask = use_msb ? ~0 : (1 << s->ps.sps->log2_max_poc_lsb) - 1;
     int i;
-    int LtMask = (1 << s->ps.sps->log2_max_poc_lsb) - 1;
-
-    for (i = 0; i < FF_ARRAY_ELEMS(s->DPB); i++) {
-        HEVCFrame *ref = &s->DPB[i];
-        if (ref->frame->buf[0] && (ref->sequence == s->seq_decode)) {
-            if ((ref->poc & LtMask) == poc)
-                return ref;
-        }
-    }
 
     for (i = 0; i < FF_ARRAY_ELEMS(s->DPB); i++) {
         HEVCFrame *ref = &s->DPB[i];
         if (ref->frame->buf[0] && ref->sequence == s->seq_decode) {
-            if (ref->poc == poc || (ref->poc & LtMask) == poc)
+            if ((ref->poc & mask) == poc)
                 return ref;
         }
     }
@@ -430,9 +419,9 @@ static HEVCFrame *generate_missing_ref(HEVCContext *s, int poc)
 
 /* add a reference with the given poc to the list and mark it as used in DPB */
 static int add_candidate_ref(HEVCContext *s, RefPicList *list,
-                             int poc, int ref_flag)
+                             int poc, int ref_flag, uint8_t use_msb)
 {
-    HEVCFrame *ref = find_ref_idx(s, poc);
+    HEVCFrame *ref = find_ref_idx(s, poc, use_msb);
 
     if (ref == s->ref || list->nb_refs >= HEVC_MAX_REFS)
         return AVERROR_INVALIDDATA;
@@ -488,7 +477,7 @@ int ff_hevc_frame_rps(HEVCContext *s)
         else
             list = ST_CURR_AFT;
 
-        ret = add_candidate_ref(s, &rps[list], poc, HEVC_FRAME_FLAG_SHORT_REF);
+        ret = add_candidate_ref(s, &rps[list], poc, HEVC_FRAME_FLAG_SHORT_REF, 1);
         if (ret < 0)
             goto fail;
     }
@@ -498,7 +487,7 @@ int ff_hevc_frame_rps(HEVCContext *s)
         int poc  = long_rps->poc[i];
         int list = long_rps->used[i] ? LT_CURR : LT_FOLL;
 
-        ret = add_candidate_ref(s, &rps[list], poc, HEVC_FRAME_FLAG_LONG_REF);
+        ret = add_candidate_ref(s, &rps[list], poc, HEVC_FRAME_FLAG_LONG_REF, long_rps->poc_msb_present[i]);
         if (ret < 0)
             goto fail;
     }
@@ -511,12 +500,12 @@ fail:
     return ret;
 }
 
-int ff_hevc_frame_nb_refs(HEVCContext *s)
+int ff_hevc_frame_nb_refs(const HEVCContext *s)
 {
     int ret = 0;
     int i;
     const ShortTermRPS *rps = s->sh.short_term_rps;
-    LongTermRPS *long_rps   = &s->sh.long_term_rps;
+    const LongTermRPS *long_rps = &s->sh.long_term_rps;
 
     if (rps) {
         for (i = 0; i < rps->num_negative_pics; i++)

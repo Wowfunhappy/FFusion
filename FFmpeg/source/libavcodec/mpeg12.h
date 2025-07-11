@@ -25,8 +25,6 @@
 #include "mpeg12vlc.h"
 #include "mpegvideo.h"
 
-extern uint8_t ff_mpeg12_static_rl_table_store[2][2][2*MAX_RUN + MAX_LEVEL + 3];
-
 void ff_mpeg12_common_init(MpegEncContext *s);
 
 #define INIT_2D_VLC_RL(rl, static_size, flags)\
@@ -37,6 +35,7 @@ void ff_mpeg12_common_init(MpegEncContext *s);
 }
 
 void ff_init_2d_vlc_rl(RLTable *rl, unsigned static_size, int flags);
+void ff_mpeg1_init_uni_ac_vlc(const RLTable *rl, uint8_t *uni_ac_vlc_len);
 
 static inline int decode_dc(GetBitContext *gb, int component)
 {
@@ -46,10 +45,6 @@ static inline int decode_dc(GetBitContext *gb, int component)
         code = get_vlc2(gb, ff_dc_lum_vlc.table, DC_VLC_BITS, 2);
     } else {
         code = get_vlc2(gb, ff_dc_chroma_vlc.table, DC_VLC_BITS, 2);
-    }
-    if (code < 0){
-        av_log(NULL, AV_LOG_ERROR, "invalid dc code at\n");
-        return 0xffff;
     }
     if (code == 0) {
         diff = 0;
@@ -72,5 +67,9 @@ void ff_mpeg1_encode_mb(MpegEncContext *s, int16_t block[8][64],
                         int motion_x, int motion_y);
 void ff_mpeg1_encode_init(MpegEncContext *s);
 void ff_mpeg1_encode_slice_header(MpegEncContext *s);
+
+void ff_mpeg12_find_best_frame_rate(AVRational frame_rate,
+                                    int *code, int *ext_n, int *ext_d,
+                                    int nonstandard);
 
 #endif /* AVCODEC_MPEG12_H */

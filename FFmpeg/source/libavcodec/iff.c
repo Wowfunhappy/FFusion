@@ -288,7 +288,7 @@ static int extract_header(AVCodecContext *const avctx,
             if (s->bpp > 8) {
                 av_log(avctx, AV_LOG_ERROR, "Invalid number of hold bits for HAM: %u\n", s->ham);
                 return AVERROR_INVALIDDATA;
-            } if (s->ham != (s->bpp > 6 ? 6 : 4)) {
+            } else if (s->ham != (s->bpp > 6 ? 6 : 4)) {
                 av_log(avctx, AV_LOG_ERROR, "Invalid number of hold bits for HAM: %u, BPP: %u\n", s->ham, s->bpp);
                 return AVERROR_INVALIDDATA;
             }
@@ -583,7 +583,7 @@ static int decode_byterun2(uint8_t *dst, int height, int line_size,
                            GetByteContext *gb)
 {
     GetByteContext cmds;
-    unsigned count;
+    int count;
     int i, y_pos = 0, x_pos = 0;
 
     if (bytestream2_get_be32(gb) != MKBETAG('V', 'D', 'A', 'T'))
@@ -591,7 +591,7 @@ static int decode_byterun2(uint8_t *dst, int height, int line_size,
 
     bytestream2_skip(gb, 4);
     count = bytestream2_get_be16(gb) - 2;
-    if (bytestream2_get_bytes_left(gb) < count)
+    if (count < 0 || bytestream2_get_bytes_left(gb) < count)
         return 0;
 
     bytestream2_init(&cmds, gb->buffer, count);
@@ -1362,6 +1362,9 @@ static void decode_delta_d(uint8_t *dst,
         bytestream2_init(&gb, buf + ofssrc, buf_end - (buf + ofssrc));
 
         entries = bytestream2_get_be32(&gb);
+        if (entries * 8LL > bytestream2_get_bytes_left(&gb))
+            return;
+
         while (entries && bytestream2_get_bytes_left(&gb) >= 8) {
             int32_t opcode  = bytestream2_get_be32(&gb);
             unsigned offset = bytestream2_get_be32(&gb);
@@ -1845,7 +1848,8 @@ static int decode_frame(AVCodecContext *avctx,
                     buf += s->planesize;
                 }
             }
-            memcpy(frame->data[1], s->pal, 256 * 4);
+            if (avctx->pix_fmt == AV_PIX_FMT_PAL8)
+                memcpy(frame->data[1], s->pal, 256 * 4);
         } else if (s->ham) {
             int i, count = 1 << s->ham;
 

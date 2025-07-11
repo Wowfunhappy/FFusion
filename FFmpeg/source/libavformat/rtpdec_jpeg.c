@@ -112,7 +112,7 @@ static int jpeg_create_header(uint8_t *buf, int size, uint32_t type, uint32_t w,
     jpeg_put_marker(&pbc, APP0);
     bytestream2_put_be16(&pbc, 16);
     bytestream2_put_buffer(&pbc, "JFIF", 5);
-    bytestream2_put_be16(&pbc, 0x0201);
+    bytestream2_put_be16(&pbc, 0x0102);
     bytestream2_put_byte(&pbc, 0);
     bytestream2_put_be16(&pbc, 1);
     bytestream2_put_be16(&pbc, 1);
@@ -379,7 +379,7 @@ static int jpeg_parse_packet(AVFormatContext *ctx, PayloadContext *jpeg,
     return AVERROR(EAGAIN);
 }
 
-RTPDynamicProtocolHandler ff_jpeg_dynamic_handler = {
+const RTPDynamicProtocolHandler ff_jpeg_dynamic_handler = {
     .enc_name          = "JPEG",
     .codec_type        = AVMEDIA_TYPE_VIDEO,
     .codec_id          = AV_CODEC_ID_MJPEG,

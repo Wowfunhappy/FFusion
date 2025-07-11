@@ -72,6 +72,9 @@ static int subfile_open(URLContext *h, const char *filename, int flags,
     SubfileContext *c = h->priv_data;
     int ret;
 
+    if (!c->end)
+        c->end = INT64_MAX;
+
     if (c->end <= c->start) {
         av_log(h, AV_LOG_ERROR, "end before start\n");
         return AVERROR(EINVAL);
@@ -83,7 +86,7 @@ static int subfile_open(URLContext *h, const char *filename, int flags,
         return ret;
     c->pos = c->start;
     if ((ret = slave_seek(h)) < 0) {
-        ffurl_close(c->h);
+        ffurl_closep(&c->h);
         return ret;
     }
     return 0;
@@ -92,7 +95,7 @@ static int subfile_open(URLContext *h, const char *filename, int flags,
 static int subfile_close(URLContext *h)
 {
     SubfileContext *c = h->priv_data;
-    return ffurl_close(c->h);
+    return ffurl_closep(&c->h);
 }
 
 static int subfile_read(URLContext *h, unsigned char *buf, int size)
@@ -113,21 +116,29 @@ static int subfile_read(URLContext *h, unsigned char *buf, int size)
 static int64_t subfile_seek(URLContext *h, int64_t pos, int whence)
 {
     SubfileContext *c = h->priv_data;
-    int64_t new_pos = -1;
+    int64_t new_pos, end;
     int ret;
 
-    if (whence == AVSEEK_SIZE)
-        return c->end - c->start;
+    if (whence == AVSEEK_SIZE || whence == SEEK_END) {
+        end = c->end;
+        if (end == INT64_MAX && (end = ffurl_seek(c->h, 0, AVSEEK_SIZE)) < 0)
+            return end;
+    }
+
     switch (whence) {
+    case AVSEEK_SIZE:
+        return end - c->start;
     case SEEK_SET:
         new_pos = c->start + pos;
         break;
     case SEEK_CUR:
-        new_pos += pos;
+        new_pos = c->pos + pos;
         break;
     case SEEK_END:
-        new_pos = c->end + c->pos;
+        new_pos = end + pos;
         break;
+    default:
+        av_assert0(0);
     }
     if (new_pos < c->start)
         return AVERROR(EINVAL);

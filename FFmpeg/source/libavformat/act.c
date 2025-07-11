@@ -33,7 +33,7 @@ typedef struct{
     char second_packet;      ///< 1 - if temporary buffer contains valid (second) G.729 packet
 } ACTContext;
 
-static int probe(AVProbeData *p)
+static int probe(const AVProbeData *p)
 {
     int i;
 
@@ -66,6 +66,7 @@ static int read_header(AVFormatContext *s)
     AVIOContext *pb = s->pb;
     int size;
     AVStream* st;
+    int ret;
 
     int min,sec,msec;
 
@@ -75,7 +76,9 @@ static int read_header(AVFormatContext *s)
 
     avio_skip(pb, 16);
     size=avio_rl32(pb);
-    ff_get_wav_header(s, pb, st->codecpar, size, 0);
+    ret = ff_get_wav_header(s, pb, st->codecpar, size, 0);
+    if (ret < 0)
+        return ret;
 
     /*
       8000Hz (Fine-rec) file format has 10 bytes long

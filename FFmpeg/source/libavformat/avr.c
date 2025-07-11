@@ -24,7 +24,7 @@
 #include "internal.h"
 #include "pcm.h"
 
-static int avr_probe(AVProbeData *p)
+static int avr_probe(const AVProbeData *p)
 {
     if (AV_RL32(p->buf) != MKTAG('2', 'B', 'I', 'T'))
         return 0;
@@ -70,6 +70,9 @@ static int avr_read_header(AVFormatContext *s)
     avio_skip(s->pb, 1); // replay speed
 
     st->codecpar->sample_rate = avio_rb24(s->pb);
+    if (st->codecpar->sample_rate == 0)
+        return AVERROR_INVALIDDATA;
+
     avio_skip(s->pb, 4 * 3);
     avio_skip(s->pb, 2 * 3);
     avio_skip(s->pb, 20);

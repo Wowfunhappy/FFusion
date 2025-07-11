@@ -24,7 +24,7 @@
 #include <vdpau/vdpau.h>
 
 #include "avcodec.h"
-#include "hwaccel.h"
+#include "hwconfig.h"
 #include "mpegvideo.h"
 #include "vdpau.h"
 #include "vdpau_internal.h"
@@ -73,8 +73,9 @@ static int vdpau_mpeg_start_frame(AVCodecContext *avctx,
     info->f_code[1][0]               = s->mpeg_f_code[1][0];
     info->f_code[1][1]               = s->mpeg_f_code[1][1];
     for (i = 0; i < 64; ++i) {
-        info->intra_quantizer_matrix[i]     = s->intra_matrix[i];
-        info->non_intra_quantizer_matrix[i] = s->inter_matrix[i];
+        int n = s->idsp.idct_permutation[i];
+        info->intra_quantizer_matrix[i]     = s->intra_matrix[n];
+        info->non_intra_quantizer_matrix[i] = s->inter_matrix[n];
     }
 
     return ff_vdpau_common_start_frame(pic_ctx, buffer, size);
@@ -103,7 +104,7 @@ static int vdpau_mpeg1_init(AVCodecContext *avctx)
                                 VDP_DECODER_LEVEL_MPEG1_NA);
 }
 
-AVHWAccel ff_mpeg1_vdpau_hwaccel = {
+const AVHWAccel ff_mpeg1_vdpau_hwaccel = {
     .name           = "mpeg1_vdpau",
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_MPEG1VIDEO,
@@ -138,7 +139,7 @@ static int vdpau_mpeg2_init(AVCodecContext *avctx)
     return ff_vdpau_common_init(avctx, profile, VDP_DECODER_LEVEL_MPEG2_HL);
 }
 
-AVHWAccel ff_mpeg2_vdpau_hwaccel = {
+const AVHWAccel ff_mpeg2_vdpau_hwaccel = {
     .name           = "mpeg2_vdpau",
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_MPEG2VIDEO,
@@ -149,6 +150,7 @@ AVHWAccel ff_mpeg2_vdpau_hwaccel = {
     .frame_priv_data_size = sizeof(struct vdpau_picture_context),
     .init           = vdpau_mpeg2_init,
     .uninit         = ff_vdpau_common_uninit,
+    .frame_params   = ff_vdpau_common_frame_params,
     .priv_data_size = sizeof(VDPAUContext),
     .caps_internal  = HWACCEL_CAP_ASYNC_SAFE,
 };

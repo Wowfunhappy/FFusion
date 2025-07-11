@@ -44,11 +44,11 @@ typedef struct FMVCContext {
     size_t          buffer_size;
     uint8_t        *pbuffer;
     size_t          pbuffer_size;
-    int             stride;
+    ptrdiff_t       stride;
     int             bpp;
     int             yb, xb;
     InterBlock     *blocks;
-    int             nb_blocks;
+    unsigned        nb_blocks;
 } FMVCContext;
 
 static int decode_type2(GetByteContext *gb, PutByteContext *pb)
@@ -100,7 +100,6 @@ static int decode_type2(GetByteContext *gb, PutByteContext *pb)
                             continue;
                         }
                     }
-                    repeat = 0;
                 }
                 repeat = 1;
             }
@@ -150,7 +149,7 @@ static int decode_type2(GetByteContext *gb, PutByteContext *pb)
             if (opcode >= 0x40) {
                 bytestream2_skip(gb, 1);
                 pos = - ((opcode >> 2) & 7) - 1 - 8 * bytestream2_get_byte(gb);
-                len = (opcode >> 5) - 1;
+                len =    (opcode >> 5)      - 1;
 
                 bytestream2_init(&gbc, pb->buffer_start, pb->buffer_end - pb->buffer_start);
                 bytestream2_seek(&gbc, bytestream2_tell_p(pb) + pos, SEEK_SET);
@@ -305,7 +304,7 @@ static int decode_type1(GetByteContext *gb, PutByteContext *pb)
                     break;
                 opcode = bytestream2_get_byte(gb);
                 if (opcode < 0xF8) {
-                    opcode = opcode + 32;
+                    opcode += 32;
                     break;
                 }
                 i = opcode - 0xF8;
@@ -393,31 +392,27 @@ static int decode_type1(GetByteContext *gb, PutByteContext *pb)
     return 0;
 }
 
-static int decode_frame(AVCodecContext *avctx,
-                        void *data, int *got_frame,
-                        AVPacket *avpkt)
+static int decode_frame(AVCodecContext *avctx, void *data,
+                        int *got_frame, AVPacket *avpkt)
 {
     FMVCContext *s = avctx->priv_data;
     GetByteContext *gb = &s->gb;
     PutByteContext *pb = &s->pb;
     AVFrame *frame = data;
     int ret, y, x;
+    int key_frame;
 
     if (avpkt->size < 8)
         return AVERROR_INVALIDDATA;
 
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
-        return ret;
-
     bytestream2_init(gb, avpkt->data, avpkt->size);
     bytestream2_skip(gb, 2);
 
-    frame->key_frame = !!bytestream2_get_le16(gb);
-    frame->pict_type = frame->key_frame ? AV_PICTURE_TYPE_I : AV_PICTURE_TYPE_P;
+    key_frame = !!bytestream2_get_le16(gb);
 
-    if (frame->key_frame) {
+    if (key_frame) {
         const uint8_t *src;
-        int type, size;
+        unsigned type, size;
         uint8_t *dst;
 
         type = bytestream2_get_le16(gb);
@@ -431,9 +426,15 @@ static int decode_frame(AVCodecContext *avctx,
         } else if (type == 2){
             decode_type2(gb, pb);
         } else {
-            avpriv_report_missing_feature(avctx, "compression %d", type);
+            avpriv_report_missing_feature(avctx, "Compression type %d", type);
             return AVERROR_PATCHWELCOME;
         }
+
+        if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
+            return ret;
+
+        frame->key_frame = 1;
+        frame->pict_type = AV_PICTURE_TYPE_I;
 
         src = s->buffer;
         dst = frame->data[0] + (avctx->height - 1) * frame->linesize[0];
@@ -441,9 +442,12 @@ static int decode_frame(AVCodecContext *avctx,
             memcpy(dst, src, avctx->width * s->bpp);
             dst -= frame->linesize[0];
             src += s->stride * 4;
+            if (bytestream2_tell_p(pb) < y*s->stride * 4)
+                break;
         }
     } else {
-        int block, nb_blocks, type, k, l;
+        unsigned block, nb_blocks;
+        int type, k, l;
         uint8_t *ssrc, *ddst;
         const uint32_t *src;
         uint32_t *dst;
@@ -459,7 +463,8 @@ static int decode_frame(AVCodecContext *avctx,
 
         type = bytestream2_get_le16(gb);
         for (block = 0; block < nb_blocks; block++) {
-            int size, offset, start = 0;
+            unsigned size, offset;
+            int start = 0;
 
             offset = bytestream2_get_le16(gb);
             if (offset >= s->nb_blocks)
@@ -475,7 +480,7 @@ static int decode_frame(AVCodecContext *avctx,
             } else if (type == 2){
                 decode_type2(gb, pb);
             } else {
-                avpriv_report_missing_feature(avctx, "compression %d", type);
+                avpriv_report_missing_feature(avctx, "Compression type %d", type);
                 return AVERROR_PATCHWELCOME;
             }
 
@@ -500,9 +505,8 @@ static int decode_frame(AVCodecContext *avctx,
                 if (s->blocks[block].xor) {
                     for (k = 0; k < block_h; k++) {
                         uint32_t *column = dst;
-                        for (l = 0; l < block_w; l++) {
+                        for (l = 0; l < block_w; l++)
                             *dst++ ^= *src++;
-                        }
                         dst = &column[s->stride];
                     }
                 }
@@ -511,6 +515,12 @@ static int decode_frame(AVCodecContext *avctx,
             }
             dst = &rect[block_h * s->stride];
         }
+
+        if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
+            return ret;
+
+        frame->key_frame = 0;
+        frame->pict_type = AV_PICTURE_TYPE_P;
 
         ssrc = s->buffer;
         ddst = frame->data[0] + (avctx->height - 1) * frame->linesize[0];
@@ -532,17 +542,24 @@ static av_cold int decode_init(AVCodecContext *avctx)
     int i, j, m, block = 0, h = BLOCK_HEIGHT, w = BLOCK_WIDTH;
 
     switch (avctx->bits_per_coded_sample) {
-    case 16: avctx->pix_fmt = AV_PIX_FMT_RGB555; break;
-    case 24: avctx->pix_fmt = AV_PIX_FMT_BGR24;  break;
-    case 32: avctx->pix_fmt = AV_PIX_FMT_BGRA;   break;
+    case 16:
+        avctx->pix_fmt = AV_PIX_FMT_RGB555LE;
+        break;
+    case 24:
+        avctx->pix_fmt = AV_PIX_FMT_BGR24;
+        break;
+    case 32:
+        avctx->pix_fmt = AV_PIX_FMT_BGRA;
+        break;
     default:
-        av_log(avctx, AV_LOG_ERROR, "Unsupported bitdepth %i\n", avctx->bits_per_coded_sample);
+        av_log(avctx, AV_LOG_ERROR, "Unsupported bitdepth %i\n",
+               avctx->bits_per_coded_sample);
         return AVERROR_INVALIDDATA;
     }
 
     s->stride = (avctx->width * avctx->bits_per_coded_sample + 31) / 32;
-    s->xb = s->stride / BLOCK_WIDTH;
-    m = s->stride % BLOCK_WIDTH;
+    s->xb     = s->stride / BLOCK_WIDTH;
+    m         = s->stride % BLOCK_WIDTH;
     if (m) {
         if (m < 37) {
             w = m + BLOCK_WIDTH;
@@ -553,7 +570,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
     }
 
     s->yb = avctx->height / BLOCK_HEIGHT;
-    m = avctx->height % BLOCK_HEIGHT;
+    m     = avctx->height % BLOCK_HEIGHT;
     if (m) {
         if (m < 49) {
             h = m + BLOCK_HEIGHT;
@@ -566,8 +583,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
     s->nb_blocks = s->xb * s->yb;
     if (!s->nb_blocks)
         return AVERROR_INVALIDDATA;
-
-    s->blocks = av_calloc(s->nb_blocks, sizeof(*s->blocks));
+    s->blocks    = av_calloc(s->nb_blocks, sizeof(*s->blocks));
     if (!s->blocks)
         return AVERROR(ENOMEM);
 
@@ -575,32 +591,32 @@ static av_cold int decode_init(AVCodecContext *avctx)
         for (j = 0; j < s->xb; j++) {
             if (i != (s->yb - 1) || j != (s->xb - 1)) {
                 if (i == s->yb - 1) {
-                    s->blocks[block].w = BLOCK_WIDTH;
-                    s->blocks[block].h = h;
+                    s->blocks[block].w    = BLOCK_WIDTH;
+                    s->blocks[block].h    = h;
                     s->blocks[block].size = BLOCK_WIDTH * h;
                 } else if (j == s->xb - 1) {
-                    s->blocks[block].w = w;
-                    s->blocks[block].h = BLOCK_HEIGHT;
+                    s->blocks[block].w    = w;
+                    s->blocks[block].h    = BLOCK_HEIGHT;
                     s->blocks[block].size = BLOCK_HEIGHT * w;
                 } else {
-                    s->blocks[block].w = BLOCK_WIDTH;
-                    s->blocks[block].h = BLOCK_HEIGHT;
+                    s->blocks[block].w    = BLOCK_WIDTH;
+                    s->blocks[block].h    = BLOCK_HEIGHT;
                     s->blocks[block].size = BLOCK_WIDTH * BLOCK_HEIGHT;
                 }
             } else {
-                s->blocks[block].w = w;
-                s->blocks[block].h = h;
+                s->blocks[block].w    = w;
+                s->blocks[block].h    = h;
                 s->blocks[block].size = w * h;
             }
             block++;
         }
     }
 
-    s->bpp = avctx->bits_per_coded_sample >> 3;
-    s->buffer_size = avctx->width * avctx->height * 4;
+    s->bpp          = avctx->bits_per_coded_sample >> 3;
+    s->buffer_size  = avctx->width * avctx->height * 4;
     s->pbuffer_size = avctx->width * avctx->height * 4;
-    s->buffer = av_mallocz(s->buffer_size);
-    s->pbuffer = av_mallocz(s->pbuffer_size);
+    s->buffer       = av_mallocz(s->buffer_size);
+    s->pbuffer      = av_mallocz(s->pbuffer_size);
     if (!s->buffer || !s->pbuffer)
         return AVERROR(ENOMEM);
 

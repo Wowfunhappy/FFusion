@@ -24,6 +24,7 @@
 #include "avcodec.h"
 #include "get_bits.h"
 #include "bytestream.h"
+#include "internal.h"
 
 static av_cold int decode_init(AVCodecContext *avctx) {
     avctx->pix_fmt = AV_PIX_FMT_PAL8;
@@ -46,7 +47,7 @@ static int64_t parse_timecode(const uint8_t *buf, int64_t packet_time) {
     return ms - packet_time;
 }
 
-static int decode_frame(AVCodecContext *avctx, void *data, int *data_size,
+static int decode_frame(AVCodecContext *avctx, void *data, int *got_sub_ptr,
                         AVPacket *avpkt) {
     const uint8_t *buf = avpkt->data;
     int buf_size = avpkt->size;
@@ -57,6 +58,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *data_size,
     int64_t packet_time = 0;
     GetBitContext gb;
     int has_alpha = avctx->codec_tag == MKTAG('D','X','S','A');
+    int64_t start_display_time, end_display_time;
 
     // check that at least header fits
     if (buf_size < 27 + 7 * 2 + 4 * (3 + has_alpha)) {
@@ -71,8 +73,14 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *data_size,
     }
     if (avpkt->pts != AV_NOPTS_VALUE)
         packet_time = av_rescale_q(avpkt->pts, AV_TIME_BASE_Q, (AVRational){1, 1000});
-    sub->start_display_time = parse_timecode(buf +  1, packet_time);
-    sub->end_display_time   = parse_timecode(buf + 14, packet_time);
+
+    sub->start_display_time = start_display_time = parse_timecode(buf +  1, packet_time);
+    sub->end_display_time   = end_display_time   = parse_timecode(buf + 14, packet_time);
+    if (sub->start_display_time != start_display_time ||
+        sub->  end_display_time !=   end_display_time) {
+        av_log(avctx, AV_LOG_ERROR, "time code not representable in 32bit\n");
+        return -1;
+    }
     buf += 27;
 
     // read header
@@ -169,7 +177,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
         bitmap += w;
         align_get_bits(&gb);
     }
-    *data_size = 1;
+    *got_sub_ptr = 1;
     return buf_size;
 }
 
@@ -180,4 +188,5 @@ AVCodec ff_xsub_decoder = {
     .id        = AV_CODEC_ID_XSUB,
     .init      = decode_init,
     .decode    = decode_frame,
+    .caps_internal = FF_CODEC_CAP_INIT_THREADSAFE,
 };

@@ -18,6 +18,7 @@
 
 #include "libavutil/log.h"
 #include "libavutil/mem.h"
+#include "libavutil/mem_internal.h"
 #include "libavutil/aes_ctr.h"
 
 static const DECLARE_ALIGNED(8, uint8_t, plain)[] = {
@@ -45,7 +46,7 @@ int main (void)
 
     av_aes_ctr_set_random_iv(ae);
     iv =   av_aes_ctr_get_iv(ae);
-    av_aes_ctr_set_iv(ad, iv);
+    av_aes_ctr_set_full_iv(ad, iv);
 
     av_aes_ctr_crypt(ae, tmp, plain, sizeof(tmp));
     av_aes_ctr_crypt(ad, tmp, tmp,   sizeof(tmp));

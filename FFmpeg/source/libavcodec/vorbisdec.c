@@ -363,6 +363,10 @@ static int vorbis_parse_setup_hdr_codebooks(vorbis_context *vc)
             unsigned codebook_value_bits = get_bits(gb, 4) + 1;
             unsigned codebook_sequence_p = get_bits1(gb);
 
+            if (!isfinite(codebook_minimum_value) || !isfinite(codebook_delta_value)) {
+                ret = AVERROR_INVALIDDATA;
+                goto error;
+            }
             ff_dlog(NULL, " We expect %d numbers for building the codevectors. \n",
                     codebook_lookup_values);
             ff_dlog(NULL, "  delta %f minmum %f \n",
@@ -1447,6 +1451,11 @@ static av_always_inline int vorbis_residue_decode_internal(vorbis_context *vc,
                             unsigned step = FASTDIV(vr->partition_size << 1, dim << 1);
                             vorbis_codebook codebook = vc->codebooks[vqbook];
 
+                            if (get_bits_left(gb) < 0) {
+                                av_log(vc->avctx, AV_LOG_ERROR, "Overread %d bits\n", -get_bits_left(gb));
+                                return 0;
+                            }
+
                             if (vr_type == 0) {
 
                                 voffs = voffset+j*vlen;
@@ -1890,7 +1899,8 @@ AVCodec ff_vorbis_decoder = {
     .close           = vorbis_decode_close,
     .decode          = vorbis_decode_frame,
     .flush           = vorbis_decode_flush,
-    .capabilities    = AV_CODEC_CAP_DR1,
+    .capabilities    = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_CHANNEL_CONF,
+    .caps_internal   = FF_CODEC_CAP_INIT_CLEANUP,
     .channel_layouts = ff_vorbis_channel_layouts,
     .sample_fmts     = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_FLTP,
                                                        AV_SAMPLE_FMT_NONE },

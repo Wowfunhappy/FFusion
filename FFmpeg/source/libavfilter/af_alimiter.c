@@ -135,7 +135,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
     if (av_frame_is_writable(in)) {
         out = in;
     } else {
-        out = ff_get_audio_buffer(inlink, in->nb_samples);
+        out = ff_get_audio_buffer(outlink, in->nb_samples);
         if (!out) {
             av_frame_free(&in);
             return AVERROR(ENOMEM);
@@ -176,10 +176,11 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
             } else {
                 for (i = s->nextiter; i < s->nextiter + s->nextlen; i++) {
                     int j = i % buffer_size;
-                    double ppeak, pdelta;
+                    double ppeak = 0, pdelta;
 
-                    ppeak = fabs(buffer[nextpos[j]]) > fabs(buffer[nextpos[j] + 1]) ?
-                            fabs(buffer[nextpos[j]]) : fabs(buffer[nextpos[j] + 1]);
+                    if (nextpos[j] >= 0)
+                        ppeak = fabs(buffer[nextpos[j]]) > fabs(buffer[nextpos[j] + 1]) ?
+                                fabs(buffer[nextpos[j]]) : fabs(buffer[nextpos[j] + 1]);
                     pdelta = (limit / peak - limit / ppeak) / (((buffer_size - nextpos[j] + s->pos) % buffer_size) / channels);
                     if (pdelta < nextdelta[j]) {
                         nextdelta[j] = pdelta;
@@ -326,6 +327,11 @@ static int config_input(AVFilterLink *inlink)
     memset(s->nextpos, -1, obuffer_size * sizeof(*s->nextpos));
     s->buffer_size = inlink->sample_rate * s->attack * inlink->channels;
     s->buffer_size -= s->buffer_size % inlink->channels;
+
+    if (s->buffer_size <= 0) {
+        av_log(ctx, AV_LOG_ERROR, "Attack is too small.\n");
+        return AVERROR(EINVAL);
+    }
 
     return 0;
 }

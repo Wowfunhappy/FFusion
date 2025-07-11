@@ -22,8 +22,10 @@
 #include "libavutil/libm.h"
 #include "libavutil/log.h"
 #include "libavutil/opt.h"
+#include "libavutil/pixdesc.h"
 #include "avcodec.h"
 #include "internal.h"
+#include "packet_internal.h"
 #include "snow_dwt.h"
 #include "snow.h"
 
@@ -52,12 +54,6 @@ FF_ENABLE_DEPRECATION_WARNINGS
         av_log(avctx, AV_LOG_ERROR, "The 9/7 wavelet is incompatible with lossless mode.\n");
         return AVERROR(EINVAL);
     }
-#if FF_API_MOTION_EST
-FF_DISABLE_DEPRECATION_WARNINGS
-    if (avctx->me_method == ME_ITER)
-        s->motion_est = FF_ME_ITER;
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
 
     s->spatial_decomposition_type= s->pred; //FIXME add decorrelator type r transform_type
 
@@ -134,7 +130,13 @@ FF_ENABLE_DEPRECATION_WARNINGS
         av_log(avctx, AV_LOG_ERROR, "pixel format not supported\n");
         return AVERROR_PATCHWELCOME;
     }
-    avcodec_get_chroma_sub_sample(avctx->pix_fmt, &s->chroma_h_shift, &s->chroma_v_shift);
+
+    ret = av_pix_fmt_get_chroma_sub_sample(avctx->pix_fmt, &s->chroma_h_shift,
+                                           &s->chroma_v_shift);
+    if (ret) {
+        av_log(avctx, AV_LOG_ERROR, "pixel format invalid or unknown\n");
+        return ret;
+    }
 
     ff_set_cmp(&s->mecc, s->mecc.me_cmp, s->avctx->me_cmp);
     ff_set_cmp(&s->mecc, s->mecc.me_sub_cmp, s->avctx->me_sub_cmp);
@@ -179,7 +181,7 @@ static int pix_sum(uint8_t * pix, int line_size, int w, int h)
 static int pix_norm1(uint8_t * pix, int line_size, int w)
 {
     int s, i, j;
-    uint32_t *sq = ff_square_tab + 256;
+    const uint32_t *sq = ff_square_tab + 256;
 
     s = 0;
     for (i = 0; i < w; i++) {
@@ -267,6 +269,7 @@ static int encode_q_branch(SnowContext *s, int level, int x, int y){
     int my_context= av_log2(2*FFABS(left->my - top->my));
     int s_context= 2*left->level + 2*top->level + tl->level + tr->level;
     int ref, best_ref, ref_score, ref_mx, ref_my;
+    int range = MAX_MV >> (1 + qpel);
 
     av_assert0(sizeof(s->block_state) >= 256);
     if(s->keyframe){
@@ -307,6 +310,11 @@ static int encode_q_branch(SnowContext *s, int level, int x, int y){
     c->ymin = - y*block_w - 16+3;
     c->xmax = - (x+1)*block_w + (w<<(LOG2_MB_SIZE - s->block_max_depth)) + 16-3;
     c->ymax = - (y+1)*block_w + (h<<(LOG2_MB_SIZE - s->block_max_depth)) + 16-3;
+
+    c->xmin = FFMAX(c->xmin,-range);
+    c->xmax = FFMIN(c->xmax, range);
+    c->ymin = FFMAX(c->ymin,-range);
+    c->ymax = FFMIN(c->ymax, range);
 
     if(P_LEFT[0]     > (c->xmax<<shift)) P_LEFT[0]    = (c->xmax<<shift);
     if(P_LEFT[1]     > (c->ymax<<shift)) P_LEFT[1]    = (c->ymax<<shift);
@@ -1542,10 +1550,10 @@ static void calculate_visual_weight(SnowContext *s, Plane *p){
     int level, orientation, x, y;
 
     for(level=0; level<s->spatial_decomposition_count; level++){
+        int64_t error=0;
         for(orientation=level ? 1 : 0; orientation<4; orientation++){
             SubBand *b= &p->band[level][orientation];
             IDWTELEM *ibuf= b->ibuf;
-            int64_t error=0;
 
             memset(s->spatial_idwt_buffer, 0, sizeof(*s->spatial_idwt_buffer)*width*height);
             ibuf[b->width/2 + b->height/2*b->stride]= 256*16;
@@ -1556,9 +1564,13 @@ static void calculate_visual_weight(SnowContext *s, Plane *p){
                     error += d*d;
                 }
             }
-
+            if (orientation == 2)
+                error /= 2;
             b->qlog= (int)(QROOT * log2(352256.0/sqrt(error)) + 0.5);
+            if (orientation != 1)
+                error = 0;
         }
+        p->band[level][1].qlog = p->band[level][2].qlog;
     }
 }
 
@@ -1623,13 +1635,21 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
         s->lambda = 0;
     }//else keep previous frame's qlog until after motion estimation
 
-    if (s->current_picture->data[0]
-#if FF_API_EMU_EDGE
-        && !(s->avctx->flags&CODEC_FLAG_EMU_EDGE)
+#if FF_API_CODED_FRAME
+FF_DISABLE_DEPRECATION_WARNINGS
+    av_frame_unref(avctx->coded_frame);
+FF_ENABLE_DEPRECATION_WARNINGS
 #endif
-        ) {
+
+    if (s->current_picture->data[0]) {
         int w = s->avctx->width;
         int h = s->avctx->height;
+
+#if FF_API_CODED_FRAME
+        ret = av_frame_make_writable(s->current_picture);
+        if (ret < 0)
+            return ret;
+#endif
 
         s->mpvencdsp.draw_edges(s->current_picture->data[0],
                                 s->current_picture->linesize[0], w   , h   ,
@@ -1648,7 +1668,6 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     ff_snow_frame_start(s);
 #if FF_API_CODED_FRAME
 FF_DISABLE_DEPRECATION_WARNINGS
-    av_frame_unref(avctx->coded_frame);
     ret = av_frame_ref(avctx->coded_frame, s->current_picture);
 FF_ENABLE_DEPRECATION_WARNINGS
 #endif
@@ -1680,11 +1699,6 @@ FF_ENABLE_DEPRECATION_WARNINGS
         s->m.b8_stride= 2*s->m.mb_width+1;
         s->m.f_code=1;
         s->m.pict_type = pic->pict_type;
-#if FF_API_MOTION_EST
-FF_DISABLE_DEPRECATION_WARNINGS
-        s->m.me_method= s->avctx->me_method;
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
         s->m.motion_est= s->motion_est;
         s->m.me.scene_change_score=0;
         s->m.me.dia_size = avctx->dia_size;
@@ -1908,7 +1922,7 @@ FF_DISABLE_DEPRECATION_WARNINGS
 FF_ENABLE_DEPRECATION_WARNINGS
 #endif
 
-    pkt->size = ff_rac_terminate(c);
+    pkt->size = ff_rac_terminate(c, 0);
     if (s->current_picture->key_frame)
         pkt->flags |= AV_PKT_FLAG_KEY;
     *got_packet = 1;
@@ -1944,6 +1958,11 @@ static const AVOption options[] = {
     { "pred",           "Spatial decomposition type",                                OFFSET(pred), AV_OPT_TYPE_INT, { .i64 = 0 }, DWT_97, DWT_53, VE, "pred" },
         { "dwt97", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = 0 }, INT_MIN, INT_MAX, VE, "pred" },
         { "dwt53", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = 1 }, INT_MIN, INT_MAX, VE, "pred" },
+    { "rc_eq", "Set rate control equation. When computing the expression, besides the standard functions "
+     "defined in the section 'Expression Evaluation', the following functions are available: "
+     "bits2qp(bits), qp2bits(qp). Also the following constants are available: iTex pTex tex mv "
+     "fCode iCount mcVar var isI isP isB avgQP qComp avgIITex avgPITex avgPPTex avgBPTex avgTex.",
+                                                                                  OFFSET(m.rc_eq), AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, VE },
     { NULL },
 };
 

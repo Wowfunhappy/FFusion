@@ -268,7 +268,11 @@ ENDYUV2RGBLINE(8, 1)
     PUTRGB(dst_2, py_2, 0);
 ENDYUV2RGBFUNC()
 
+#if HAVE_BIGENDIAN
+YUV2RGBFUNC(yuva2argb_c, uint32_t, 1)
+#else
 YUV2RGBFUNC(yuva2rgba_c, uint32_t, 1)
+#endif
     LOADCHROMA(0);
     PUTRGBA(dst_1, py_1, pa_1, 0, 24);
     PUTRGBA(dst_2, py_2, pa_2, 0, 24);
@@ -302,7 +306,11 @@ ENDYUV2RGBLINE(8, 1)
     PUTRGBA(dst_2, py_2, pa_2, 0, 24);
 ENDYUV2RGBFUNC()
 
+#if HAVE_BIGENDIAN
+YUV2RGBFUNC(yuva2rgba_c, uint32_t, 1)
+#else
 YUV2RGBFUNC(yuva2argb_c, uint32_t, 1)
+#endif
     LOADCHROMA(0);
     PUTRGBA(dst_1, py_1, pa_1, 0, 0);
     PUTRGBA(dst_2, py_2, pa_2, 0, 0);
@@ -785,7 +793,8 @@ av_cold int ff_yuv2rgb_c_init_tables(SwsContext *c, const int inv_table[4],
                         c->dstFormat == AV_PIX_FMT_NE(RGB444LE, RGB444BE) ||
                         c->dstFormat == AV_PIX_FMT_NE(BGR565LE, BGR565BE) ||
                         c->dstFormat == AV_PIX_FMT_NE(BGR555LE, BGR555BE) ||
-                        c->dstFormat == AV_PIX_FMT_NE(BGR444LE, BGR444BE);
+                        c->dstFormat == AV_PIX_FMT_NE(BGR444LE, BGR444BE) ||
+                        c->dstFormat == AV_PIX_FMT_NE(X2RGB10LE, X2RGB10BE);
     const int bpp = c->dstFormatBpp;
     uint8_t *y_table;
     uint16_t *y_table16;
@@ -817,7 +826,7 @@ av_cold int ff_yuv2rgb_c_init_tables(SwsContext *c, const int inv_table[4],
     cbu  = (cbu * contrast * saturation) >> 32;
     cgu  = (cgu * contrast * saturation) >> 32;
     cgv  = (cgv * contrast * saturation) >> 32;
-    oy  -= 256 * brightness;
+    oy  -= 256LL * brightness;
 
     c->uOffset = 0x0400040004000400LL;
     c->vOffset = 0x0400040004000400LL;
@@ -957,6 +966,32 @@ av_cold int ff_yuv2rgb_c_init_tables(SwsContext *c, const int inv_table[4],
         fill_table(c->table_bU, 1, cbu, y_table + yoffs);
         fill_gv_table(c->table_gV, 1, cgv);
         break;
+    case 30:
+        rbase = 20;
+        gbase = 10;
+        bbase = 0;
+        needAlpha = CONFIG_SWSCALE_ALPHA && isALPHA(c->srcFormat);
+        if (!needAlpha)
+            abase = 30;
+        ALLOC_YUV_TABLE(table_plane_size * 3 * 4);
+        y_table32   = c->yuvTable;
+        yb = -(384 << 16) - YUVRGB_TABLE_LUMA_HEADROOM*cy - oy;
+        for (i = 0; i < table_plane_size; i++) {
+            unsigned yval = av_clip_uint8((yb + 0x8000) >> 16);
+            y_table32[i]= (yval << rbase) + (needAlpha ? 0 : (255u << abase));
+            y_table32[i + table_plane_size] = yval << gbase;
+            y_table32[i + 2 * table_plane_size] = yval << bbase;
+            yb += cy;
+        }
+        if (isNotNe) {
+            for (i = 0; i < table_plane_size * 3; i++)
+                y_table32[i] = av_bswap32(y_table32[i]);
+        }
+        fill_table(c->table_rV, 4, crv, y_table32 + yoffs);
+        fill_table(c->table_gU, 4, cgu, y_table32 + yoffs + table_plane_size);
+        fill_table(c->table_bU, 4, cbu, y_table32 + yoffs + 2 * table_plane_size);
+        fill_gv_table(c->table_gV, 4, cgv);
+        break;
     case 32:
     case 64:
         base      = (c->dstFormat == AV_PIX_FMT_RGB32_1 ||
@@ -986,7 +1021,7 @@ av_cold int ff_yuv2rgb_c_init_tables(SwsContext *c, const int inv_table[4],
     default:
         if(!isPlanar(c->dstFormat) || bpp <= 24)
             av_log(c, AV_LOG_ERROR, "%ibpp not supported by yuv2rgb\n", bpp);
-        return -1;
+        return AVERROR(EINVAL);
     }
     return 0;
 }

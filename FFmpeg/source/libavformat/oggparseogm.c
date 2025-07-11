@@ -24,7 +24,6 @@
 
 #include <stdlib.h>
 
-#include "libavutil/avassert.h"
 #include "libavutil/intreadwrite.h"
 
 #include "libavcodec/bytestream.h"
@@ -44,6 +43,7 @@ ogm_header(AVFormatContext *s, int idx)
     uint64_t time_unit;
     uint64_t spu;
     uint32_t size;
+    int ret;
 
     bytestream2_init(&p, os->buf + os->pstart, os->psize);
     if (!(bytestream2_peek_byte(&p) & 1))
@@ -106,15 +106,17 @@ ogm_header(AVFormatContext *s, int idx)
                 size -= 4;
             }
             if (size > 52) {
-                av_assert0(AV_INPUT_BUFFER_PADDING_SIZE <= 52);
                 size -= 52;
                 if (bytestream2_get_bytes_left(&p) < size)
                     return AVERROR_INVALIDDATA;
-                if (ff_alloc_extradata(st->codecpar, size) < 0)
-                    return AVERROR(ENOMEM);
+                if ((ret = ff_alloc_extradata(st->codecpar, size)) < 0)
+                    return ret;
                 bytestream2_get_buffer(&p, st->codecpar->extradata, st->codecpar->extradata_size);
             }
         }
+
+        // Update internal avctx with changes to codecpar above.
+        st->internal->need_context_update = 1;
     } else if (bytestream2_peek_byte(&p) == 3) {
         bytestream2_skip(&p, 7);
         if (bytestream2_get_bytes_left(&p) > 1)

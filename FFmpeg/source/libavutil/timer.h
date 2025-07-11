@@ -42,7 +42,7 @@
 #include <stdint.h>
 #include <inttypes.h>
 
-#if HAVE_MACH_MACH_TIME_H
+#if HAVE_MACH_ABSOLUTE_TIME
 #include <mach/mach_time.h>
 #endif
 
@@ -87,7 +87,7 @@
         if (((tcount + tskip_count) & (tcount + tskip_count - 1)) == 0) { \
             int i;                                                        \
             av_log(NULL, AV_LOG_ERROR,                                    \
-                   "%7"PRIu64" " FF_TIMER_UNITS " in %s,%8d runs,%7d skips",          \
+                   "%7" PRIu64 " " FF_TIMER_UNITS " in %s,%8d runs,%7d skips",\
                    tsum * 10 / tcount, id, tcount, tskip_count);          \
             for (i = 0; i < 32; i++)                                      \
                 av_log(NULL, AV_LOG_VERBOSE, " %2d", av_log2(2*thistogram[i]));\

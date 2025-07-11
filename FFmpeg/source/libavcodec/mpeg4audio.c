@@ -30,7 +30,7 @@
  * @param[in] c        MPEG4AudioConfig structure to fill
  * @return on success 0 is returned, otherwise a value < 0
  */
-static int parse_config_ALS(GetBitContext *gb, MPEG4AudioConfig *c)
+static int parse_config_ALS(GetBitContext *gb, MPEG4AudioConfig *c, void *logctx)
 {
     if (get_bits_left(gb) < 112)
         return AVERROR_INVALIDDATA;
@@ -43,7 +43,7 @@ static int parse_config_ALS(GetBitContext *gb, MPEG4AudioConfig *c)
     c->sample_rate = get_bits_long(gb, 32);
 
     if (c->sample_rate <= 0) {
-        av_log(NULL, AV_LOG_ERROR, "Invalid sample rate %d\n", c->sample_rate);
+        av_log(logctx, AV_LOG_ERROR, "Invalid sample rate %d\n", c->sample_rate);
         return AVERROR_INVALIDDATA;
     }
 
@@ -64,8 +64,21 @@ const int avpriv_mpeg4audio_sample_rates[16] = {
     24000, 22050, 16000, 12000, 11025, 8000, 7350
 };
 
-const uint8_t ff_mpeg4audio_channels[8] = {
-    0, 1, 2, 3, 4, 5, 6, 8
+const uint8_t ff_mpeg4audio_channels[14] = {
+    0,
+    1, // mono (1/0)
+    2, // stereo (2/0)
+    3, // 3/0
+    4, // 3/1
+    5, // 3/2
+    6, // 3/2.1
+    8, // 5/2.1
+    0,
+    0,
+    0,
+    7, // 3/3.1
+    8, // 3/2/2.1
+    24 // 3/3/3 - 5/2/3 - 3/0/0.2
 };
 
 static inline int get_object_type(GetBitContext *gb)
@@ -84,7 +97,7 @@ static inline int get_sample_rate(GetBitContext *gb, int *index)
 }
 
 int ff_mpeg4audio_get_config_gb(MPEG4AudioConfig *c, GetBitContext *gb,
-                                int sync_extension)
+                                int sync_extension, void *logctx)
 {
     int specific_config_bitindex, ret;
     int start_bit_index = get_bits_count(gb);
@@ -93,6 +106,10 @@ int ff_mpeg4audio_get_config_gb(MPEG4AudioConfig *c, GetBitContext *gb,
     c->chan_config = get_bits(gb, 4);
     if (c->chan_config < FF_ARRAY_ELEMS(ff_mpeg4audio_channels))
         c->channels = ff_mpeg4audio_channels[c->chan_config];
+    else {
+        av_log(logctx, AV_LOG_ERROR, "Invalid chan_config %d\n", c->chan_config);
+        return AVERROR_INVALIDDATA;
+    }
     c->sbr = -1;
     c->ps  = -1;
     if (c->object_type == AOT_SBR || (c->object_type == AOT_PS &&
@@ -114,12 +131,12 @@ int ff_mpeg4audio_get_config_gb(MPEG4AudioConfig *c, GetBitContext *gb,
 
     if (c->object_type == AOT_ALS) {
         skip_bits(gb, 5);
-        if (show_bits_long(gb, 24) != MKBETAG('\0','A','L','S'))
-            skip_bits_long(gb, 24);
+        if (show_bits(gb, 24) != MKBETAG('\0','A','L','S'))
+            skip_bits(gb, 24);
 
         specific_config_bitindex = get_bits_count(gb);
 
-        ret = parse_config_ALS(gb, c);
+        ret = parse_config_ALS(gb, c, logctx);
         if (ret < 0)
             return ret;
     }
@@ -152,6 +169,7 @@ int ff_mpeg4audio_get_config_gb(MPEG4AudioConfig *c, GetBitContext *gb,
     return specific_config_bitindex - start_bit_index;
 }
 
+#if LIBAVCODEC_VERSION_MAJOR < 59
 int avpriv_mpeg4audio_get_config(MPEG4AudioConfig *c, const uint8_t *buf,
                                  int bit_size, int sync_extension)
 {
@@ -165,45 +183,22 @@ int avpriv_mpeg4audio_get_config(MPEG4AudioConfig *c, const uint8_t *buf,
     if (ret < 0)
         return ret;
 
-    return ff_mpeg4audio_get_config_gb(c, &gb, sync_extension);
+    return ff_mpeg4audio_get_config_gb(c, &gb, sync_extension, NULL);
 }
+#endif
 
-static av_always_inline unsigned int copy_bits(PutBitContext *pb,
-                                               GetBitContext *gb,
-                                               int bits)
+int avpriv_mpeg4audio_get_config2(MPEG4AudioConfig *c, const uint8_t *buf,
+                                  int size, int sync_extension, void *logctx)
 {
-    unsigned int el = get_bits(gb, bits);
-    put_bits(pb, bits, el);
-    return el;
-}
+    GetBitContext gb;
+    int ret;
 
-int avpriv_copy_pce_data(PutBitContext *pb, GetBitContext *gb)
-{
-    int five_bit_ch, four_bit_ch, comment_size, bits;
-    int offset = put_bits_count(pb);
+    if (size <= 0)
+        return AVERROR_INVALIDDATA;
 
-    copy_bits(pb, gb, 10);                  //Tag, Object Type, Frequency
-    five_bit_ch  = copy_bits(pb, gb, 4);    //Front
-    five_bit_ch += copy_bits(pb, gb, 4);    //Side
-    five_bit_ch += copy_bits(pb, gb, 4);    //Back
-    four_bit_ch  = copy_bits(pb, gb, 2);    //LFE
-    four_bit_ch += copy_bits(pb, gb, 3);    //Data
-    five_bit_ch += copy_bits(pb, gb, 4);    //Coupling
-    if (copy_bits(pb, gb, 1))               //Mono Mixdown
-        copy_bits(pb, gb, 4);
-    if (copy_bits(pb, gb, 1))               //Stereo Mixdown
-        copy_bits(pb, gb, 4);
-    if (copy_bits(pb, gb, 1))               //Matrix Mixdown
-        copy_bits(pb, gb, 3);
-    for (bits = five_bit_ch*5+four_bit_ch*4; bits > 16; bits -= 16)
-        copy_bits(pb, gb, 16);
-    if (bits)
-        copy_bits(pb, gb, bits);
-    avpriv_align_put_bits(pb);
-    align_get_bits(gb);
-    comment_size = copy_bits(pb, gb, 8);
-    for (; comment_size > 0; comment_size--)
-        copy_bits(pb, gb, 8);
+    ret = init_get_bits8(&gb, buf, size);
+    if (ret < 0)
+        return ret;
 
-    return put_bits_count(pb) - offset;
+    return ff_mpeg4audio_get_config_gb(c, &gb, sync_extension, logctx);
 }

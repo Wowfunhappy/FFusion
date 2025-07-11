@@ -30,6 +30,7 @@
 
 #include "libavutil/buffer.h"
 #include "libavutil/intreadwrite.h"
+#include "libavutil/mem_internal.h"
 #include "libavutil/thread.h"
 
 #include "cabac.h"
@@ -161,6 +162,12 @@ typedef struct H264Picture {
     int recovered;          ///< picture at IDR or recovery point + recovery count
     int invalid_gap;
     int sei_recovery_frame_cnt;
+
+    AVBufferRef *pps_buf;
+    const PPS   *pps;
+
+    int mb_width, mb_height;
+    int mb_stride;
 } H264Picture;
 
 typedef struct H264Ref {
@@ -365,6 +372,7 @@ typedef struct H264Context {
     int context_initialized;
     int flags;
     int workaround_bugs;
+    int x264_build;
     /* Set when slice threading is used and at least one slice uses deblocking
      * mode 1 (i.e. across slice boundaries). Then we disable the loop filter
      * during normal MB decoding and execute it serially at the end.
@@ -831,8 +839,6 @@ int ff_h264_slice_context_init(H264Context *h, H264SliceContext *sl);
 
 void ff_h264_draw_horiz_band(const H264Context *h, H264SliceContext *sl, int y, int height);
 
-int ff_h264_decode_slice_header(H264Context *h, H264SliceContext *sl,
-                                const H2645NAL *nal);
 /**
  * Submit a slice for decoding.
  *

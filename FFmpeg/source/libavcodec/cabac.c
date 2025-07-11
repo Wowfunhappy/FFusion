@@ -27,12 +27,12 @@
 #include <string.h>
 
 #include "libavutil/common.h"
-#include "libavutil/timer.h"
+#include "libavutil/mem_internal.h"
 
 #include "cabac.h"
 #include "cabac_functions.h"
 
-const uint8_t ff_h264_cabac_tables[512 + 4*2*64 + 4*64 + 63] = {
+DECLARE_ASM_ALIGNED(1, const uint8_t, ff_h264_cabac_tables)[512 + 4*2*64 + 4*64 + 63] = {
     9,8,7,7,6,6,6,6,5,5,5,5,5,5,5,5,
     4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,
     3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,
@@ -157,18 +157,6 @@ const uint8_t ff_h264_cabac_tables[512 + 4*2*64 + 4*64 + 63] = {
     3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4,
     5, 5, 5, 5, 6, 6, 6, 6, 7, 7, 7, 7, 8, 8, 8
 };
-
-/**
- * @param buf_size size of buf in bits
- */
-void ff_init_cabac_encoder(CABACContext *c, uint8_t *buf, int buf_size){
-    init_put_bits(&c->pb, buf, buf_size);
-
-    c->low= 0;
-    c->range= 0x1FE;
-    c->outstanding_count= 0;
-    c->pb.bit_left++; //avoids firstBitFlag
-}
 
 /**
  *

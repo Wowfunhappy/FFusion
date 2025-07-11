@@ -42,9 +42,9 @@ static int hwmap_query_formats(AVFilterContext *avctx)
     int ret;
 
     if ((ret = ff_formats_ref(ff_all_formats(AVMEDIA_TYPE_VIDEO),
-                              &avctx->inputs[0]->out_formats)) < 0 ||
+                              &avctx->inputs[0]->outcfg.formats)) < 0 ||
         (ret = ff_formats_ref(ff_all_formats(AVMEDIA_TYPE_VIDEO),
-                              &avctx->outputs[0]->in_formats)) < 0)
+                              &avctx->outputs[0]->incfg.formats)) < 0)
         return ret;
 
     return 0;
@@ -114,7 +114,8 @@ static int hwmap_config_output(AVFilterLink *outlink)
             err = av_hwframe_ctx_create_derived(&ctx->hwframes_ref,
                                                 outlink->format,
                                                 device,
-                                                inlink->hw_frames_ctx, 0);
+                                                inlink->hw_frames_ctx,
+                                                ctx->mode);
             if (err < 0) {
                 av_log(avctx, AV_LOG_ERROR, "Failed to create derived "
                        "frames context: %d.\n", err);
@@ -142,7 +143,9 @@ static int hwmap_config_output(AVFilterLink *outlink)
             frames->sw_format = hwfc->sw_format;
             frames->width     = hwfc->width;
             frames->height    = hwfc->height;
-            frames->initial_pool_size = 64;
+
+            if (avctx->extra_hw_frames >= 0)
+                frames->initial_pool_size = 2 + avctx->extra_hw_frames;
 
             err = av_hwframe_ctx_init(ctx->hwframes_ref);
             if (err < 0) {
@@ -221,6 +224,9 @@ static int hwmap_config_output(AVFilterLink *outlink)
         hwfc->sw_format = inlink->format;
         hwfc->width     = inlink->w;
         hwfc->height    = inlink->h;
+
+        if (avctx->extra_hw_frames >= 0)
+            hwfc->initial_pool_size = 2 + avctx->extra_hw_frames;
 
         err = av_hwframe_ctx_init(ctx->hwframes_ref);
         if (err < 0) {

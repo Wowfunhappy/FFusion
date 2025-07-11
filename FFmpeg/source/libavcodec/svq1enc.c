@@ -33,6 +33,7 @@
 #include "h263.h"
 #include "internal.h"
 #include "mpegutils.h"
+#include "packet_internal.h"
 #include "svq1.h"
 #include "svq1enc.h"
 #include "svq1enc_cb.h"
@@ -283,19 +284,6 @@ static int svq1_encode_plane(SVQ1EncContext *s, int plane,
         s->m.b8_stride                     = 2 * s->m.mb_width + 1;
         s->m.f_code                        = 1;
         s->m.pict_type                     = s->pict_type;
-#if FF_API_MOTION_EST
-FF_DISABLE_DEPRECATION_WARNINGS
-        s->m.me_method                     = s->avctx->me_method;
-        if (s->motion_est == FF_ME_EPZS) {
-            if (s->avctx->me_method == ME_ZERO)
-                s->motion_est = FF_ME_ZERO;
-            else if (s->avctx->me_method == ME_EPZS)
-                s->motion_est = FF_ME_EPZS;
-            else if (s->avctx->me_method == ME_X1)
-                s->motion_est = FF_ME_XONE;
-        }
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
         s->m.motion_est                    = s->motion_est;
         s->m.me.scene_change_score         = 0;
         // s->m.out_format                    = FMT_H263;
@@ -358,7 +346,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
             s->m.first_slice_line = 0;
         }
 
-        ff_fix_long_p_mvs(&s->m);
+        ff_fix_long_p_mvs(&s->m, CANDIDATE_MB_TYPE_INTRA);
         ff_fix_long_mvs(&s->m, NULL, 0, s->m.p_mv_table, s->m.f_code,
                         CANDIDATE_MB_TYPE_INTER, 0);
     }
@@ -484,7 +472,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
 
             if (best != 2)
             for (i = 5; i >= 0; i--)
-                avpriv_copy_bits(&s->pb, reorder_buffer[best][i],
+                ff_copy_bits(&s->pb, reorder_buffer[best][i],
                                  count[best][i]);
             if (best == 0)
                 s->hdsp.put_pixels_tab[0][0](decoded, temp, stride, 16);
@@ -499,9 +487,10 @@ static av_cold int svq1_encode_end(AVCodecContext *avctx)
     SVQ1EncContext *const s = avctx->priv_data;
     int i;
 
-    av_log(avctx, AV_LOG_DEBUG, "RD: %f\n",
-           s->rd_total / (double)(avctx->width * avctx->height *
-                                  avctx->frame_number));
+    if (avctx->frame_number)
+        av_log(avctx, AV_LOG_DEBUG, "RD: %f\n",
+               s->rd_total / (double)(avctx->width * avctx->height *
+                                      avctx->frame_number));
 
     s->m.mb_type = NULL;
     ff_mpv_common_end(&s->m);
@@ -541,7 +530,6 @@ static av_cold int svq1_encode_init(AVCodecContext *avctx)
     s->current_picture = av_frame_alloc();
     s->last_picture    = av_frame_alloc();
     if (!s->current_picture || !s->last_picture) {
-        svq1_encode_end(avctx);
         return AVERROR(ENOMEM);
     }
 
@@ -558,7 +546,6 @@ static av_cold int svq1_encode_init(AVCodecContext *avctx)
     s->m.avctx             = avctx;
 
     if ((ret = ff_mpv_common_init(&s->m)) < 0) {
-        svq1_encode_end(avctx);
         return ret;
     }
 
@@ -576,7 +563,6 @@ static av_cold int svq1_encode_init(AVCodecContext *avctx)
 
     if (!s->m.me.temp || !s->m.me.scratchpad || !s->m.me.map ||
         !s->m.me.score_map || !s->mb_type || !s->dummy) {
-        svq1_encode_end(avctx);
         return AVERROR(ENOMEM);
     }
 
@@ -662,7 +648,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
         }
     }
 
-    // avpriv_align_put_bits(&s->pb);
+    // align_put_bits(&s->pb);
     while (put_bits_count(&s->pb) & 31)
         put_bits(&s->pb, 1, 0);
 
@@ -704,6 +690,7 @@ AVCodec ff_svq1_encoder = {
     .init           = svq1_encode_init,
     .encode2        = svq1_encode_frame,
     .close          = svq1_encode_end,
+    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
     .pix_fmts       = (const enum AVPixelFormat[]) { AV_PIX_FMT_YUV410P,
                                                      AV_PIX_FMT_NONE },
 };

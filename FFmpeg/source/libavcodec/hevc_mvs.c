@@ -48,9 +48,9 @@ void ff_hevc_set_neighbour_available(HEVCContext *s, int x0, int y0,
 
     lc->na.cand_up       = (lc->ctb_up_flag   || y0b);
     lc->na.cand_left     = (lc->ctb_left_flag || x0b);
-    lc->na.cand_up_left  = (!x0b && !y0b) ? lc->ctb_up_left_flag : lc->na.cand_left && lc->na.cand_up;
+    lc->na.cand_up_left  = (x0b || y0b) ? lc->na.cand_left && lc->na.cand_up : lc->ctb_up_left_flag;
     lc->na.cand_up_right_sap =
-            ((x0b + nPbW) == (1 << s->ps.sps->log2_ctb_size)) ?
+            (x0b + nPbW == 1 << s->ps.sps->log2_ctb_size) ?
                     lc->ctb_up_right_flag && !y0b : lc->na.cand_up;
     lc->na.cand_up_right =
             lc->na.cand_up_right_sap
@@ -482,7 +482,7 @@ void ff_hevc_luma_mv_merge_mode(HEVCContext *s, int x0, int y0, int nPbW,
 {
     int singleMCLFlag = 0;
     int nCS = 1 << log2_cb_size;
-    LOCAL_ALIGNED(4, MvField, mergecand_list, [MRG_MAX_NUM_CANDS]);
+    MvField mergecand_list[MRG_MAX_NUM_CANDS];
     int nPbW2 = nPbW;
     int nPbH2 = nPbH;
     HEVCLocalContext *lc = s->HEVClc;

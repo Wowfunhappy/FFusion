@@ -19,24 +19,19 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "avcodec.h"
 #include "bsf.h"
-#include "internal.h"
+#include "bsf_internal.h"
 
-static int chomp_filter(AVBSFContext *ctx, AVPacket *out)
+static int chomp_filter(AVBSFContext *ctx, AVPacket *pkt)
 {
-    AVPacket *in;
     int ret;
 
-    ret = ff_bsf_get_packet(ctx, &in);
+    ret = ff_bsf_get_packet_ref(ctx, pkt);
     if (ret < 0)
         return ret;
 
-    while (in->size > 0 && !in->data[in->size - 1])
-        in->size--;
-
-    av_packet_move_ref(out, in);
-    av_packet_free(&in);
+    while (pkt->size > 0 && !pkt->data[pkt->size - 1])
+        pkt->size--;
 
     return 0;
 }

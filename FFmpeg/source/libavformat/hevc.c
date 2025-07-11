@@ -418,7 +418,7 @@ static void skip_scaling_list_data(GetBitContext *gb)
 
 static int parse_rps(GetBitContext *gb, unsigned int rps_idx,
                      unsigned int num_rps,
-                     unsigned int num_delta_pocs[HEVC_MAX_SHORT_TERM_RPS_COUNT])
+                     unsigned int num_delta_pocs[HEVC_MAX_SHORT_TERM_REF_PIC_SETS])
 {
     unsigned int i;
 
@@ -487,7 +487,7 @@ static int hvcc_parse_sps(GetBitContext *gb,
                           HEVCDecoderConfigurationRecord *hvcc)
 {
     unsigned int i, sps_max_sub_layers_minus1, log2_max_pic_order_cnt_lsb_minus4;
-    unsigned int num_short_term_ref_pic_sets, num_delta_pocs[HEVC_MAX_SHORT_TERM_RPS_COUNT];
+    unsigned int num_short_term_ref_pic_sets, num_delta_pocs[HEVC_MAX_SHORT_TERM_REF_PIC_SETS];
 
     skip_bits(gb, 4); // sps_video_parameter_set_id
 
@@ -557,7 +557,7 @@ static int hvcc_parse_sps(GetBitContext *gb,
     }
 
     num_short_term_ref_pic_sets = get_ue_golomb_long(gb);
-    if (num_short_term_ref_pic_sets > HEVC_MAX_SHORT_TERM_RPS_COUNT)
+    if (num_short_term_ref_pic_sets > HEVC_MAX_SHORT_TERM_REF_PIC_SETS)
         return AVERROR_INVALIDDATA;
 
     for (i = 0; i < num_short_term_ref_pic_sets; i++) {
@@ -644,40 +644,6 @@ static int hvcc_parse_pps(GetBitContext *gb,
     return 0;
 }
 
-static uint8_t *nal_unit_extract_rbsp(const uint8_t *src, uint32_t src_len,
-                                      uint32_t *dst_len)
-{
-    uint8_t *dst;
-    uint32_t i, len;
-
-    dst = av_malloc(src_len + AV_INPUT_BUFFER_PADDING_SIZE);
-    if (!dst)
-        return NULL;
-
-    /* NAL unit header (2 bytes) */
-    i = len = 0;
-    while (i < 2 && i < src_len)
-        dst[len++] = src[i++];
-
-    while (i + 2 < src_len)
-        if (!src[i] && !src[i + 1] && src[i + 2] == 3) {
-            dst[len++] = src[i++];
-            dst[len++] = src[i++];
-            i++; // remove emulation_prevention_three_byte
-        } else
-            dst[len++] = src[i++];
-
-    while (i < src_len)
-        dst[len++] = src[i++];
-
-    memset(dst + len, 0, AV_INPUT_BUFFER_PADDING_SIZE);
-
-    *dst_len = len;
-    return dst;
-}
-
-
-
 static void nal_unit_parse_header(GetBitContext *gb, uint8_t *nal_type)
 {
     skip_bits1(gb); // forbidden_zero_bit
@@ -754,7 +720,7 @@ static int hvcc_add_nal_unit(uint8_t *nal_buf, uint32_t nal_size,
     uint8_t *rbsp_buf;
     uint32_t rbsp_size;
 
-    rbsp_buf = nal_unit_extract_rbsp(nal_buf, nal_size, &rbsp_size);
+    rbsp_buf = ff_nal_unit_extract_rbsp(nal_buf, nal_size, &rbsp_size, 2);
     if (!rbsp_buf) {
         ret = AVERROR(ENOMEM);
         goto end;
@@ -1096,35 +1062,33 @@ int ff_hevc_annexb2mp4_buf(const uint8_t *buf_in, uint8_t **buf_out,
 
     *size = avio_close_dyn_buf(pb, buf_out);
 
-    return ret;
+    return 0;
 }
 
 int ff_isom_write_hvcc(AVIOContext *pb, const uint8_t *data,
                        int size, int ps_array_completeness)
 {
-    int ret = 0;
-    uint8_t *buf, *end, *start = NULL;
     HEVCDecoderConfigurationRecord hvcc;
-
-    hvcc_init(&hvcc);
+    uint8_t *buf, *end, *start;
+    int ret;
 
     if (size < 6) {
         /* We can't write a valid hvcC from the provided data */
-        ret = AVERROR_INVALIDDATA;
-        goto end;
+        return AVERROR_INVALIDDATA;
     } else if (*data == 1) {
         /* Data is already hvcC-formatted */
         avio_write(pb, data, size);
-        goto end;
+        return 0;
     } else if (!(AV_RB24(data) == 1 || AV_RB32(data) == 1)) {
         /* Not a valid Annex B start code prefix */
-        ret = AVERROR_INVALIDDATA;
-        goto end;
+        return AVERROR_INVALIDDATA;
     }
 
     ret = ff_avc_parse_nal_units_buf(data, &start, &size);
     if (ret < 0)
-        goto end;
+        return ret;
+
+    hvcc_init(&hvcc);
 
     buf = start;
     end = start + size;

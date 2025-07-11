@@ -24,7 +24,7 @@
 #include <vdpau/vdpau.h>
 
 #include "avcodec.h"
-#include "hwaccel.h"
+#include "hwconfig.h"
 #include "mpeg4video.h"
 #include "vdpau.h"
 #include "vdpau_internal.h"
@@ -74,8 +74,9 @@ static int vdpau_mpeg4_start_frame(AVCodecContext *avctx,
     info->alternate_vertical_scan_flag      = s->alternate_scan;
     info->top_field_first                   = s->top_field_first;
     for (i = 0; i < 64; ++i) {
-        info->intra_quantizer_matrix[i]     = s->intra_matrix[i];
-        info->non_intra_quantizer_matrix[i] = s->inter_matrix[i];
+        int n = s->idsp.idct_permutation[i];
+        info->intra_quantizer_matrix[i]     = s->intra_matrix[n];
+        info->non_intra_quantizer_matrix[i] = s->inter_matrix[n];
     }
 
     ff_vdpau_common_start_frame(pic_ctx, buffer, size);
@@ -110,7 +111,7 @@ static int vdpau_mpeg4_init(AVCodecContext *avctx)
     return ff_vdpau_common_init(avctx, profile, avctx->level);
 }
 
-AVHWAccel ff_mpeg4_vdpau_hwaccel = {
+const AVHWAccel ff_mpeg4_vdpau_hwaccel = {
     .name           = "mpeg4_vdpau",
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_MPEG4,
@@ -121,6 +122,7 @@ AVHWAccel ff_mpeg4_vdpau_hwaccel = {
     .frame_priv_data_size = sizeof(struct vdpau_picture_context),
     .init           = vdpau_mpeg4_init,
     .uninit         = ff_vdpau_common_uninit,
+    .frame_params   = ff_vdpau_common_frame_params,
     .priv_data_size = sizeof(VDPAUContext),
     .caps_internal  = HWACCEL_CAP_ASYNC_SAFE,
 };

@@ -20,27 +20,25 @@
  */
 
 #include "libavutil/avassert.h"
-#include "avcodec.h"
+
 #include "bsf.h"
+#include "bsf_internal.h"
 #include "get_bits.h"
 
 #define MAX_CACHE 8
 typedef struct VP9BSFContext {
     int n_cache;
-    struct CachedBuf {
-        uint8_t *data;
-        int size;
-    } cache[MAX_CACHE];
+    AVPacket *cache[MAX_CACHE];
 } VP9BSFContext;
 
-static void stats(const struct CachedBuf *in, int n_in,
+static void stats(AVPacket * const *in, int n_in,
                   unsigned *_max, unsigned *_sum)
 {
     int n;
     unsigned max = 0, sum = 0;
 
     for (n = 0; n < n_in; n++) {
-        unsigned sz = in[n].size;
+        unsigned sz = in[n]->size;
 
         if (sz > max)
             max = sz;
@@ -51,7 +49,7 @@ static void stats(const struct CachedBuf *in, int n_in,
     *_sum = sum;
 }
 
-static int merge_superframe(const struct CachedBuf *in, int n_in, AVPacket *out)
+static int merge_superframe(AVPacket * const *in, int n_in, AVPacket *out)
 {
     unsigned max, sum, mag, marker, n, sz;
     uint8_t *ptr;
@@ -66,30 +64,32 @@ static int merge_superframe(const struct CachedBuf *in, int n_in, AVPacket *out)
         return res;
     ptr = out->data;
     for (n = 0; n < n_in; n++) {
-        memcpy(ptr, in[n].data, in[n].size);
-        ptr += in[n].size;
+        memcpy(ptr, in[n]->data, in[n]->size);
+        ptr += in[n]->size;
     }
 
 #define wloop(mag, wr) \
-    for (n = 0; n < n_in; n++) { \
-        wr; \
-        ptr += mag + 1; \
-    }
+    do { \
+        for (n = 0; n < n_in; n++) { \
+            wr; \
+            ptr += mag + 1; \
+        } \
+    } while (0)
 
     // write superframe with marker 110[mag:2][nframes:3]
     *ptr++ = marker;
     switch (mag) {
     case 0:
-        wloop(mag, *ptr = in[n].size);
+        wloop(mag, *ptr = in[n]->size);
         break;
     case 1:
-        wloop(mag, AV_WL16(ptr, in[n].size));
+        wloop(mag, AV_WL16(ptr, in[n]->size));
         break;
     case 2:
-        wloop(mag, AV_WL24(ptr, in[n].size));
+        wloop(mag, AV_WL24(ptr, in[n]->size));
         break;
     case 3:
-        wloop(mag, AV_WL32(ptr, in[n].size));
+        wloop(mag, AV_WL32(ptr, in[n]->size));
         break;
     }
     *ptr++ = marker;
@@ -98,26 +98,25 @@ static int merge_superframe(const struct CachedBuf *in, int n_in, AVPacket *out)
     return 0;
 }
 
-static int vp9_superframe_filter(AVBSFContext *ctx, AVPacket *out)
+static int vp9_superframe_filter(AVBSFContext *ctx, AVPacket *pkt)
 {
     GetBitContext gb;
     VP9BSFContext *s = ctx->priv_data;
-    AVPacket *in;
     int res, invisible, profile, marker, uses_superframe_syntax = 0, n;
 
-    res = ff_bsf_get_packet(ctx, &in);
+    res = ff_bsf_get_packet_ref(ctx, pkt);
     if (res < 0)
         return res;
 
-    marker = in->data[in->size - 1];
+    marker = pkt->data[pkt->size - 1];
     if ((marker & 0xe0) == 0xc0) {
         int nbytes = 1 + ((marker >> 3) & 0x3);
         int n_frames = 1 + (marker & 0x7), idx_sz = 2 + n_frames * nbytes;
 
-        uses_superframe_syntax = in->size >= idx_sz && in->data[in->size - idx_sz] == marker;
+        uses_superframe_syntax = pkt->size >= idx_sz && pkt->data[pkt->size - idx_sz] == marker;
     }
 
-    if ((res = init_get_bits8(&gb, in->data, in->size)) < 0)
+    if ((res = init_get_bits8(&gb, pkt->data, pkt->size)) < 0)
         goto done;
 
     get_bits(&gb, 2); // frame marker
@@ -134,52 +133,68 @@ static int vp9_superframe_filter(AVBSFContext *ctx, AVPacket *out)
 
     if (uses_superframe_syntax && s->n_cache > 0) {
         av_log(ctx, AV_LOG_ERROR,
-               "Mixing of superframe syntax and naked VP9 frames not supported");
-        res = AVERROR_INVALIDDATA;
+               "Mixing of superframe syntax and naked VP9 frames not supported\n");
+        res = AVERROR(ENOSYS);
         goto done;
     } else if ((!invisible || uses_superframe_syntax) && !s->n_cache) {
         // passthrough
-        av_packet_move_ref(out, in);
-        goto done;
+        return 0;
     } else if (s->n_cache + 1 >= MAX_CACHE) {
         av_log(ctx, AV_LOG_ERROR,
-               "Too many invisible frames");
+               "Too many invisible frames\n");
         res = AVERROR_INVALIDDATA;
         goto done;
     }
 
-    s->cache[s->n_cache].size = in->size;
-    if (invisible && !uses_superframe_syntax) {
-        s->cache[s->n_cache].data = av_malloc(in->size);
-        if (!s->cache[s->n_cache].data) {
-            res = AVERROR(ENOMEM);
-            goto done;
-        }
-        memcpy(s->cache[s->n_cache++].data, in->data, in->size);
-        res = AVERROR(EAGAIN);
-        goto done;
+    av_packet_move_ref(s->cache[s->n_cache++], pkt);
+
+    if (invisible) {
+        return AVERROR(EAGAIN);
     }
     av_assert0(s->n_cache > 0);
 
-    s->cache[s->n_cache].data = in->data;
-
     // build superframe
-    if ((res = merge_superframe(s->cache, s->n_cache + 1, out)) < 0)
+    if ((res = merge_superframe(s->cache, s->n_cache, pkt)) < 0)
+        goto done;
+
+    res = av_packet_copy_props(pkt, s->cache[s->n_cache - 1]);
+    if (res < 0)
         goto done;
 
     for (n = 0; n < s->n_cache; n++)
-        av_freep(&s->cache[n].data);
+        av_packet_unref(s->cache[n]);
     s->n_cache = 0;
-
-    res = av_packet_copy_props(out, in);
-    if (res < 0)
-        goto done;
 
 done:
     if (res < 0)
-        av_packet_unref(out);
-    av_packet_free(&in);
+        av_packet_unref(pkt);
     return res;
+}
+
+static int vp9_superframe_init(AVBSFContext *ctx)
+{
+    VP9BSFContext *s = ctx->priv_data;
+    int n;
+
+    // alloc cache packets
+    for (n = 0; n < MAX_CACHE; n++) {
+        s->cache[n] = av_packet_alloc();
+        if (!s->cache[n])
+            return AVERROR(ENOMEM);
+    }
+
+    return 0;
+}
+
+static void vp9_superframe_flush(AVBSFContext *ctx)
+{
+    VP9BSFContext *s = ctx->priv_data;
+    int n;
+
+    // unref cached data
+    for (n = 0; n < s->n_cache; n++)
+        av_packet_unref(s->cache[n]);
+    s->n_cache = 0;
 }
 
 static void vp9_superframe_close(AVBSFContext *ctx)
@@ -188,8 +203,8 @@ static void vp9_superframe_close(AVBSFContext *ctx)
     int n;
 
     // free cached data
-    for (n = 0; n < s->n_cache; n++)
-        av_freep(&s->cache[n].data);
+    for (n = 0; n < MAX_CACHE; n++)
+        av_packet_free(&s->cache[n]);
 }
 
 static const enum AVCodecID codec_ids[] = {
@@ -200,6 +215,8 @@ const AVBitStreamFilter ff_vp9_superframe_bsf = {
     .name           = "vp9_superframe",
     .priv_data_size = sizeof(VP9BSFContext),
     .filter         = vp9_superframe_filter,
+    .init           = vp9_superframe_init,
+    .flush          = vp9_superframe_flush,
     .close          = vp9_superframe_close,
     .codec_ids      = codec_ids,
 };

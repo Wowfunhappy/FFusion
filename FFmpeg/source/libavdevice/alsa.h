@@ -43,7 +43,7 @@
 
 typedef void (*ff_reorder_func)(const void *, void *, int);
 
-#define ALSA_BUFFER_SIZE_MAX 65536
+#define ALSA_BUFFER_SIZE_MAX 131072
 
 typedef struct AlsaData {
     AVClass *class;
@@ -58,6 +58,7 @@ typedef struct AlsaData {
     void *reorder_buf;
     int reorder_buf_size; ///< in frames
     int64_t timestamp; ///< current timestamp, without latency applied.
+    AVPacket *pkt;
 } AlsaData;
 
 /**

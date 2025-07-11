@@ -27,6 +27,7 @@
 #include <inttypes.h>
 #include <stdlib.h>
 
+#define CACHED_BITSTREAM_READER !ARCH_X86_32
 #define UNCHECKED_BITSTREAM_READER 1
 
 #include "libavutil/intreadwrite.h"
@@ -39,95 +40,55 @@
 #include "thread.h"
 #include "utvideo.h"
 
-static int build_huff10(const uint8_t *src, VLC *vlc, int *fsym)
+typedef struct HuffEntry {
+    uint8_t len;
+    uint16_t sym;
+} HuffEntry;
+
+static int build_huff(UtvideoContext *c, const uint8_t *src, VLC *vlc,
+                      int *fsym, unsigned nb_elems)
 {
     int i;
     HuffEntry he[1024];
-    int last;
-    uint32_t codes[1024];
     uint8_t bits[1024];
-    uint16_t syms[1024];
-    uint32_t code;
+    uint16_t codes_count[33] = { 0 };
 
     *fsym = -1;
-    for (i = 0; i < 1024; i++) {
-        he[i].sym = i;
-        he[i].len = *src++;
-    }
-    qsort(he, 1024, sizeof(*he), ff_ut10_huff_cmp_len);
+    for (i = 0; i < nb_elems; i++) {
+        if (src[i] == 0) {
+            *fsym = i;
+            return 0;
+        } else if (src[i] == 255) {
+            bits[i] = 0;
+        } else if (src[i] <= 32) {
+            bits[i] = src[i];
+        } else
+            return AVERROR_INVALIDDATA;
 
-    if (!he[0].len) {
-        *fsym = he[0].sym;
-        return 0;
+        codes_count[bits[i]]++;
     }
+    if (codes_count[0] == nb_elems)
+        return AVERROR_INVALIDDATA;
 
-    last = 1023;
-    while (he[last].len == 255 && last)
-        last--;
+    /* For Ut Video, longer codes are to the left of the tree and
+     * for codes with the same length the symbol is descending from
+     * left to right. So after the next loop --codes_count[i] will
+     * be the index of the first (lowest) symbol of length i when
+     * indexed by the position in the tree with left nodes being first. */
+    for (int i = 31; i >= 0; i--)
+        codes_count[i] += codes_count[i + 1];
 
-    if (he[last].len > 32) {
-        return -1;
-    }
+    for (unsigned i = 0; i < nb_elems; i++)
+        he[--codes_count[bits[i]]] = (HuffEntry) { bits[i], i };
 
-    code = 1;
-    for (i = last; i >= 0; i--) {
-        codes[i] = code >> (32 - he[i].len);
-        bits[i]  = he[i].len;
-        syms[i]  = he[i].sym;
-        code += 0x80000000u >> (he[i].len - 1);
-    }
 #define VLC_BITS 11
-    return ff_init_vlc_sparse(vlc, VLC_BITS, last + 1,
-                              bits,  sizeof(*bits),  sizeof(*bits),
-                              codes, sizeof(*codes), sizeof(*codes),
-                              syms,  sizeof(*syms),  sizeof(*syms), 0);
-}
-
-static int build_huff(const uint8_t *src, VLC *vlc, int *fsym)
-{
-    int i;
-    HuffEntry he[256];
-    int last;
-    uint32_t codes[256];
-    uint8_t bits[256];
-    uint8_t syms[256];
-    uint32_t code;
-
-    *fsym = -1;
-    for (i = 0; i < 256; i++) {
-        he[i].sym = i;
-        he[i].len = *src++;
-    }
-    qsort(he, 256, sizeof(*he), ff_ut_huff_cmp_len);
-
-    if (!he[0].len) {
-        *fsym = he[0].sym;
-        return 0;
-    }
-
-    last = 255;
-    while (he[last].len == 255 && last)
-        last--;
-
-    if (he[last].len > 32)
-        return -1;
-
-    code = 1;
-    for (i = last; i >= 0; i--) {
-        codes[i] = code >> (32 - he[i].len);
-        bits[i]  = he[i].len;
-        syms[i]  = he[i].sym;
-        code += 0x80000000u >> (he[i].len - 1);
-    }
-
-    return ff_init_vlc_sparse(vlc, VLC_BITS, last + 1,
-                              bits,  sizeof(*bits),  sizeof(*bits),
-                              codes, sizeof(*codes), sizeof(*codes),
-                              syms,  sizeof(*syms),  sizeof(*syms), 0);
+    return ff_init_vlc_from_lengths(vlc, VLC_BITS, codes_count[0],
+                                    &he[0].len, sizeof(*he),
+                                    &he[0].sym, sizeof(*he), 2, 0, 0, c->avctx);
 }
 
 static int decode_plane10(UtvideoContext *c, int plane_no,
-                          uint16_t *dst, int step, ptrdiff_t stride,
+                          uint16_t *dst, ptrdiff_t stride,
                           int width, int height,
                           const uint8_t *src, const uint8_t *huff,
                           int use_pred)
@@ -138,7 +99,7 @@ static int decode_plane10(UtvideoContext *c, int plane_no,
     GetBitContext gb;
     int prev, fsym;
 
-    if ((ret = build_huff10(huff, &vlc, &fsym)) < 0) {
+    if ((ret = build_huff(c, huff, &vlc, &fsym, 1024)) < 0) {
         av_log(c->avctx, AV_LOG_ERROR, "Cannot build Huffman codes\n");
         return ret;
     }
@@ -153,7 +114,7 @@ static int decode_plane10(UtvideoContext *c, int plane_no,
 
             prev = 0x200;
             for (j = sstart; j < send; j++) {
-                for (i = 0; i < width * step; i += step) {
+                for (i = 0; i < width; i++) {
                     pix = fsym;
                     if (use_pred) {
                         prev += pix;
@@ -196,8 +157,7 @@ static int decode_plane10(UtvideoContext *c, int plane_no,
 
         prev = 0x200;
         for (j = sstart; j < send; j++) {
-            int ws = width * step;
-            for (i = 0; i < ws; i += step) {
+            for (i = 0; i < width; i++) {
                 pix = get_vlc2(&gb, vlc.table, VLC_BITS, 3);
                 if (pix < 0) {
                     av_log(c->avctx, AV_LOG_ERROR, "Decoding error\n");
@@ -230,8 +190,18 @@ fail:
     return AVERROR_INVALIDDATA;
 }
 
+static int compute_cmask(int plane_no, int interlaced, enum AVPixelFormat pix_fmt)
+{
+    const int is_luma = (pix_fmt == AV_PIX_FMT_YUV420P) && !plane_no;
+
+    if (interlaced)
+        return ~(1 + 2 * is_luma);
+
+    return ~is_luma;
+}
+
 static int decode_plane(UtvideoContext *c, int plane_no,
-                        uint8_t *dst, int step, ptrdiff_t stride,
+                        uint8_t *dst, ptrdiff_t stride,
                         int width, int height,
                         const uint8_t *src, int use_pred)
 {
@@ -239,10 +209,57 @@ static int decode_plane(UtvideoContext *c, int plane_no,
     int sstart, send;
     VLC vlc;
     GetBitContext gb;
-    int prev, fsym;
-    const int cmask = c->interlaced ? ~(1 + 2 * (!plane_no && c->avctx->pix_fmt == AV_PIX_FMT_YUV420P)) : ~(!plane_no && c->avctx->pix_fmt == AV_PIX_FMT_YUV420P);
+    int ret, prev, fsym;
+    const int cmask = compute_cmask(plane_no, c->interlaced, c->avctx->pix_fmt);
 
-    if (build_huff(src, &vlc, &fsym)) {
+    if (c->pack) {
+        send = 0;
+        for (slice = 0; slice < c->slices; slice++) {
+            GetBitContext cbit, pbit;
+            uint8_t *dest, *p;
+
+            ret = init_get_bits8_le(&cbit, c->control_stream[plane_no][slice], c->control_stream_size[plane_no][slice]);
+            if (ret < 0)
+                return ret;
+
+            ret = init_get_bits8_le(&pbit, c->packed_stream[plane_no][slice], c->packed_stream_size[plane_no][slice]);
+            if (ret < 0)
+                return ret;
+
+            sstart = send;
+            send   = (height * (slice + 1) / c->slices) & cmask;
+            dest   = dst + sstart * stride;
+
+            if (3 * ((dst + send * stride - dest + 7)/8) > get_bits_left(&cbit))
+                return AVERROR_INVALIDDATA;
+
+            for (p = dest; p < dst + send * stride; p += 8) {
+                int bits = get_bits_le(&cbit, 3);
+
+                if (bits == 0) {
+                    *(uint64_t *) p = 0;
+                } else {
+                    uint32_t sub = 0x80 >> (8 - (bits + 1)), add;
+                    int k;
+
+                    if ((bits + 1) * 8 > get_bits_left(&pbit))
+                        return AVERROR_INVALIDDATA;
+
+                    for (k = 0; k < 8; k++) {
+
+                        p[k] = get_bits_le(&pbit, bits + 1);
+                        add = (~p[k] & sub) << (8 - bits);
+                        p[k] -= sub;
+                        p[k] += add;
+                    }
+                }
+            }
+        }
+
+        return 0;
+    }
+
+    if (build_huff(c, src, &vlc, &fsym, 256)) {
         av_log(c->avctx, AV_LOG_ERROR, "Cannot build Huffman codes\n");
         return AVERROR_INVALIDDATA;
     }
@@ -257,7 +274,7 @@ static int decode_plane(UtvideoContext *c, int plane_no,
 
             prev = 0x80;
             for (j = sstart; j < send; j++) {
-                for (i = 0; i < width * step; i += step) {
+                for (i = 0; i < width; i++) {
                     pix = fsym;
                     if (use_pred) {
                         prev += (unsigned)pix;
@@ -301,8 +318,7 @@ static int decode_plane(UtvideoContext *c, int plane_no,
 
         prev = 0x80;
         for (j = sstart; j < send; j++) {
-            int ws = width * step;
-            for (i = 0; i < ws; i += step) {
+            for (i = 0; i < width; i++) {
                 pix = get_vlc2(&gb, vlc.table, VLC_BITS, 3);
                 if (pix < 0) {
                     av_log(c->avctx, AV_LOG_ERROR, "Decoding error\n");
@@ -366,12 +382,16 @@ static void restore_median_planar(UtvideoContext *c, uint8_t *src, ptrdiff_t str
         C        = bsrc[-stride];
         bsrc[0] += C;
         A        = bsrc[0];
-        for (i = 1; i < width; i++) {
+        for (i = 1; i < FFMIN(width, 16); i++) { /* scalar loop (DSP need align 16) */
             B        = bsrc[i - stride];
             bsrc[i] += mid_pred(A, B, (uint8_t)(A + B - C));
             C        = B;
             A        = bsrc[i];
         }
+        if (width > 16)
+            c->llviddsp.add_median_pred(bsrc + 16, bsrc - stride + 16,
+                                        bsrc + 16, width - 16, &A, &B);
+
         bsrc += stride;
         // the rest of lines use continuous median prediction
         for (j = 2; j < slice_height; j++) {
@@ -417,12 +437,16 @@ static void restore_median_planar_il(UtvideoContext *c, uint8_t *src, ptrdiff_t 
         C        = bsrc[-stride2];
         bsrc[0] += C;
         A        = bsrc[0];
-        for (i = 1; i < width; i++) {
+        for (i = 1; i < FFMIN(width, 16); i++) { /* scalar loop (DSP need align 16) */
             B        = bsrc[i - stride2];
             bsrc[i] += mid_pred(A, B, (uint8_t)(A + B - C));
             C        = B;
             A        = bsrc[i];
         }
+        if (width > 16)
+            c->llviddsp.add_median_pred(bsrc + 16, bsrc - stride2 + 16,
+                                        bsrc + 16, width - 16, &A, &B);
+
         c->llviddsp.add_median_pred(bsrc + stride, bsrc - stride,
                                         bsrc + stride, width, &A, &B);
         bsrc += stride2;
@@ -445,6 +469,7 @@ static void restore_gradient_planar(UtvideoContext *c, uint8_t *src, ptrdiff_t s
     uint8_t *bsrc;
     int slice_start, slice_height;
     const int cmask = ~rmode;
+    int min_width = FFMIN(width, 32);
 
     for (slice = 0; slice < slices; slice++) {
         slice_start  = ((slice * height) / slices) & cmask;
@@ -464,12 +489,14 @@ static void restore_gradient_planar(UtvideoContext *c, uint8_t *src, ptrdiff_t s
         for (j = 1; j < slice_height; j++) {
             // second line - first element has top prediction, the rest uses gradient
             bsrc[0] = (bsrc[0] + bsrc[-stride]) & 0xFF;
-            for (i = 1; i < width; i++) {
+            for (i = 1; i < min_width; i++) { /* dsp need align 32 */
                 A = bsrc[i - stride];
                 B = bsrc[i - (stride + 1)];
                 C = bsrc[i - 1];
                 bsrc[i] = (A - B + C + bsrc[i]) & 0xFF;
             }
+            if (width > 32)
+                c->llviddsp.add_gradient_pred(bsrc + 32, stride, width - 32);
             bsrc += stride;
         }
     }
@@ -484,6 +511,7 @@ static void restore_gradient_planar_il(UtvideoContext *c, uint8_t *src, ptrdiff_
     int slice_start, slice_height;
     const int cmask   = ~(rmode ? 3 : 1);
     const ptrdiff_t stride2 = stride << 1;
+    int min_width = FFMIN(width, 32);
 
     for (slice = 0; slice < slices; slice++) {
         slice_start    = ((slice * height) / slices) & cmask;
@@ -505,12 +533,15 @@ static void restore_gradient_planar_il(UtvideoContext *c, uint8_t *src, ptrdiff_
         for (j = 1; j < slice_height; j++) {
             // second line - first element has top prediction, the rest uses gradient
             bsrc[0] = (bsrc[0] + bsrc[-stride2]) & 0xFF;
-            for (i = 1; i < width; i++) {
+            for (i = 1; i < min_width; i++) { /* dsp need align 32 */
                 A = bsrc[i - stride2];
                 B = bsrc[i - (stride2 + 1)];
                 C = bsrc[i - 1];
                 bsrc[i] = (A - B + C + bsrc[i]) & 0xFF;
             }
+            if (width > 32)
+                c->llviddsp.add_gradient_pred(bsrc + 32, stride2, width - 32);
+
             A = bsrc[-stride];
             B = bsrc[-(1 + stride + stride - width)];
             C = bsrc[width - 1];
@@ -544,7 +575,58 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
 
     /* parse plane structure to get frame flags and validate slice offsets */
     bytestream2_init(&gb, buf, buf_size);
-    if (c->pro) {
+
+    if (c->pack) {
+        const uint8_t *packed_stream;
+        const uint8_t *control_stream;
+        GetByteContext pb;
+        uint32_t nb_cbs;
+        int left;
+
+        c->frame_info = PRED_GRADIENT << 8;
+
+        if (bytestream2_get_byte(&gb) != 1)
+            return AVERROR_INVALIDDATA;
+        bytestream2_skip(&gb, 3);
+        c->offset = bytestream2_get_le32(&gb);
+
+        if (buf_size <= c->offset + 8LL)
+            return AVERROR_INVALIDDATA;
+
+        bytestream2_init(&pb, buf + 8 + c->offset, buf_size - 8 - c->offset);
+
+        nb_cbs = bytestream2_get_le32(&pb);
+        if (nb_cbs > c->offset)
+            return AVERROR_INVALIDDATA;
+
+        packed_stream = buf + 8;
+        control_stream = packed_stream + (c->offset - nb_cbs);
+        left = control_stream - packed_stream;
+
+        for (i = 0; i < c->planes; i++) {
+            for (j = 0; j < c->slices; j++) {
+                c->packed_stream[i][j] = packed_stream;
+                c->packed_stream_size[i][j] = bytestream2_get_le32(&pb);
+                if (c->packed_stream_size[i][j] > left)
+                    return AVERROR_INVALIDDATA;
+                left -= c->packed_stream_size[i][j];
+                packed_stream += c->packed_stream_size[i][j];
+            }
+        }
+
+        left = buf + buf_size - control_stream;
+
+        for (i = 0; i < c->planes; i++) {
+            for (j = 0; j < c->slices; j++) {
+                c->control_stream[i][j] = control_stream;
+                c->control_stream_size[i][j] = bytestream2_get_le32(&pb);
+                if (c->control_stream_size[i][j] > left)
+                    return AVERROR_INVALIDDATA;
+                left -= c->control_stream_size[i][j];
+                control_stream += c->control_stream_size[i][j];
+            }
+        }
+    } else if (c->pro) {
         if (bytestream2_get_bytes_left(&gb) < c->frame_info_size) {
             av_log(avctx, AV_LOG_ERROR, "Not enough data for frame information\n");
             return AVERROR_INVALIDDATA;
@@ -613,19 +695,21 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
 
     max_slice_size += 4*avctx->width;
 
-    av_fast_malloc(&c->slice_bits, &c->slice_bits_size,
-                   max_slice_size + AV_INPUT_BUFFER_PADDING_SIZE);
+    if (!c->pack) {
+        av_fast_malloc(&c->slice_bits, &c->slice_bits_size,
+                       max_slice_size + AV_INPUT_BUFFER_PADDING_SIZE);
 
-    if (!c->slice_bits) {
-        av_log(avctx, AV_LOG_ERROR, "Cannot allocate temporary buffer\n");
-        return AVERROR(ENOMEM);
+        if (!c->slice_bits) {
+            av_log(avctx, AV_LOG_ERROR, "Cannot allocate temporary buffer\n");
+            return AVERROR(ENOMEM);
+        }
     }
 
     switch (c->avctx->pix_fmt) {
     case AV_PIX_FMT_GBRP:
     case AV_PIX_FMT_GBRAP:
         for (i = 0; i < c->planes; i++) {
-            ret = decode_plane(c, i, frame.f->data[i], 1,
+            ret = decode_plane(c, i, frame.f->data[i],
                                frame.f->linesize[i], avctx->width,
                                avctx->height, plane_start[i],
                                c->frame_pred == PRED_LEFT);
@@ -662,7 +746,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     case AV_PIX_FMT_GBRAP10:
     case AV_PIX_FMT_GBRP10:
         for (i = 0; i < c->planes; i++) {
-            ret = decode_plane10(c, i, (uint16_t *)frame.f->data[i], 1,
+            ret = decode_plane10(c, i, (uint16_t *)frame.f->data[i],
                                  frame.f->linesize[i] / 2, avctx->width,
                                  avctx->height, plane_start[i],
                                  plane_start[i + 1] - 1024,
@@ -676,7 +760,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
         break;
     case AV_PIX_FMT_YUV420P:
         for (i = 0; i < 3; i++) {
-            ret = decode_plane(c, i, frame.f->data[i], 1, frame.f->linesize[i],
+            ret = decode_plane(c, i, frame.f->data[i], frame.f->linesize[i],
                                avctx->width >> !!i, avctx->height >> !!i,
                                plane_start[i], c->frame_pred == PRED_LEFT);
             if (ret)
@@ -708,7 +792,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
         break;
     case AV_PIX_FMT_YUV422P:
         for (i = 0; i < 3; i++) {
-            ret = decode_plane(c, i, frame.f->data[i], 1, frame.f->linesize[i],
+            ret = decode_plane(c, i, frame.f->data[i], frame.f->linesize[i],
                                avctx->width >> !!i, avctx->height,
                                plane_start[i], c->frame_pred == PRED_LEFT);
             if (ret)
@@ -738,7 +822,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
         break;
     case AV_PIX_FMT_YUV444P:
         for (i = 0; i < 3; i++) {
-            ret = decode_plane(c, i, frame.f->data[i], 1, frame.f->linesize[i],
+            ret = decode_plane(c, i, frame.f->data[i], frame.f->linesize[i],
                                avctx->width, avctx->height,
                                plane_start[i], c->frame_pred == PRED_LEFT);
             if (ret)
@@ -766,9 +850,18 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
             }
         }
         break;
+    case AV_PIX_FMT_YUV420P10:
+        for (i = 0; i < 3; i++) {
+            ret = decode_plane10(c, i, (uint16_t *)frame.f->data[i], frame.f->linesize[i] / 2,
+                                 avctx->width >> !!i, avctx->height >> !!i,
+                                 plane_start[i], plane_start[i + 1] - 1024, c->frame_pred == PRED_LEFT);
+            if (ret)
+                return ret;
+        }
+        break;
     case AV_PIX_FMT_YUV422P10:
         for (i = 0; i < 3; i++) {
-            ret = decode_plane10(c, i, (uint16_t *)frame.f->data[i], 1, frame.f->linesize[i] / 2,
+            ret = decode_plane10(c, i, (uint16_t *)frame.f->data[i], frame.f->linesize[i] / 2,
                                  avctx->width >> !!i, avctx->height,
                                  plane_start[i], plane_start[i + 1] - 1024, c->frame_pred == PRED_LEFT);
             if (ret)
@@ -824,6 +917,11 @@ static av_cold int decode_init(AVCodecContext *avctx)
         avctx->pix_fmt = AV_PIX_FMT_YUV444P;
         avctx->colorspace = AVCOL_SPC_BT470BG;
         break;
+    case MKTAG('U', 'Q', 'Y', '0'):
+        c->planes      = 3;
+        c->pro         = 1;
+        avctx->pix_fmt = AV_PIX_FMT_YUV420P10;
+        break;
     case MKTAG('U', 'Q', 'Y', '2'):
         c->planes      = 3;
         c->pro         = 1;
@@ -854,6 +952,40 @@ static av_cold int decode_init(AVCodecContext *avctx)
         avctx->pix_fmt = AV_PIX_FMT_YUV444P;
         avctx->colorspace = AVCOL_SPC_BT709;
         break;
+    case MKTAG('U', 'M', 'Y', '2'):
+        c->planes      = 3;
+        c->pack        = 1;
+        avctx->pix_fmt = AV_PIX_FMT_YUV422P;
+        avctx->colorspace = AVCOL_SPC_BT470BG;
+        break;
+    case MKTAG('U', 'M', 'H', '2'):
+        c->planes      = 3;
+        c->pack        = 1;
+        avctx->pix_fmt = AV_PIX_FMT_YUV422P;
+        avctx->colorspace = AVCOL_SPC_BT709;
+        break;
+    case MKTAG('U', 'M', 'Y', '4'):
+        c->planes      = 3;
+        c->pack        = 1;
+        avctx->pix_fmt = AV_PIX_FMT_YUV444P;
+        avctx->colorspace = AVCOL_SPC_BT470BG;
+        break;
+    case MKTAG('U', 'M', 'H', '4'):
+        c->planes      = 3;
+        c->pack        = 1;
+        avctx->pix_fmt = AV_PIX_FMT_YUV444P;
+        avctx->colorspace = AVCOL_SPC_BT709;
+        break;
+    case MKTAG('U', 'M', 'R', 'G'):
+        c->planes      = 3;
+        c->pack        = 1;
+        avctx->pix_fmt = AV_PIX_FMT_GBRP;
+        break;
+    case MKTAG('U', 'M', 'R', 'A'):
+        c->planes      = 4;
+        c->pack        = 1;
+        avctx->pix_fmt = AV_PIX_FMT_GBRAP;
+        break;
     default:
         av_log(avctx, AV_LOG_ERROR, "Unknown Ut Video FOURCC provided (%08X)\n",
                avctx->codec_tag);
@@ -867,7 +999,17 @@ static av_cold int decode_init(AVCodecContext *avctx)
         return AVERROR_PATCHWELCOME;
     }
 
-    if (!c->pro && avctx->extradata_size >= 16) {
+    if (c->pack && avctx->extradata_size >= 16) {
+        av_log(avctx, AV_LOG_DEBUG, "Encoder version %d.%d.%d.%d\n",
+               avctx->extradata[3], avctx->extradata[2],
+               avctx->extradata[1], avctx->extradata[0]);
+        av_log(avctx, AV_LOG_DEBUG, "Original format %"PRIX32"\n",
+               AV_RB32(avctx->extradata + 4));
+        c->compression = avctx->extradata[8];
+        if (c->compression != 2)
+            avpriv_request_sample(avctx, "Unknown compression type");
+        c->slices      = avctx->extradata[9] + 1;
+    } else if (!c->pro && avctx->extradata_size >= 16) {
         av_log(avctx, AV_LOG_DEBUG, "Encoder version %d.%d.%d.%d\n",
                avctx->extradata[3], avctx->extradata[2],
                avctx->extradata[1], avctx->extradata[0]);

@@ -7,6 +7,9 @@ fate-sub-cc: CMD = fmtstdout ass -f lavfi -i "movie=$(TARGET_SAMPLES)/sub/Closed
 FATE_SUBTITLES_ASS-$(call ALLYES, AVDEVICE LAVFI_INDEV CCAPTION_DECODER MOVIE_FILTER MPEGTS_DEMUXER) += fate-sub-cc-realtime
 fate-sub-cc-realtime: CMD = fmtstdout ass -real_time 1 -f lavfi -i "movie=$(TARGET_SAMPLES)/sub/Closedcaption_rollup.m2v[out0+subcc]"
 
+FATE_SUBTITLES_ASS-$(call ALLYES, AVDEVICE LAVFI_INDEV CCAPTION_DECODER MOVIE_FILTER MPEGTS_DEMUXER) += fate-sub-cc-scte20
+fate-sub-cc-scte20: CMD = fmtstdout ass -f lavfi -i "movie=$(TARGET_SAMPLES)/sub/scte20.ts[out0+subcc]"
+
 FATE_SUBTITLES_ASS-$(call DEMDEC, ASS, ASS) += fate-sub-ass-to-ass-transcode
 fate-sub-ass-to-ass-transcode: CMD = fmtstdout ass -i $(TARGET_SAMPLES)/sub/1ededcbd7b.ass
 
@@ -99,6 +102,13 @@ fate-sub-charenc: CMD = fmtstdout ass -sub_charenc cp1251 -i $(TARGET_SAMPLES)/s
 
 FATE_SUBTITLES-$(call DEMDEC, SCC, CCAPTION) += fate-sub-scc
 fate-sub-scc: CMD = fmtstdout ass -ss 57 -i $(TARGET_SAMPLES)/sub/witch.scc
+fate-sub-scc: CMP = diff
+
+FATE_SUBTITLES-$(call ALLYES, MPEGTS_DEMUXER DVBSUB_DECODER DVBSUB_ENCODER) += fate-sub-dvb
+fate-sub-dvb: CMD = framecrc -i $(TARGET_SAMPLES)/sub/dvbsubtest_filter.ts -map s:0 -c dvbsub
+
+FATE_SUBTITLES-$(call ALLYES, FILE_PROTOCOL PIPE_PROTOCOL SRT_DEMUXER SUBRIP_DECODER TTML_ENCODER TTML_MUXER) += fate-sub-ttmlenc
+fate-sub-ttmlenc: CMD = fmtstdout ttml -i $(TARGET_SAMPLES)/sub/SubRip_capability_tester.srt
 
 FATE_SUBTITLES-$(call ENCMUX, ASS, ASS) += $(FATE_SUBTITLES_ASS-yes)
 FATE_SUBTITLES += $(FATE_SUBTITLES-yes)

@@ -31,11 +31,13 @@
 #include "rawdec.h"
 
 typedef struct TAKDemuxContext {
+    AVClass *class;
+    int     raw_packet_size;
     int     mlast_frame;
     int64_t data_end;
 } TAKDemuxContext;
 
-static int tak_probe(AVProbeData *p)
+static int tak_probe(const AVProbeData *p)
 {
     if (!memcmp(p->buf, "tBaK", 4))
         return AVPROBE_SCORE_EXTENSION;
@@ -80,6 +82,8 @@ static int tak_read_header(AVFormatContext *s)
 
         switch (type) {
         case TAK_METADATA_STREAMINFO:
+            if (st->codecpar->extradata)
+                return AVERROR_INVALIDDATA;
         case TAK_METADATA_LAST_FRAME:
         case TAK_METADATA_ENCODER:
             if (size <= 3)
@@ -103,7 +107,6 @@ static int tak_read_header(AVFormatContext *s)
                 }
             }
 
-            init_get_bits8(&gb, buffer, size - 3);
             break;
         case TAK_METADATA_MD5: {
             uint8_t md5[16];
@@ -145,7 +148,9 @@ static int tak_read_header(AVFormatContext *s)
         if (type == TAK_METADATA_STREAMINFO) {
             TAKStreamInfo ti;
 
-            avpriv_tak_parse_streaminfo(&gb, &ti);
+            ret = avpriv_tak_parse_streaminfo(&ti, buffer, size -3);
+            if (ret < 0)
+                goto end;
             if (ti.samples > 0)
                 st->duration = ti.samples;
             st->codecpar->bits_per_coded_sample = ti.bps;
@@ -159,13 +164,17 @@ static int tak_read_header(AVFormatContext *s)
             st->codecpar->extradata_size        = size - 3;
             buffer                           = NULL;
         } else if (type == TAK_METADATA_LAST_FRAME) {
-            if (size != 11)
-                return AVERROR_INVALIDDATA;
+            if (size != 11) {
+                ret = AVERROR_INVALIDDATA;
+                goto end;
+            }
+            init_get_bits8(&gb, buffer, size - 3);
             tc->mlast_frame = 1;
             tc->data_end    = get_bits64(&gb, TAK_LAST_FRAME_POS_BITS) +
                               get_bits(&gb, TAK_LAST_FRAME_SIZE_BITS);
             av_freep(&buffer);
         } else if (type == TAK_METADATA_ENCODER) {
+            init_get_bits8(&gb, buffer, size - 3);
             av_log(s, AV_LOG_VERBOSE, "encoder version: %0X\n",
                    get_bits_long(&gb, TAK_ENCODER_VERSION_BITS));
             av_freep(&buffer);
@@ -173,6 +182,9 @@ static int tak_read_header(AVFormatContext *s)
     }
 
     return AVERROR_EOF;
+end:
+    av_freep(&buffer);
+    return ret;
 }
 
 static int raw_read_packet(AVFormatContext *s, AVPacket *pkt)
@@ -201,6 +213,7 @@ static int raw_read_packet(AVFormatContext *s, AVPacket *pkt)
     return ret;
 }
 
+FF_RAW_DEMUXER_CLASS(tak)
 AVInputFormat ff_tak_demuxer = {
     .name           = "tak",
     .long_name      = NULL_IF_CONFIG_SMALL("raw TAK"),
@@ -211,4 +224,5 @@ AVInputFormat ff_tak_demuxer = {
     .flags          = AVFMT_GENERIC_INDEX,
     .extensions     = "tak",
     .raw_codec_id   = AV_CODEC_ID_TAK,
+    .priv_class     = &tak_demuxer_class,
 };

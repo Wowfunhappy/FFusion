@@ -35,7 +35,7 @@
 
 #define LMLM4_MAX_PACKET_SIZE   1024 * 1024
 
-static int lmlm4_probe(AVProbeData *pd)
+static int lmlm4_probe(const AVProbeData *pd)
 {
     const unsigned char *buf = pd->buf;
     unsigned int frame_type, packet_size;
@@ -94,15 +94,15 @@ static int lmlm4_read_packet(AVFormatContext *s, AVPacket *pkt)
 
     if (frame_type > LMLM4_MPEG1L2 || frame_type == LMLM4_INVALID) {
         av_log(s, AV_LOG_ERROR, "invalid or unsupported frame_type\n");
-        return AVERROR(EIO);
+        return AVERROR_INVALIDDATA;
     }
     if (packet_size > LMLM4_MAX_PACKET_SIZE || packet_size<=8) {
         av_log(s, AV_LOG_ERROR, "packet size %d is invalid\n", packet_size);
-        return AVERROR(EIO);
+        return AVERROR_INVALIDDATA;
     }
 
     if ((ret = av_get_packet(pb, pkt, frame_size)) <= 0)
-        return AVERROR(EIO);
+        return ret < 0 ? ret : AVERROR(EIO);
 
     avio_skip(pb, padding);
 

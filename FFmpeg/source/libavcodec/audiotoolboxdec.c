@@ -1,7 +1,7 @@
 /*
  * Audio Toolbox system codecs
  *
- * copyright (c) 2016 Rodger Combs
+ * copyright (c) 2016 rcombs
  *
  * This file is part of FFmpeg.
  *
@@ -24,7 +24,7 @@
 
 #include "config.h"
 #include "avcodec.h"
-#include "ac3_parser.h"
+#include "ac3_parser_internal.h"
 #include "bytestream.h"
 #include "internal.h"
 #include "mpegaudiodecheader.h"
@@ -296,7 +296,8 @@ static int ffat_set_extradata(AVCodecContext *avctx)
     return 0;
 }
 
-static av_cold int ffat_create_decoder(AVCodecContext *avctx, AVPacket *pkt)
+static av_cold int ffat_create_decoder(AVCodecContext *avctx,
+                                       const AVPacket *pkt)
 {
     ATDecodeContext *at = avctx->priv_data;
     OSStatus status;
@@ -350,10 +351,10 @@ static av_cold int ffat_create_decoder(AVCodecContext *avctx, AVPacket *pkt)
     } else if (pkt && pkt->size >= 7 &&
                (avctx->codec_id == AV_CODEC_ID_AC3 ||
                 avctx->codec_id == AV_CODEC_ID_EAC3)) {
-        AC3HeaderInfo hdr, *phdr = &hdr;
+        AC3HeaderInfo hdr;
         GetBitContext gbc;
         init_get_bits(&gbc, pkt->data, pkt->size);
-        if (avpriv_ac3_parse_header(&gbc, &phdr) < 0)
+        if (ff_ac3_parse_header(&gbc, &hdr) < 0)
             return AVERROR_INVALIDDATA;
         in_format.mSampleRate = hdr.sample_rate;
         in_format.mChannelsPerFrame = hdr.channels;
@@ -483,7 +484,7 @@ static int ffat_decode(AVCodecContext *avctx, void *data,
     if (avctx->codec_id == AV_CODEC_ID_AAC) {
         if (!at->extradata_size) {
             uint8_t *side_data;
-            int side_data_size = 0;
+            buffer_size_t side_data_size;
 
             side_data = av_packet_get_side_data(avpkt, AV_PKT_DATA_NEW_EXTRADATA,
                                                 &side_data_size);
@@ -595,8 +596,9 @@ static av_cold int ffat_close_decoder(AVCodecContext *avctx)
         .flush          = ffat_decode_flush, \
         .priv_class     = &ffat_##NAME##_dec_class, \
         .bsfs           = bsf_name, \
-        .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DELAY, \
+        .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DELAY | AV_CODEC_CAP_CHANNEL_CONF, \
         .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP, \
+        .wrapper_name   = "at", \
     };
 
 FFAT_DEC(aac,          AV_CODEC_ID_AAC, "aac_adtstoasc")

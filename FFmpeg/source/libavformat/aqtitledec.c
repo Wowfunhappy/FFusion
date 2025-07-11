@@ -37,7 +37,7 @@ typedef struct {
     AVRational frame_rate;
 } AQTitleContext;
 
-static int aqt_probe(AVProbeData *p)
+static int aqt_probe(const AVProbeData *p)
 {
     int frame;
     const char *ptr = p->buf;
@@ -74,7 +74,8 @@ static int aqt_read_header(AVFormatContext *s)
             new_event = 1;
             pos = avio_tell(s->pb);
             if (sub) {
-                sub->duration = frame - sub->pts;
+                if (frame >= sub->pts && (uint64_t)frame - sub->pts < INT64_MAX)
+                    sub->duration = frame - sub->pts;
                 sub = NULL;
             }
         } else if (*line) {
