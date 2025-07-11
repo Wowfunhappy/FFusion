@@ -349,6 +349,99 @@ static FASTCALL void Y422toY422(AVPicture *picture, UInt8 *o, long outRB, int wi
 }
 
 
+static FASTCALL void Y420_10toY422_8_sse2(AVPicture *picture, UInt8 *o, int outRB, int width, int height)
+{
+	UInt16	*yc = (UInt16*)picture->data[0], *u = (UInt16*)picture->data[1], *v = (UInt16*)picture->data[2];
+	int		rY = picture->linesize[0]/2, rUV = picture->linesize[1]/2;
+	int		halfheight = height >> 1, halfwidth = width >> 1;
+	int		y, x;
+	int		vWidth = halfwidth >> 3;
+	
+	impossible(width <= 1 || height <= 1 || outRB <= 0 || rY <= 0 || rUV <= 0);
+	
+	for (y = 0; y < halfheight; y++) {
+		UInt8 *o2 = o + outRB;
+		UInt16 *yc2 = yc + rY;
+		
+		for (x = 0; x < vWidth; x++) {
+			__m128i y_row1 = _mm_loadu_si128((__m128i*)(yc + x*16));
+			__m128i y_row1_2 = _mm_loadu_si128((__m128i*)(yc + x*16 + 8));
+			__m128i y_row2 = _mm_loadu_si128((__m128i*)(yc2 + x*16));
+			__m128i y_row2_2 = _mm_loadu_si128((__m128i*)(yc2 + x*16 + 8));
+			__m128i u_vals = _mm_loadu_si128((__m128i*)(u + x*8));
+			__m128i v_vals = _mm_loadu_si128((__m128i*)(v + x*8));
+			
+			y_row1 = _mm_srli_epi16(y_row1, 2);
+			y_row1_2 = _mm_srli_epi16(y_row1_2, 2);
+			y_row2 = _mm_srli_epi16(y_row2, 2);
+			y_row2_2 = _mm_srli_epi16(y_row2_2, 2);
+			u_vals = _mm_srli_epi16(u_vals, 2);
+			v_vals = _mm_srli_epi16(v_vals, 2);
+			
+			__m128i y_packed1 = _mm_packus_epi16(y_row1, y_row1_2);
+			__m128i y_packed2 = _mm_packus_epi16(y_row2, y_row2_2);
+			__m128i u_packed = _mm_packus_epi16(u_vals, _mm_setzero_si128());
+			__m128i v_packed = _mm_packus_epi16(v_vals, _mm_setzero_si128());
+			
+			__m128i u_dup = _mm_unpacklo_epi8(u_packed, u_packed);
+			__m128i v_dup = _mm_unpacklo_epi8(v_packed, v_packed);
+			
+			__m128i uv_lo = _mm_unpacklo_epi8(u_dup, v_dup);
+			__m128i uv_hi = _mm_unpackhi_epi8(u_dup, v_dup);
+			
+			__m128i uyvy1_lo = _mm_unpacklo_epi8(uv_lo, y_packed1);
+			__m128i uyvy1_hi = _mm_unpackhi_epi8(uv_lo, y_packed1);
+			__m128i uyvy2_lo = _mm_unpacklo_epi8(uv_hi, y_packed2);
+			__m128i uyvy2_hi = _mm_unpackhi_epi8(uv_hi, y_packed2);
+			
+			_mm_storeu_si128((__m128i*)(o + x*32), uyvy1_lo);
+			_mm_storeu_si128((__m128i*)(o + x*32 + 16), uyvy1_hi);
+			_mm_storeu_si128((__m128i*)(o2 + x*32), uyvy2_lo);
+			_mm_storeu_si128((__m128i*)(o2 + x*32 + 16), uyvy2_hi);
+		}
+		
+		for (x = vWidth * 8; x < halfwidth; x++) {
+			UInt8 u_val = u[x] >> 2;
+			UInt8 v_val = v[x] >> 2;
+			UInt8 y0 = yc[x*2] >> 2;
+			UInt8 y1 = yc[x*2+1] >> 2;
+			UInt8 y2 = yc2[x*2] >> 2;
+			UInt8 y3 = yc2[x*2+1] >> 2;
+			
+			int x4 = x*4;
+			o[x4] = u_val;
+			o[x4+1] = y0;
+			o[x4+2] = v_val;
+			o[x4+3] = y1;
+			
+			o2[x4] = u_val;
+			o2[x4+1] = y2;
+			o2[x4+2] = v_val;
+			o2[x4+3] = y3;
+		}
+		
+		o  += outRB*2;
+		yc += rY*2;
+		u  += rUV;
+		v  += rUV;
+	}
+	
+	if (unlikely(height & 1)) {
+		for(x = 0; x < halfwidth; x++) {
+			UInt8 u_val = u[x] >> 2;
+			UInt8 v_val = v[x] >> 2;
+			UInt8 y0 = yc[x*2] >> 2;
+			UInt8 y1 = yc[x*2+1] >> 2;
+			
+			int x4 = x*4;
+			o[x4] = u_val;
+			o[x4+1] = y0;
+			o[x4+2] = v_val;
+			o[x4+3] = y1;
+		}
+	}
+}
+
 static FASTCALL void Y420_10toY422_8(AVPicture *picture, UInt8 *o, int outRB, int width, int height)
 {
 	UInt16	*yc = (UInt16*)picture->data[0], *u = (UInt16*)picture->data[1], *v = (UInt16*)picture->data[2];
@@ -361,15 +454,26 @@ static FASTCALL void Y420_10toY422_8(AVPicture *picture, UInt8 *o, int outRB, in
 	for (y = 0; y < halfheight; y ++) {
 		UInt8 *o2 = o + outRB;
 		UInt16 *yc2 = yc + rY;
+		UInt8 *op = o, *op2 = o2;
+		UInt16 *yp = yc, *yp2 = yc2, *up = u, *vp = v;
 		
 		for (x = 0; x < halfwidth; x++) {
-			int x4 = x*4, x2 = x*2;
-			o2[x4]     = o[x4] = u[x]>>2;
-			o [x4 + 1] = yc[x2]>>2;
-			o2[x4 + 1] = yc2[x2]>>2;
-			o2[x4 + 2] = o[x4 + 2] = v[x]>>2;
-			o [x4 + 3] = yc[x2 + 1]>>2;
-			o2[x4 + 3] = yc2[x2 + 1]>>2;
+			UInt8 u_val = *up++ >> 2;
+			UInt8 v_val = *vp++ >> 2;
+			UInt8 y0 = *yp++ >> 2;
+			UInt8 y1 = *yp++ >> 2;
+			UInt8 y2 = *yp2++ >> 2;
+			UInt8 y3 = *yp2++ >> 2;
+			
+			*op++ = u_val;
+			*op++ = y0;
+			*op++ = v_val;
+			*op++ = y1;
+			
+			*op2++ = u_val;
+			*op2++ = y2;
+			*op2++ = v_val;
+			*op2++ = y3;
 		}
 		
 		o  += outRB*2;
@@ -378,16 +482,21 @@ static FASTCALL void Y420_10toY422_8(AVPicture *picture, UInt8 *o, int outRB, in
 		v  += rUV;
 	}
 	
-	if (likely((height&1)==0)) return;
-	
-	for(x=0; x < halfwidth; x++)
-	{
-		int x4 = x*4, x2 = x*2;
+	if (unlikely(height & 1)) {
+		UInt8 *op = o;
+		UInt16 *yp = yc, *up = u, *vp = v;
 		
-		o[x4]   = u[x]>>2;
-		o[x4+1] = yc[x2]>>2;
-		o[x4+2] = v[x]>>2;
-		o[x4+3] = yc[x2+1]>>2;
+		for(x = 0; x < halfwidth; x++) {
+			UInt8 u_val = *up++ >> 2;
+			UInt8 v_val = *vp++ >> 2;
+			UInt8 y0 = *yp++ >> 2;
+			UInt8 y1 = *yp++ >> 2;
+			
+			*op++ = u_val;
+			*op++ = y0;
+			*op++ = v_val;
+			*op++ = y1;
+		}
 	}
 }
 
@@ -528,7 +637,23 @@ int ColorConversionFindFor( ColorConversionFuncs *funcs, enum AVCodecID codecID,
 			break;
 		case AV_PIX_FMT_YUV420P10LE:
 			funcs->clear = ClearY422;
-			funcs->convert = Y420_10toY422_8;
+			
+			if (ffPicture) {
+				if( (((size_t)baseAddr) % 16) || (rowBytes % 16) ){
+					funcs->convert = Y420_10toY422_8;
+					Codecprintf( stderr,
+								"ColorConversionFindFor(): bitmap destination address=%p and/or rowBytes=%ld not aligned to 16 bits;"
+								" using scalar Y420_10toY422_8 conversion for safety",
+								baseAddr, rowBytes );
+				}
+				else if (ffPicture->linesize[0] & 15){
+					funcs->convert = Y420_10toY422_8;
+				}
+				else{
+					funcs->convert = Y420_10toY422_8_sse2;
+					Codecprintf( stderr, "ColorConversionFindFor(): using SSE accelerated Y420_10toY422_8 conversion" );
+				}
+			}
 			break;
 		default:
 			return paramErr;
