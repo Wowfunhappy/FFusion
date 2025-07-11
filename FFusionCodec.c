@@ -2,15 +2,9 @@
 
 //---------------------------------------------------------------------------
 //FFusion
-//Alternative DivX Codec for MacOS X
-//version 2.2 (build 72)
-//by Jerome Cornet
-//Copyright 2002-2003 Jerome Cornet
-//parts by Dan Christiansen
-//Copyright 2003 Dan Christiansen
-//from DivOSX by Jamby
-//Copyright 2001-2002 Jamby
-//uses libavcodec from ffmpeg 0.4.6
+//Modern Video Codec for macOS
+//H.265/HEVC and VP9 Support
+//Based on FFmpeg
 //
 //This library is free software; you can redistribute it and/or
 //modify it under the terms of the GNU Lesser General Public
@@ -34,19 +28,8 @@
 #include <stdio.h>
 #include <stddef.h>
 #include <stdint.h>
-#ifdef _MSC_VER
-// prevent the GNU compatibility stdint.h header included with the QuickTime SDK from being included:
-#	define _STDINT_H
-#endif
-#ifdef __MACH__
-#	include <QuickTime/QuickTime.h>
-#	include <sys/sysctl.h>
-#else
-#	include <windows.h>
-#	include <ConditionalMacros.h>
-#	include <Endian.h>
-#	include <ImageCodec.h>
-#endif
+#include <QuickTime/QuickTime.h>
+#include <sys/sysctl.h>
 //#include <Accelerate/Accelerate.h>
 
 //RJVB
@@ -77,12 +60,6 @@ typedef struct
 	int		frameNumber;
 } FFusionBuffer;
 
-typedef enum
-{
-	PACKED_QUICKTIME_KNOWS_ORDER, /* This is for non-stupid container formats which actually know the difference between decode and display order */
-	PACKED_ALL_IN_FIRST_FRAME, /* This is for the divx hack which contains a P frame and all subsequent B frames in a single frame. Ex: I, PB, -, PB, -, I...*/
-	PACKED_DELAY_BY_ONE_FRAME /* This is for stupid containers where frames are soley writen in decode order.  Ex: I, P, B, P, B, P, I.... */
-} FFusionPacked;
 
 /* Why do these small structs?  It makes the usage of these variables clearer, no other reason */
 
@@ -130,7 +107,6 @@ typedef struct
     AVCodecContext	*avContext;
     OSType			componentType;
 	AVPicture		*lastDisplayedPicture;
-	FFusionPacked	packedType;
 	FFusionBuffer	buffers[FFUSION_MAX_BUFFERS];	// the buffers which the codec has retained
 	int				lastAllocatedBuffer;		// the index of the buffer which was last allocated
 	// by the codec (and is the latest in decode order)
@@ -269,33 +245,6 @@ static void SetupMultithreadedDecoding(AVCodecContext *s, enum AVCodecID codecID
 	s->thread_type  = FF_THREAD_SLICE;
 }
 
-// A list of codec types (mostly official Apple codecs) which always have DTS info.
-// This is the wrong way to do it, instead we should check for a ctts atom directly.
-// This way causes files to play frames out of order if we guess wrong. Doesn't seem
-// possible to do it right, though.
-FFusionPacked DefaultPackedTypeForCodec(OSType codec)
-{
-	switch (codec) {
-		case kMPEG4VisualCodecType:
-		case kH264CodecType:
-		//---
-		case 'VP90':
-		case 'vp09':
-		//---
-		case 'H265':
-  		case 'h265':
-  		case 'X265':
-  		case 'x265':
-  		case 'HEV1':
-  		case 'hev1':
-  		case 'HEVC':
-  		case 'hevc':
-		case 'hvc1':
-			return PACKED_QUICKTIME_KNOWS_ORDER;
-		default:
-			return PACKED_ALL_IN_FIRST_FRAME;
-	}
-}
 
 void setFutureFrame(FFusionGlobals glob, FFusionBuffer *newFuture)
 {
@@ -563,8 +512,6 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 		
 		FFInitFFmpeg();
 		initFFusionParsers();
-		
-		glob->packedType = DefaultPackedTypeForCodec(componentType);
 		//asl_log(NULL, NULL, ASL_LEVEL_ERR, "ComponentType: %s", FourCCString(glob->componentType));
 		
 		if(codecID == AV_CODEC_ID_NONE)
@@ -581,15 +528,7 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 		
 		//asl_log(NULL, NULL, ASL_LEVEL_ERR, "Codec Long Name: %s", glob->avCodec->long_name);
 		
-		if(glob->packedType != PACKED_QUICKTIME_KNOWS_ORDER) {
-			glob->begin.parser = ffusionParserInit(codecID);
-			//asl_log(NULL, NULL, ASL_LEVEL_ERR, "QuickTime is said to not know the order!");
-		}
 		
-		if ((codecID == AV_CODEC_ID_MPEG4 || codecID == AV_CODEC_ID_H264) && !glob->begin.parser)
-		{
-			//asl_log(NULL, NULL, ASL_LEVEL_ERR, "This is a parseable format, but we couldn't open a parser!\n");
-		}
 		
         // we do the same for the AVCodecContext since all context values are
         // correctly initialized when calling the alloc function
@@ -599,62 +538,15 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 		// Use low delay
 		glob->avContext->flags |= CODEC_FLAG_LOW_DELAY;
 		
-        // Image size is mandatory for DivX-like codecs
+        // Image size is mandatory for video codecs
 		
         glob->avContext->width = (**p->imageDescription).width;
         glob->avContext->height = (**p->imageDescription).height;
 		glob->avContext->bits_per_coded_sample = (**p->imageDescription).depth;
 		
-        // We also pass the FourCC since it allows the H263 hybrid decoder
-        // to make the difference between the various flavours of DivX
-        glob->avContext->codec_tag = Endian32_Swap(glob->componentType);
 		glob->avContext->codec_id  = codecID;
 		
-		// avc1 requires the avcC extension
-		if (glob->componentType == 'avc1') {
-			count = isImageDescriptionExtensionPresent(p->imageDescription, 'avcC');
-			
-			if (count >= 1) {
-				imgDescExt = NewHandle(0);
-				GetImageDescriptionExtension(p->imageDescription, &imgDescExt, 'avcC', 1);
-				
-				glob->avContext->extradata = calloc(1, GetHandleSize(imgDescExt) + AV_INPUT_BUFFER_PADDING_SIZE);
-				memcpy(glob->avContext->extradata, *imgDescExt, GetHandleSize(imgDescExt));
-				glob->avContext->extradata_size = GetHandleSize(imgDescExt);
-				
-				DisposeHandle(imgDescExt);
-			} else {
-				count = isImageDescriptionExtensionPresent(p->imageDescription, 'strf');
-				
-				// avc1 in AVI, need to reorder frames
-				if (count >= 1)
-					glob->packedType = PACKED_ALL_IN_FIRST_FRAME;
-			}
-		} else if (glob->componentType == 'mp4v') {
-			count = isImageDescriptionExtensionPresent(p->imageDescription, 'esds');
-			
-			if (count >= 1) {
-				imgDescExt = NewHandle(0);
-				GetImageDescriptionExtension(p->imageDescription, &imgDescExt, 'esds', 1);
-				
-				ReadESDSDescExt(imgDescExt, &glob->avContext->extradata, &glob->avContext->extradata_size);
-				
-				DisposeHandle(imgDescExt);
-			}
-		/*} else if (glob->componentType == kVideoFormatTheora) {
-			count = isImageDescriptionExtensionPresent(p->imageDescription, kVideoFormatTheora);
-			
-			if (count >= 1) {
-				imgDescExt = NewHandle(0);
-				GetImageDescriptionExtension(p->imageDescription, &imgDescExt, kVideoFormatTheora, 1);
-				
-				glob->avContext->extradata = calloc(1, GetHandleSize(imgDescExt) + FF_INPUT_BUFFER_PADDING_SIZE);
-				memcpy(glob->avContext->extradata, *imgDescExt, GetHandleSize(imgDescExt));
-				glob->avContext->extradata_size = GetHandleSize(imgDescExt);
-				
-				DisposeHandle(imgDescExt);
-			}*/
-		} else if (glob->avContext->codec_id == AV_CODEC_ID_HEVC) {
+		if (glob->avContext->codec_id == AV_CODEC_ID_HEVC) {
 			
 			/* Wowfunhappy:
 			 * This magical code fixes HEVC. I don't know why.
@@ -697,9 +589,6 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 		//						   FourCCString(glob->componentType), glob->avContext->extradata_size,
 		//						   not(glob->isFrameDroppingEnabled) );
 		
-		if(glob->avContext->extradata_size != 0 && glob->begin.parser != NULL){
-			ffusionParseExtraData(glob->begin.parser, glob->avContext->extradata, glob->avContext->extradata_size);
-		}
 		
 		// some hooks into ffmpeg's buffer allocation to get frames in
 		// decode order without delay more easily
@@ -745,13 +634,8 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
     p->requestedBufferWidth = (**p->imageDescription).width;
     p->requestedBufferHeight = (**p->imageDescription).height;
 	
-    // Indicate the pixel depth the component can use with the specified image
-    // normally should be capabilities->wantedPixelSize = (**p->imageDescription).depth;
-    // but we don't care since some DivX are so bugged that the depth information
-    // is not correct
-	
-    capabilities->wantedPixelSize = 0;
-	//capabilities->wantedPixelSize = (**p->imageDescription).depth;
+    // Set the pixel depth from the image description
+    capabilities->wantedPixelSize = (**p->imageDescription).depth;
 	
 	//asl_log(NULL, NULL, ASL_LEVEL_ERR, "capabilities->wantedPixelSize: %d", capabilities->wantedPixelSize);
 	
@@ -851,7 +735,7 @@ pascal ComponentResult FFusionCodecBeginBand(FFusionGlobals glob, CodecDecompres
 	myDrp->frameData = NULL;
 	myDrp->buffer = NULL;
 	
-	//	//asl_log(NULL, NULL, ASL_LEVEL_ERR, "%p BeginBand #%ld. (%sdecoded, packed %d)\n", glob, p->frameNumber, not(myDrp->decoded), glob->packedType);
+	//	//asl_log(NULL, NULL, ASL_LEVEL_ERR, "%p BeginBand #%ld. (%sdecoded)\n", glob, p->frameNumber, not(myDrp->decoded));
 	
 	if (!glob->avContext) {
 		//asl_log(NULL, NULL, ASL_LEVEL_ERR, "FFusion: QT tried to call BeginBand without preflighting!\n");
@@ -884,148 +768,8 @@ pascal ComponentResult FFusionCodecBeginBand(FFusionGlobals glob, CodecDecompres
 						   drp->rowBytes );*/
 	}
 	
-	if(glob->packedType != PACKED_QUICKTIME_KNOWS_ORDER && p->frameNumber != glob->begin.lastFrame + 1)
-	{
-		if(glob->decode.lastFrame < p->frameNumber && p->frameNumber < glob->begin.lastFrame + 1)
-		{
-			/* We already began this sucker, but haven't decoded it yet, find the data */
-			FrameData *frameData = NULL;
-			frameData = FFusionDataFind(&glob->data, p->frameNumber);
-			if(frameData != NULL)
-			{
-				myDrp->frameData = frameData;
-				drp->frameType = qtTypeForFrameInfo(drp->frameType, myDrp->frameData->type, (myDrp->frameData->skippabble && glob->isFrameDroppingEnabled) );
-				myDrp->frameNumber = p->frameNumber;
-				myDrp->GOPStartFrameNumber = glob->begin.lastIFrame;
-				return noErr;
-			}
-		}
-		else
-		{
-			/* Reset context, safe marking in such a case */
-			glob->begin.lastFrameType = AV_PICTURE_TYPE_I;
-			FFusionDataReadUnparsed(&(glob->data));
-			glob->begin.lastPFrameData = NULL;
-			redisplayFirstFrame = 1;
-		}
-	}
 	
-	if(glob->begin.parser != NULL)
-	{
-		int parsedBufSize = 0;
-		uint8_t *buffer = (uint8_t *)drp->codecData;
-		int bufferSize = p->bufferSize;
-		int skipped = 0;
-		
-		if(glob->data.unparsedFrames.dataSize != 0)
-		{
-			buffer = glob->data.unparsedFrames.buffer;
-			bufferSize = glob->data.unparsedFrames.dataSize;
-		}
-		
-		if(ffusionParse(glob->begin.parser, buffer, bufferSize, &parsedBufSize, &type, &skippable, &skipped) == 0 && (!skipped || glob->begin.futureType))
-		{
-			/* parse failed */
-			myDrp->bufferSize = bufferSize;
-			if(glob->begin.futureType != 0)
-			{
-				/* Assume our previously decoded P frame */
-				type = glob->begin.futureType;
-				glob->begin.futureType = 0;
-				myDrp->frameData = glob->begin.lastPFrameData;
-			}
-			else
-			{
-				//asl_log(NULL, NULL, ASL_LEVEL_ERR, "parse failed frame %ld with size %d\n", p->frameNumber, bufferSize);
-				if(glob->data.unparsedFrames.dataSize != 0)
-				{
-					//asl_log(NULL, NULL, ASL_LEVEL_ERR, ", parser had extra data\n");
-				}
-			}
-		}
-		else if(glob->packedType != PACKED_QUICKTIME_KNOWS_ORDER)
-		{
-			if(type == AV_PICTURE_TYPE_B && glob->packedType == PACKED_ALL_IN_FIRST_FRAME && glob->begin.futureType == 0)
-			/* Badly framed.  We hit a B frame after it was supposed to be displayed, switch to delaying by a frame */
-				glob->packedType = PACKED_DELAY_BY_ONE_FRAME;
-			else if(glob->packedType == PACKED_DELAY_BY_ONE_FRAME && parsedBufSize < bufferSize - 16)
-			/* Seems to be switching back to packed in one frame; switch back*/
-				glob->packedType = PACKED_ALL_IN_FIRST_FRAME;
-			
-			myDrp->frameData = FFusionDataAppend(&(glob->data), buffer, parsedBufSize, type);
-			if(type != AV_PICTURE_TYPE_I)
-				myDrp->frameData->prereqFrame = glob->begin.lastPFrameData;
-			if(glob->packedType == PACKED_DELAY_BY_ONE_FRAME)
-			{
-				if(type != AV_PICTURE_TYPE_B)
-				{
-					FrameData *nextPFrame = myDrp->frameData;
-					FrameData *lastPFrame = glob->begin.lastPFrameData;
-					if(lastPFrame != NULL)
-					/* Mark the next P or I frame, predictive decoding */
-						lastPFrame->nextFrame = nextPFrame;
-					myDrp->frameData = lastPFrame;
-					glob->begin.lastPFrameData = nextPFrame;
-					
-					if(redisplayFirstFrame)
-						myDrp->frameData = nextPFrame;
-				}
-				
-				{ int displayType = glob->begin.lastFrameType;
-					glob->begin.lastFrameType = type;
-					type = displayType;
-				}
-			}
-			else if(type != AV_PICTURE_TYPE_B)
-				glob->begin.lastPFrameData = myDrp->frameData;
-			
-			if(type == AV_PICTURE_TYPE_I && glob->packedType == PACKED_ALL_IN_FIRST_FRAME)
-			/* Wipe memory of past P frames */
-				glob->begin.futureType = 0;
-			
-			if(parsedBufSize < p->bufferSize)
-			{
-				int oldType = type, success;
-				
-				buffer += parsedBufSize;
-				bufferSize -= parsedBufSize;
-				success = ffusionParse(glob->begin.parser, buffer, bufferSize, &parsedBufSize, &type, &skippable, &skipped);
-				if(success && type == AV_PICTURE_TYPE_B)
-				{
-					/* A B frame follows us, so setup the P frame for the future and set dependencies */
-					glob->begin.futureType = oldType;
-					if(glob->begin.lastPFrameData != NULL)
-					/* Mark the next P or I frame, predictive decoding */
-						glob->begin.lastPFrameData->nextFrame = myDrp->frameData;
-					glob->begin.lastPFrameData = myDrp->frameData;
-					myDrp->frameData = FFusionDataAppend(&(glob->data), buffer, parsedBufSize, type);
-					myDrp->frameData->prereqFrame = glob->begin.lastPFrameData;
-					buffer += parsedBufSize;
-					bufferSize -= parsedBufSize;
-				}
-				if(bufferSize > 0)
-					FFusionDataSetUnparsed(&(glob->data), buffer, bufferSize);
-				else
-					FFusionDataReadUnparsed(&(glob->data));
-			}
-			else
-				FFusionDataReadUnparsed(&(glob->data));
-			myDrp->bufferSize = 0;
-		}
-		else
-		{
-			myDrp->bufferSize = bufferSize;
-		}
-		
-		drp->frameType = qtTypeForFrameInfo(drp->frameType, type, (skippable && glob->isFrameDroppingEnabled) );
-		if(myDrp->frameData != NULL)
-		{
-			myDrp->frameData->frameNumber = p->frameNumber;
-			myDrp->frameData->skippabble = skippable;
-		}
-	}
-	else
-		myDrp->bufferSize = p->bufferSize;
+	myDrp->bufferSize = p->bufferSize;
 	glob->begin.lastFrame = p->frameNumber;
 	if(drp->frameType == kCodecFrameTypeKey)
 		glob->begin.lastIFrame = p->frameNumber;
@@ -1068,84 +812,31 @@ pascal ComponentResult FFusionCodecDecodeBand(FFusionGlobals glob, ImageSubCodec
 	
 	glob->stats.type[drp->frameType].decode_calls++;
 	RecomputeMaxCounts(glob);
-	// 	//asl_log(NULL, NULL, ASL_LEVEL_ERR, "%p DecodeBand #%d qtType %d. (packed %d)\n", glob, myDrp->frameNumber, drp->frameType, glob->packedType);
+	// 	//asl_log(NULL, NULL, ASL_LEVEL_ERR, "%p DecodeBand #%d qtType %d.\n", glob, myDrp->frameNumber, drp->frameType);
 	
-	// QuickTime will drop H.264 frames when necessary if a sample dependency table exists
-	// we don't want to flush buffers in that case.
-	if(glob->packedType != PACKED_QUICKTIME_KNOWS_ORDER && myDrp->frameNumber != glob->decode.lastFrame + 1)
+	// Check if we need to flush buffers on frame discontinuity
+	if(myDrp->frameNumber != glob->decode.lastFrame + 1)
 	{
-		/* Skipped some frames in here */
-		//asl_log(NULL, NULL, ASL_LEVEL_ERR, "%p - frames skipped.\n", glob);
 		if(drp->frameType == kCodecFrameTypeKey || myDrp->GOPStartFrameNumber > glob->decode.lastFrame || myDrp->frameNumber < glob->decode.lastFrame)
 		{
-			/* If this is a key frame or the P frame before us is after the last frame (skip ahead), or we are before the last decoded frame (skip back) *
-			 * then we are in a whole new GOP */
 			avcodec_flush_buffers(glob->avContext);
 		}
 	}
 	
-	if(myDrp->frameData && myDrp->frameData->decoded && glob->decode.futureBuffer != NULL)
-	{
-		myDrp->buffer = retainBuffer(glob, glob->decode.futureBuffer);
-		myDrp->decoded = true;
-		setFutureFrame(glob, NULL);
-		FFusionDataMarkRead(myDrp->frameData);
-		glob->decode.lastFrame = myDrp->frameNumber;
-		return err;
-	}
-	
-	if(glob->packedType != PACKED_QUICKTIME_KNOWS_ORDER && myDrp->frameData != NULL && myDrp->frameData->decoded == 0)
-	{
-		/* Pull from our buffer */
-		FrameData *prereq = FrameDataCheckPrereq( (frameData = myDrp->frameData) );
-		
-		if(prereq)
-		{
-			PrereqDecompress(glob, prereq, glob->avContext, myDrp->width, myDrp->height, &tempFrame);
-			if(tempFrame.data[0] != NULL)
-			{
-				setFutureFrame(glob, (FFusionBuffer *)tempFrame.opaque);
-				prereq->decoded = TRUE;
-			}
-		}
-		dataPtr = (unsigned char *)frameData->buffer;
-		dataSize = frameData->dataSize;
-		frameData->decoded = TRUE;
-	}
-	else
-	{
-		/* data is already set up properly for us */
-		dataSize = myDrp->bufferSize;
-		dataPtr = FFusionCreateEntireDataBuffer(&(glob->data), (uint8_t *)drp->codecData, dataSize);
-	}
+	// Simple case: data is already set up properly for us
+	dataSize = myDrp->bufferSize;
+	dataPtr = FFusionCreateEntireDataBuffer(&(glob->data), (uint8_t *)drp->codecData, dataSize);
 	
 	//asl_log(NULL, NULL, ASL_LEVEL_ERR, "About to call FFusionDecompress from FFusionCodecDecodeBand");
 	err = FFusionDecompress(glob, glob->avContext, dataPtr, myDrp->width, myDrp->height, &tempFrame, dataSize);
 	
-	if (glob->packedType == PACKED_QUICKTIME_KNOWS_ORDER) {
-		myDrp->buffer = &glob->buffers[glob->lastAllocatedBuffer];
-		myDrp->buffer->frameNumber = myDrp->frameNumber;
-		retainBuffer(glob, myDrp->buffer);
-		myDrp->decoded = true;
-		glob->decode.lastFrame = myDrp->frameNumber;
-		av_frame_unref(&tempFrame);
-		return err;
-	}
-	if(tempFrame.data[0] == NULL) {
-		myDrp->buffer = NULL;
-	}
-	else
-	{
-		myDrp->buffer = retainBuffer(glob, (FFusionBuffer *)tempFrame.opaque);
-	}
-	
-	if(tempFrame.pict_type == AV_PICTURE_TYPE_I)
-	/* Wipe memory of past P frames */
-		setFutureFrame(glob, NULL);
-	glob->decode.lastFrame = myDrp->frameNumber;
+	// Modern codecs: straightforward buffer handling
+	myDrp->buffer = &glob->buffers[glob->lastAllocatedBuffer];
+	myDrp->buffer->frameNumber = myDrp->frameNumber;
+	retainBuffer(glob, myDrp->buffer);
 	myDrp->decoded = true;
-	
-	FFusionDataMarkRead(frameData);
+	glob->decode.lastFrame = myDrp->frameNumber;
+	av_frame_unref(&tempFrame);
 	
 	return err;
 }
@@ -1353,18 +1044,9 @@ OSErr FFusionDecompress(FFusionGlobals glob, AVCodecContext *context, UInt8 *dat
 	pkt.data = dataPtr;
 	pkt.size = length;
 	
-	if(glob->packedType != PACKED_QUICKTIME_KNOWS_ORDER) {
-		//Wowfunhappy:	If Quicktime doesn't know the order, we need to use the old API,
-		//				because we need to leave `context->refcounted_frames` disabled,
-		//				because I can't find the right time to call `av_packet_free`.
-		
-		int got_picture = false;
-		avcodec_decode_video2(context, picture, &got_picture, &pkt);
-		
-	} else {
-		avcodec_send_packet(context, &pkt);
-		avcodec_receive_frame(context, picture);
-	}
+	// Modern codecs use the new API
+	avcodec_send_packet(context, &pkt);
+	avcodec_receive_frame(context, picture);
 	
 	return err;
 }

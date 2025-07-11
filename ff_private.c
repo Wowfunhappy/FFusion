@@ -329,26 +329,16 @@ bail:
 
 OSType map_video_codec_to_mov_tag(enum AVCodecID codec_id)
 {
-	switch(codec_id) {
-		case AV_CODEC_ID_FLV1:
-			return 'FLV1';
-		case AV_CODEC_ID_VP6F:
-			return 'VP6F';
-		case AV_CODEC_ID_FLASHSV:
-			return 'FSV1';
-		case AV_CODEC_ID_VP6A:
-			return 'VP6A';
-	}
 	return 0;
 }
 
 OSType forced_map_video_codec_to_mov_tag(enum AVCodecID codec_id)
 {
 	switch (codec_id) {
-		case AV_CODEC_ID_H264:
-			return 'H264';
-		case AV_CODEC_ID_MPEG4:
-			return 'MP4S';
+		case AV_CODEC_ID_HEVC:
+			return 'hev1';
+		case AV_CODEC_ID_VP9:
+			return 'VP90';
 	}
 	return 0;
 }

@@ -29,11 +29,7 @@
 #include "CommonUtils.h"
 #include "Codecprintf.h"
 #include "CodecIDs.h"
-#if TARGET_OS_MAC
-#	include <pthread.h>
-#else
-#	include <windows.h>
-#endif
+#include <pthread.h>
 #ifndef FFUSION_CODEC_ONLY
 #	include "libavformat/avformat.h"
 #endif
@@ -61,7 +57,6 @@ void FFASBDToAVCodecContext(AudioStreamBasicDescription *asbd, AVCodecContext *a
 }
 #endif
 
-#if TARGET_OS_MAC
 static int FFusionLockMgrCallback(void **mutex, enum AVLockOp op)
 {
 	pthread_mutex_t **m = (pthread_mutex_t **)mutex;
@@ -85,31 +80,6 @@ static int FFusionLockMgrCallback(void **mutex, enum AVLockOp op)
 	
 	return ret;
 }
-#else
-static int FFusionLockMgrCallback(void **mutex, enum AVLockOp op)
-{
-	CRITICAL_SECTION **m = (CRITICAL_SECTION **)mutex;
-	int ret = 0;
-	
-	switch (op) {
-		case AV_LOCK_CREATE:
-			*m = malloc(sizeof(CRITICAL_SECTION));
-			ret = !InitializeCriticalSectionAndSpinCount( *m, 4000 );
-			break;
-		case AV_LOCK_OBTAIN:
-			EnterCriticalSection(*m);
-			break;
-		case AV_LOCK_RELEASE:
-			LeaveCriticalSection(*m);
-			break;
-		case AV_LOCK_DESTROY:
-			DeleteCriticalSection(*m);
-			free(*m);
-	}
-	
-	return ret;
-}
-#endif
 
 #define REGISTER_MUXER(x) { \
 	extern DLLIMPORT AVOutputFormat x##_muxer; \
@@ -159,28 +129,9 @@ void FFInitFFmpeg()
 #endif
 		av_lockmgr_register(FFusionLockMgrCallback);
 		
-		/*REGISTER_DECODER(ffv1);
-		REGISTER_DECODER(huffyuv);
-		REGISTER_DECODER(ffvhuff);
-		REGISTER_DECODER(fraps);
-		REGISTER_DECODER(zmbv);
-		REGISTER_DECODER(msmpeg4v3);
-		REGISTER_DECODER(mpeg4);
-		REGISTER_DECODER(flv);
-		REGISTER_DECODER(flashsv);
-		REGISTER_DECODER(snow);
-		REGISTER_DECODER(indeo2);
-		REGISTER_DECODER(indeo3);
-		REGISTER_DECODER(indeo4);
-		REGISTER_DECODER(indeo5);
-		REGISTER_DECODER(h263i);
-		REGISTER_DECODER(hevc);
-		REGISTER_DECODER(vp3);
-		REGISTER_DECODER(vp6);
-		REGISTER_DECODER(vp6f);
-		REGISTER_DECODER(vp6a);
-		REGISTER_DECODER(vp8);
-		REGISTER_DECODER(vp9);*/
+		// Register only H265/HEVC and VP9 decoders
+		REGISTER_DECODER(ff_hevc);
+		REGISTER_DECODER(ff_vp9);
 		
 		avcodec_register_all();
 
@@ -237,57 +188,15 @@ void FFInitFFmpeg()
 	FFusionInitExit(unlock);
 }
 
-#ifndef FFUSION_CODEC_ONLY
-// List of codec IDs we know about and that map to audio fourccs
-// XXX this is probably a duplicate of something inside libavformat
-static const struct {
-	OSType mFormatID;
-	enum CodecID codecID;
-} kAudioCodecMap[] =
-{
-	{ kAudioFormatWMA1MS, CODEC_ID_WMAV1 },
-	{ kAudioFormatWMA2MS, CODEC_ID_WMAV2 },
-	{ kAudioFormatFlashADPCM, CODEC_ID_ADPCM_SWF },
-	{ kAudioFormatXiphVorbis, CODEC_ID_VORBIS },
-	{ kAudioFormatMPEGLayer1, CODEC_ID_MP1 },
-	{ kAudioFormatMPEGLayer2, CODEC_ID_MP2 },
-	{ kAudioFormatMPEGLayer3, CODEC_ID_MP3 },
-	{ 'ms\0\0' + 0x50, CODEC_ID_MP2 },
-	{ kAudioFormatDTS, CODEC_ID_DTS },
-	{ kAudioFormatNellymoser, CODEC_ID_NELLYMOSER },
-	{ kAudioFormatTTA, CODEC_ID_TTA },
-	
-	{ kAudioFormatAC3MS, CODEC_ID_AC3 },
-	{ kAudioFormatLinearPCM, CODEC_ID_PCM_S16LE },
-	{ kAudioFormatLinearPCM, CODEC_ID_PCM_U8 },
-	{ kAudioFormatALaw, CODEC_ID_PCM_ALAW },
-	{ kAudioFormatULaw, CODEC_ID_PCM_MULAW },
-	{ kMicrosoftADPCMFormat, CODEC_ID_ADPCM_MS },
-	{ kAudioFormatMPEG4AAC, CODEC_ID_AAC },
-	{ kAudioFormatDTS, CODEC_ID_DTS },
-	{ kAudioFormatFlashADPCM, CODEC_ID_ADPCM_SWF },
-	{ 0, CODEC_ID_NONE }
-};
-#endif
 
 enum AVCodecID FFFourCCToCodecID(OSType formatID)
 {
-#ifndef FFUSION_CODEC_ONLY
-	for (int i = 0; kAudioCodecMap[i].codecID != AV_CODEC_ID_NONE; i++) {
-		if (kAudioCodecMap[i].mFormatID == formatID)
-			return kAudioCodecMap[i].codecID;
-	}
-#endif
+	// FFusion only supports video codecs (H265/VP9)
 	return AV_CODEC_ID_NONE;
 }
 
 OSType FFCodecIDToFourCC(enum AVCodecID codecID)
 {
-#ifndef FFUSION_CODEC_ONLY
-	for (int i = 0; kAudioCodecMap[i].codecID != AV_CODEC_ID_NONE; i++) {
-		if (kAudioCodecMap[i].codecID == codecID)
-			return kAudioCodecMap[i].mFormatID;
-	}
-#endif
+	// FFusion only supports video codecs (H265/VP9)
 	return AV_CODEC_ID_NONE;
 }

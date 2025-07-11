@@ -11,11 +11,11 @@
 	<key>CFBundlePackageType</key>
 	<string>thng</string>
 	<key>CFBundleShortVersionString</key>
-	<string>2021.07.16</string>
+	<string>2025.07.11</string>
 	<key>CFBundleSignature</key>
 	<string>Peri</string>
 	<key>CFBundleVersion</key>
-	<string>2021.07.16</string>
+	<string>2025.07.11</string>
 	<key>CSResourcesFileMapped</key>
 	<string>yes</string>
 </dict>

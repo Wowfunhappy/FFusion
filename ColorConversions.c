@@ -23,14 +23,8 @@
 
 #include <math.h>
 #include "Codecprintf.h"
-#ifdef __MACH__
-#	include <QuickTime/QuickTime.h>
-#	include <Accelerate/Accelerate.h>
-#else
-#	include <ConditionalMacros.h>
-#	include <Endian.h>
-#	include <ImageCodec.h>
-#endif
+#include <QuickTime/QuickTime.h>
+#include <Accelerate/Accelerate.h>
 #include "ColorConversions.h"
 #include "CommonUtils.h"
 #include <libswscale/swscale.h>
@@ -75,106 +69,6 @@ static void Y420toY422_lastrow(UInt8 *o, UInt8 *yc, UInt8 *uc, UInt8 *vc, int ha
 //Y420 Planar to Y422 Packed
 //The only one anyone cares about, so implemented with SIMD
 
-#ifdef __ppc__
-//hand-unrolled code is a bad idea on modern CPUs. luckily, this does not run on modern CPUs, only G3s.
-
-static FASTCALL void Y420toY422_ppc_scalar(AVPicture *picture, UInt8 *baseAddr, long outRB, int width, int height)
-{
-	int	y = height >> 1, halfWidth = width >> 1, halfHalfWidth = width >> 2;
-	UInt8 *inY = picture->data[0], *inU = picture->data[1], *inV = picture->data[2];
-	int	rB = picture->linesize[0], rbUV = picture->linesize[1];
-	 
-	 while (y--) {
-		 UInt32         *ldst = (UInt32 *) baseAddr, *ldstr2 = (UInt32 *) (baseAddr + outRB);
-		 UInt32         *lsrc = (UInt32 *) inY, *lsrcr2 = (UInt32 *) (inY + rB);
-		 UInt16         *sU = (UInt16 *) inU, *sV = (UInt16 *) inV;
-		 ptrdiff_t		off;
-		 
-		 for (off = 0; off < halfHalfWidth; off++) {
-			 UInt16          chrU = sU[off], chrV = sV[off];
-			 UInt32          row1luma = lsrc[off], row2luma = lsrcr2[off];
-			 UInt32          chromas1 = (chrU & 0xff00) << 16 | (chrV & 0xff00), chromas2 = (chrU & 0xff) << 24 | (chrV & 0xff) << 8;
-			 int             off2 = off * 2;
-			 
-			 ldst[off2] = chromas1 | (row1luma & 0xff000000) >> 8 | (row1luma & 0xff0000) >> 16;
-			 ldstr2[off2] = chromas1 | (row2luma & 0xff000000) >> 8 | (row2luma & 0xff0000) >> 16;
-			 off2++;
-			 ldst[off2] = chromas2 | (row1luma & 0xff00) << 8 | row1luma & 0xff;
-			 ldstr2[off2] = chromas2 | (row2luma & 0xff00) << 8 | row2luma & 0xff;
-		 }
-		 
-		 if (halfWidth & 3) {
-			 UInt16         *ssrc = (UInt16 *) inY, *ssrcr2 = (UInt16 *) (inY + rB);
-			 
-			 ptrdiff_t       off = halfWidth - 2;
-			 UInt32          chromas = inV[off] << 8 | (inU[off] << 24);
-			 UInt16          row1luma = ssrc[off], row2luma = ssrcr2[off];
-			 
-			 ldst[off] = chromas | row1luma & 0xff | (row1luma & 0xff00) << 8;
-			 ldstr2[off] = chromas | row2luma & 0xff | (row2luma & 0xff00) << 8;
-		 }
-		 
-		 inY += rB * 2;
-		 inU += rbUV;
-		 inV += rbUV;
-		 baseAddr += outRB * 2;
-	 }
-	
-	HandleLastRow(baseAddr, inY, inU, inV, halfWidth, height);
-}
-
-static FASTCALL void Y420toY422_ppc_altivec(AVPicture *picture, UInt8 *o, long outRB, int width, int height)
-{
-	UInt8	*yc = picture->data[0], *uc = picture->data[1], *vc = picture->data[2];
-	int		rY = picture->linesize[0], rUV = picture->linesize[1];
-	int		y, x, x2, x4, vWidth = width >> 5, halfheight = height >> 1;
-	
-	for (y = 0; y < halfheight; y ++) {
-		vUInt8 *ov = (vUInt8 *)o, *ov2 = (vUInt8 *)(o + outRB), *yv2 = (vUInt8 *)(yc + rY);
-		vUInt8 *uv  = (vUInt8 *)uc, *vv = (vUInt8 *)vc, *yv = (vUInt8 *)yc;
-		
-		for (x = 0; x < vWidth; x++) {
-			x2 = x*2; x4 = x*4;
-			// ldl/stl = mark data as least recently used in cache so they will be flushed out
-			__builtin_prefetch(&yv[x+1], 0, 0); __builtin_prefetch(&yv2[x+1], 0, 0);
-			__builtin_prefetch(&uv[x+1], 0, 0); __builtin_prefetch(&vv[x+1], 0, 0);
-			vUInt8 tmp_u = vec_ldl(0, &uv[x]), tmp_v = vec_ldl(0, &vv[x]), chroma = vec_mergeh(tmp_u, tmp_v),
-					tmp_y = vec_ldl(0, &yv[x2]), tmp_y2 = vec_ldl(0, &yv2[x2]),
-					tmp_y3 = vec_ldl(16, &yv[x2]), tmp_y4 = vec_ldl(16, &yv2[x2]), chromal = vec_mergel(tmp_u, tmp_v);
-			
-			vec_stl(vec_mergeh(chroma, tmp_y), 0, &ov[x4]);
-			vec_stl(vec_mergel(chroma, tmp_y), 16, &ov[x4]);
-			vec_stl(vec_mergeh(chromal, tmp_y3), 32, &ov[x4]);
-			vec_stl(vec_mergel(chromal, tmp_y3), 48, &ov[x4]);
-			
-			vec_stl(vec_mergeh(chroma, tmp_y2), 0, &ov2[x4]);
-			vec_stl(vec_mergel(chroma, tmp_y2), 16, &ov2[x4]);
-			vec_stl(vec_mergeh(chromal, tmp_y4), 32, &ov2[x4]);
-			vec_stl(vec_mergel(chromal, tmp_y4), 48, &ov2[x4]);
-		}
-		
-		if (width & 31) { //spill to scalar for the end if the row isn't a multiple of 32
-			UInt8 *o2 = o + outRB, *yc2 = yc + rY;
-			for (x = vWidth * 32, x2 = x*2; x < width; x += 2, x2 += 4) {
-				int hx = x >> 1;
-				o2[x2]     = o[x2] = uc[hx];
-				o [x2 + 1] = yc[x];
-				o2[x2 + 1] = yc2[x];
-				o2[x2 + 2] = o[x2 + 2] = vc[hx];
-				o [x2 + 3] = yc[x + 1];
-				o2[x2 + 3] = yc2[x + 1];
-			}			
-		}
-		
-		o  += outRB * 2;
-		yc += rY * 2;
-		uc += rUV;
-		vc += rUV;
-	}
-	
-	HandleLastRow(o, yc, uc, vc, width >> 1, height);
-}
-#else
 #include <emmintrin.h>
 
 static FASTCALL void Y420toY422_sse2(AVPicture *picture, UInt8 *o, long outRB, int width, int height)
@@ -196,7 +90,6 @@ static FASTCALL void Y420toY422_sse2(AVPicture *picture, UInt8 *o, long outRB, i
 // Also, Y420toY422_sse2() execution speed for a 720x576 image with outRB=1440 and linesize=752,376
 // is between approx. 900Hz (1Ghz AMD C60 netbook) and 10000Hz (Core i7, 2.7Ghz), meaning that the function is not a bottleneck
 // for "normal" resolutions.
-#if defined(__i386__) && !defined(_MSC_VER)
 		int vWidth_ = vWidth;
 
 		asm volatile(
@@ -245,27 +138,6 @@ static FASTCALL void Y420toY422_sse2(AVPicture *picture, UInt8 *o, long outRB, i
 			:
 			: "memory", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6"
 			);
-#else
-		for (x = 0; x < vWidth; x++) {
-			int x2 = x*2, x4 = x*4;
-
-			__m128i	tmp_y = yv[x2], tmp_y3 = yv[x2+1],
-					tmp_y2 = yv2[x2], tmp_y4 = yv2[x2+1],
-					tmp_u = _mm_loadu_si128(&uv[x]), tmp_v = _mm_loadu_si128(&vv[x]),
-					chroma_l = _mm_unpacklo_epi8(tmp_u, tmp_v),
-					chroma_h = _mm_unpackhi_epi8(tmp_u, tmp_v);
-			
-			_mm_stream_si128(&ov[x4],   _mm_unpacklo_epi8(chroma_l, tmp_y)); 
-			_mm_stream_si128(&ov[x4+1], _mm_unpackhi_epi8(chroma_l, tmp_y)); 
-			_mm_stream_si128(&ov[x4+2], _mm_unpacklo_epi8(chroma_h, tmp_y3)); 
-			_mm_stream_si128(&ov[x4+3], _mm_unpackhi_epi8(chroma_h, tmp_y3)); 
-			
-			_mm_stream_si128(&ov2[x4],  _mm_unpacklo_epi8(chroma_l, tmp_y2)); 
-			_mm_stream_si128(&ov2[x4+1],_mm_unpackhi_epi8(chroma_l, tmp_y2));
-			_mm_stream_si128(&ov2[x4+2],_mm_unpacklo_epi8(chroma_h, tmp_y4));
-			_mm_stream_si128(&ov2[x4+3],_mm_unpackhi_epi8(chroma_h, tmp_y4));
-		}
-#endif
 
 		for (x=vWidth * 16; x < halfwidth; x++) {
 		  int x4 = x*4, x2 = x*2;
@@ -326,7 +198,6 @@ static FASTCALL void Y420toY422_x86_scalar(AVPicture *picture, UInt8 *o, long ou
 
 	HandleLastRow(o, yc, u, v, halfwidth, height);
 }
-#endif
 
 //Y420+Alpha Planar to V408 (YUV 4:4:4+Alpha 32-bit packed)
 //Could be fully unrolled to avoid x/2
@@ -436,38 +307,7 @@ static FASTCALL void RGB24toRGB24(AVPicture *picture, UInt8 *baseAddr, long rowB
 	RGBtoRGB(picture, baseAddr, rowBytes, width, height, 3);
 }
 
-static FASTCALL void RGB16toRGB16(AVPicture *picture, UInt8 *baseAddr, long rowBytes, int width, int height)
-{
-	RGBtoRGB(picture, baseAddr, rowBytes, width, height, 2);
-}
 
-static FASTCALL void GRAY8toGRAY8(AVPicture *picture, UInt8 *baseAddr, long rowBytes, int width, int height)
-{
-	RGBtoRGB(picture, baseAddr, rowBytes, width, height, 1);
-}
-
-static FASTCALL void GRAY8toGRAY8XOR(AVPicture *picture, UInt8 *baseAddr, long rowBytes, int width, int height)
-{
-	RGBtoRGBXOR(picture, baseAddr, rowBytes, width, height, 1);
-}
-
-//RJVB
-static FASTCALL void GRAY8toRGB24(AVPicture *picture, UInt8 *baseAddr, long rowBytes, int width, int height)
-{ UInt8 *srcPtr = picture->data[0];
-  int x, y, srcRB;
-
-	srcRB = picture->linesize[0] - width, rowBytes -= width * 3;
-	for( y = 0; y < height; y++ ){
-		for( x = 0 ; x < width ; x++, srcPtr++ ){
-			*baseAddr++ = *srcPtr;
-			*baseAddr++ = *srcPtr;
-			*baseAddr++ = *srcPtr;
-		}
-
-		baseAddr += rowBytes;
-		srcPtr += srcRB;
-	}
-}
 
 //Little-endian XRGB32 to big-endian XRGB32
 static FASTCALL void RGB32toRGB32Swap(AVPicture *picture, UInt8 *baseAddr, long rowBytes, int width, int height)
@@ -485,22 +325,6 @@ static FASTCALL void RGB32toRGB32Swap(AVPicture *picture, UInt8 *baseAddr, long 
 	}
 }
 
-static FASTCALL void RGB16toRGB16Swap(AVPicture *picture, UInt8 *baseAddr, long rowBytes, int width, int height)
-{
-	UInt8 *srcPtr = picture->data[0];
-	int srcRB = picture->linesize[0];
-	int x, y;
-	
-	for (y = 0; y < height; y++) {
-		UInt16 *oRow = (UInt16 *)baseAddr, *iRow = (UInt16 *)srcPtr;
-		for (x = 0; x < width; x++){
-			oRow[x] = EndianU16_LtoB(iRow[x]);
-		}
-		
-		baseAddr += rowBytes;
-		srcPtr += srcRB;
-	}
-}
 
 static FASTCALL void Y422toY422(AVPicture *picture, UInt8 *o, long outRB, int width, int height)
 {
@@ -524,30 +348,6 @@ static FASTCALL void Y422toY422(AVPicture *picture, UInt8 *o, long outRB, int wi
 	}
 }
 
-static FASTCALL void Y410toY422(AVPicture *picture, UInt8 *o, long outRB, int width, int height)
-{
-	UInt8	*yc = picture->data[0], *u = picture->data[1], *v = picture->data[2];
-	int		rY = picture->linesize[0], rUV = picture->linesize[1];
-	int		x, y, halfwidth = width >> 1;
-	
-	for (y = 0; y < height; y++) {
-		for (x = 0; x < halfwidth; x++) {
-			int x2 = x * 2, x4 = x * 4;
-			o[x4] = u[x>>1];
-			o[x4 + 1] = yc[x2];
-			o[x4 + 2] = v[x>>1];
-			o[x4 + 3] = yc[x2 + 1];
-		}
-		
-		o  += outRB;
-		yc += rY;
-		
-		if ((y & 3) == 3) {
-			u += rUV;
-			v += rUV;
-		}
-	}
-}
 
 static FASTCALL void Y420_10toY422_8(AVPicture *picture, UInt8 *o, int outRB, int width, int height)
 {
@@ -612,15 +412,6 @@ static FASTCALL void ClearRGB24(UInt8 *baseAddr, long rowBytes, int width, int h
 	ClearRGB(baseAddr, rowBytes, width, height, 3);
 }
 
-static FASTCALL void ClearRGB16(UInt8 *baseAddr, long rowBytes, int width, int height)
-{
-	ClearRGB(baseAddr, rowBytes, width, height, 2);
-}
-
-static FASTCALL void ClearGRAY8(UInt8 *baseAddr, long rowBytes, int width, int height)
-{
-	ClearRGB(baseAddr, rowBytes, width, height, 1);
-}
 
 static FASTCALL void ClearV408(UInt8 *baseAddr, long rowBytes, int width, int height)
 {
@@ -659,37 +450,24 @@ static FASTCALL void ClearY422(UInt8 *baseAddr, long rowBytes, int width, int he
 OSType ColorConversionDstForPixFmt(enum AVCodecID codecID, enum AVPixelFormat ffPixFmt)
 {
 	switch (ffPixFmt) {
-		case AV_PIX_FMT_RGB555LE:
-		case AV_PIX_FMT_RGB555BE:
-			return k16BE555PixelFormat;
 		case AV_PIX_FMT_BGR24:
-			return k24RGBPixelFormat; //FIXME: try k24BGRPixelFormat
 		case AV_PIX_FMT_RGB24:
 			return k24RGBPixelFormat;
 		case AV_PIX_FMT_ARGB:
 		case AV_PIX_FMT_BGRA:
-			return k32ARGBPixelFormat;
-		// RJVB
 		case AV_PIX_FMT_RGBA:
 			return k32ARGBPixelFormat;
-		case AV_PIX_FMT_YUV410P:
-			return k2vuyPixelFormat;
 		case AV_PIX_FMT_YUVJ420P:
 		case AV_PIX_FMT_YUV420P:
-			return k2vuyPixelFormat; //disables "fast YUV" path
+			return k2vuyPixelFormat;
 		case AV_PIX_FMT_YUV422P:
 			return k2vuyPixelFormat;
 		case AV_PIX_FMT_YUVA420P:
 			return k4444YpCbCrA8PixelFormat;
-		// RJVB
-		case AV_PIX_FMT_GRAY8:
-			// QT only seems to know indexed grayscale, so we use RGB with 3 identical colour values...
-			return k24RGBPixelFormat;
-		//Wowfunhappy
 		case AV_PIX_FMT_YUV420P10LE:
 			return k2vuyPixelFormat;
 		default:
-			return k2vuyPixelFormat; //Just guess the right format
+			return k2vuyPixelFormat;
 	}
 }
 
@@ -701,24 +479,8 @@ int ColorConversionFindFor( ColorConversionFuncs *funcs, enum AVCodecID codecID,
 		case AV_PIX_FMT_YUV420P:
 			funcs->clear = ClearY422;
 			
-#ifdef __ppc__
-			if (IsAltivecSupported())
-				funcs->convert = Y420toY422_ppc_altivec;
-			else
-				funcs->convert = Y420toY422_ppc_scalar;
-#else
 			//can't set this without the first real frame
 			if (ffPicture) {
-#if 0 && ((__GNUC__ >= 4 && __GNUC_MINOR__ >= 7) || __GNUC__ > 4)
-				// sorry, but gcc 4.7 does a better job at vectorising the scalar function than the hand-coded version!
-				funcs->convert = Y420toY422_x86_scalar;
-#else
-#	if !defined(__i386__) || defined(_MSC_VER)
-// 				if( codecID == CODEC_ID_H264 && rowBytes <= 2 * width ){
-// 					funcs->convert = Y420toY422_x86_scalar;
-// 					Codecprintf( stderr, "ColorConversionFindFor(): H.264 image width %d*2 >= rowBytes=%ld; using scalar Y420toY422 conversion for safety",
-// 								width, rowBytes );
-// 				}
 				if( (((size_t)baseAddr) % 16) || (rowBytes % 16) ){
 					funcs->convert = Y420toY422_x86_scalar;
 					Codecprintf( stderr,
@@ -726,18 +488,14 @@ int ColorConversionFindFor( ColorConversionFuncs *funcs, enum AVCodecID codecID,
 								" using scalar Y420toY422 conversion for safety",
 								baseAddr, rowBytes );
 				}
-				else
-#	endif
-				if (ffPicture->linesize[0] & 15){
+				else if (ffPicture->linesize[0] & 15){
 					funcs->convert = Y420toY422_x86_scalar;
 				}
 				else{
 					funcs->convert = Y420toY422_sse2;
 					Codecprintf( stderr, "ColorConversionFindFor(): using SSE accelerated Y420 to Y422 conversion" );
 				}
-#endif
 			}
-#endif
 			break;
 		case AV_PIX_FMT_BGR24:
 			funcs->clear = ClearRGB24;
@@ -745,11 +503,7 @@ int ColorConversionFindFor( ColorConversionFuncs *funcs, enum AVCodecID codecID,
 			break;
 		case AV_PIX_FMT_ARGB:
 			funcs->clear = ClearRGB32;
-#ifdef __ppc__
-			funcs->convert = RGB32toRGB32Swap;
-#else
 			funcs->convert = RGB32toRGB32Copy;
-#endif
 			break;
 			// RJVB
 		case AV_PIX_FMT_RGBA:
@@ -758,31 +512,11 @@ int ColorConversionFindFor( ColorConversionFuncs *funcs, enum AVCodecID codecID,
 			break;
 		case AV_PIX_FMT_BGRA:
 			funcs->clear = ClearRGB32;
-#ifdef __ppc__
-			funcs->convert = RGB32toRGB32Copy;
-#else
 			funcs->convert = RGB32toRGB32Swap;
-#endif
 			break;
 		case AV_PIX_FMT_RGB24:
 			funcs->clear = ClearRGB24;
 			funcs->convert = RGB24toRGB24;
-			break;
-		case AV_PIX_FMT_GRAY8:
-			funcs->clear = ClearGRAY8;
-			funcs->convert = GRAY8toRGB24;
-			break;
-		case AV_PIX_FMT_RGB555LE:
-			funcs->clear = ClearRGB16;
-			funcs->convert = RGB16toRGB16Swap;
-			break;
-		case AV_PIX_FMT_RGB555BE:
-			funcs->clear = ClearRGB16;
-			funcs->convert = RGB16toRGB16;
-			break;
-		case AV_PIX_FMT_YUV410P:
-			funcs->clear = ClearY422;
-			funcs->convert = Y410toY422;
 			break;
 		case AV_PIX_FMT_YUV422P:
 			funcs->clear = ClearY422;

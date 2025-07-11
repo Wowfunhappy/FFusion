@@ -2,7 +2,7 @@
  *  Logging.h
  *  QTImage2Mov
  *
- *  Created by René J.V. Bertin on 20100713.
+ *  Created by Renï¿½ J.V. Bertin on 20100713.
  *  Copyright 2010 INRETS / RJVB. All rights reserved.
  *
  */
@@ -11,22 +11,6 @@
 
 #include <stdio.h>
 
-#if defined(_WINDOWS) || defined(WIN32) || defined(_MSC_VER) || TARGET_OS_WIN32
-#	include "Logger.h"
-#	ifdef __cplusplus
-extern "C" {
-#	endif
-#	ifdef HAS_LOG_INIT
-		SS_Log *qtLogPtr = NULL;
-		int qtLog_Initialised = 0;
-#	else
-		extern SS_Log *qtLogPtr;
-		extern int qtLog_Initialised;
-#	endif
-#	ifdef __cplusplus
-}
-#	endif
-#else
 #	ifdef _PC_LOG_ACTIVE
 #		ifndef _PC_LOG_EMBEDDED
 #			include <LogController/PCLogController.h>

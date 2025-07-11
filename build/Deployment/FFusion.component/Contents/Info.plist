@@ -3,15 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>BuildMachineOSBuild</key>
-	<string>10K549</string>
-	<key>CFBundleDevelopmentRegion</key>
-	<string>en_GB</string>
+	<string>13F1911</string>
 	<key>CFBundleExecutable</key>
 	<string>FFusion</string>
-	<key>CFBundleGetInfoString</key>
-	<string>1.2.6, copyright 2011 the Perian team, 2013 RJVB</string>
-	<key>CFBundleIconFile</key>
-	<string>Perian_icon</string>
 	<key>CFBundleIdentifier</key>
 	<string>org.perian.FFusion</string>
 	<key>CFBundleInfoDictionaryVersion</key>
@@ -19,26 +13,26 @@
 	<key>CFBundlePackageType</key>
 	<string>thng</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.2.6</string>
+	<string>2025.07.11</string>
 	<key>CFBundleSignature</key>
 	<string>Peri</string>
 	<key>CFBundleVersion</key>
-	<string>1.2.6</string>
+	<string>2025.07.11</string>
 	<key>CSResourcesFileMapped</key>
 	<string>yes</string>
 	<key>DTCompiler</key>
-	<string>org.macports.compilers.gcc.4.7</string>
+	<string>com.apple.compilers.llvm.clang.1_0</string>
 	<key>DTPlatformBuild</key>
-	<string>10M2518</string>
+	<string>5A3005</string>
 	<key>DTPlatformVersion</key>
-	<string>PG</string>
+	<string>GM</string>
 	<key>DTSDKBuild</key>
-	<string>10M2518</string>
+	<string>10K549</string>
 	<key>DTSDKName</key>
 	<string>macosx10.6</string>
 	<key>DTXcode</key>
-	<string>0400</string>
+	<string>0502</string>
 	<key>DTXcodeBuild</key>
-	<string>10M2518</string>
+	<string>5A3005</string>
 </dict>
 </plist>

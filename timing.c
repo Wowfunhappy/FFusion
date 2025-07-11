@@ -13,11 +13,9 @@
 #	include <mach/mach_init.h>
 #	include <sys/sysctl.h>
 #endif
-#if ! defined(_WINDOWS) && !defined(WIN32) && !defined(_MSC_VER)
-#	include <time.h>
-#	include <sys/time.h>
-#	include <unistd.h>
-#endif
+#include <time.h>
+#include <sys/time.h>
+#include <unistd.h>
 #include <errno.h>
 
 #include "timing.h"
@@ -147,46 +145,6 @@ double HRTime_toc()
 	return gettime() - ticTime;
 }
 
-#elif defined(_WINDOWS) || defined(WIN32) || defined(_MSC_VER)
-#pragma mark ---win32---
-
-#include <windows.h>
-
-static LARGE_INTEGER lpFrequency;
-static double calibrator= 0;
-
-void init_HRTime()
-{
-	if( !calibrator ){
-		if( !QueryPerformanceFrequency(&lpFrequency) ){
-			calibrator= 0;
-		}
-		else{
-			calibrator= 1.0 / ((double) lpFrequency.QuadPart);
-		}
-	}
-}
-
-
-double HRTime_Time()
-{ LARGE_INTEGER count;
-	
-	QueryPerformanceCounter(&count);
-	return count.QuadPart * calibrator;
-}
-
-static double ticTime;
-double HRTime_tic()
-{ LARGE_INTEGER count;
-	QueryPerformanceCounter(&count);
-	return( (ticTime= count.QuadPart * calibrator) );
-}
-
-double HRTime_toc()
-{ LARGE_INTEGER count;
-	QueryPerformanceCounter(&count);
-	return count.QuadPart * calibrator - ticTime;
-}
 
 #else
 #pragma mark ---using gettimeofday---

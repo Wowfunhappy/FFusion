@@ -22,14 +22,10 @@
 #ifndef __COLORCONVERSIONS_H__
 #define __COLORCONVERSIONS_H__
 
-#if TARGET_OS_MAC
-#	include <Carbon/Carbon.h>
-#endif
+#include <Carbon/Carbon.h>
 #include "libavcodec/avcodec.h"
 
-#ifdef _MSCVER
-#	define FASTCALL	__fastcall
-#elif defined(__i386__) && !defined(__llvm__) && !defined(_MSC_VER)
+#if defined(__i386__) && !defined(__llvm__)
 #	define FASTCALL	__attribute__((fastcall))
 #else
 #	define FASTCALL

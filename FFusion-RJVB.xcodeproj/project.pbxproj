@@ -5331,7 +5331,8 @@
 				OTHER_REZFLAGS = "-rd -d ppc_$(ppc) -d i386_$(i386) -d TARGET_REZ_CARBON_MACHO=1 -i \"$(SRCROOT)\" -i \"$(DERIVED_FILE_DIR)\"";
 				PRODUCT_NAME = FFusion;
 				REZ_PREPROCESSOR_DEFINITIONS = "";
-				VALID_ARCHS = "ppc i386";
+				SDKROOT = macosx10.6;
+				VALID_ARCHS = i386;
 				WRAPPER_EXTENSION = component;
 			};
 			name = Development;
@@ -5391,8 +5392,9 @@
 				OTHER_REZFLAGS = "-rd -d ppc_$(ppc) -d i386_$(i386) -d TARGET_REZ_CARBON_MACHO=1 -i \"$(SRCROOT)\" -i \"$(DERIVED_FILE_DIR)\"";
 				PRECOMPS_INCLUDE_HEADERS_FROM_BUILT_PRODUCTS_DIR = NO;
 				PRODUCT_NAME = FFusion;
+				SDKROOT = macosx10.6;
 				STRIP_INSTALLED_PRODUCT = NO;
-				VALID_ARCHS = "ppc i386";
+				VALID_ARCHS = i386;
 				WRAPPER_EXTENSION = component;
 			};
 			name = Deployment;
@@ -5440,7 +5442,8 @@
 				);
 				OTHER_REZFLAGS = "-rd -d ppc_$(ppc) -d i386_$(i386) -d TARGET_REZ_CARBON_MACHO=1 -i \"$(SRCROOT)\" -i \"$(DERIVED_FILE_DIR)\"";
 				PRODUCT_NAME = FFusion;
-				VALID_ARCHS = "ppc i386";
+				SDKROOT = macosx10.6;
+				VALID_ARCHS = i386;
 				WRAPPER_EXTENSION = component;
 			};
 			name = "Deployment+Debug";
