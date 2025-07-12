@@ -527,10 +527,6 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 		{
 			err = featureUnsupported;
 		}
-		else if (codecID == AV_CODEC_ID_VP9) {
-			//Wowfunhappy: For some reason, FFMpeg's default VP9 decoder displays some videos (e.g. Youtube downloads) as colored vertical bands.
-			glob->avCodec = avcodec_find_decoder_by_name("libvpx-vp9");
-		}
 		else {
 			glob->avCodec = avcodec_find_decoder(codecID);
 		}
