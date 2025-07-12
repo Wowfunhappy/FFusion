@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AB4815642E21FBB5002DB3E3 /* libdav1d.a in Frameworks */ = {isa = PBXBuildFile; fileRef = AB4815632E21FBB5002DB3E3 /* libdav1d.a */; };
 		AB967C81269FBAE100A2E4A4 /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AB967C80269FBAE000A2E4A4 /* AudioToolbox.framework */; };
 		AB9E325326975B1E0047DE6E /* FFusion.component in CopyFiles */ = {isa = PBXBuildFile; fileRef = D67BC4B216B166FF00E26386 /* FFusion.component */; };
 		ABAC75C125B4A00E00B55ABF /* libavcodec.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 11D4EFA10A3CE8C10066D45F /* libavcodec.a */; };
@@ -110,6 +111,7 @@
 		AB2FE86B25B3A2C800C96D74 /* VideoToolbox.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = VideoToolbox.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.8.sdk/System/Library/Frameworks/VideoToolbox.framework; sourceTree = DEVELOPER_DIR; };
 		AB38B78225B3848700DBBE4A /* libavformat.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavformat.a; path = FFmpeg/osx86/lib/libavformat.a; sourceTree = "<group>"; };
 		AB38B78325B3848700DBBE4A /* libswresample.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libswresample.a; path = FFmpeg/osx86/lib/libswresample.a; sourceTree = "<group>"; };
+		AB4815632E21FBB5002DB3E3 /* libdav1d.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libdav1d.a; path = FFmpeg/osx86/lib/libdav1d.a; sourceTree = "<group>"; };
 		AB7DDD7425B3ECDF00C31DD6 /* libvpx.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libvpx.a; path = FFmpeg/osx86/lib/libvpx.a; sourceTree = "<group>"; };
 		AB967C80269FBAE000A2E4A4 /* AudioToolbox.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AudioToolbox.framework; path = System/Library/Frameworks/AudioToolbox.framework; sourceTree = SDKROOT; };
 		ABAFF7F225B20487005D96A4 /* VideoDecodeAcceleration.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = VideoDecodeAcceleration.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.8.sdk/System/Library/Frameworks/VideoDecodeAcceleration.framework; sourceTree = DEVELOPER_DIR; };
@@ -2286,6 +2288,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AB4815642E21FBB5002DB3E3 /* libdav1d.a in Frameworks */,
 				AB967C81269FBAE100A2E4A4 /* AudioToolbox.framework in Frameworks */,
 				ABAC75C125B4A00E00B55ABF /* libavcodec.a in Frameworks */,
 				ABAC75C325B4A00E00B55ABF /* libavformat.a in Frameworks */,
@@ -2310,6 +2313,7 @@
 		089C166AFE841209C02AAC07 /* ffmpeg DivX */ = {
 			isa = PBXGroup;
 			children = (
+				AB4815632E21FBB5002DB3E3 /* libdav1d.a */,
 				AB967C80269FBAE000A2E4A4 /* AudioToolbox.framework */,
 				AB7DDD7425B3ECDF00C31DD6 /* libvpx.a */,
 				AB2FE86B25B3A2C800C96D74 /* VideoToolbox.framework */,
