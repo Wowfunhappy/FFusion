@@ -27,5 +27,6 @@ build/Deployment/FFusion.component
 FFmpeg.zip
 *.sdf
 ipch/
-FFusion-RJVB.xcodeproj/bertin.pbxuser
+FFusion-RJVB.xcodeproj/
 build/
+.claude
