@@ -28,5 +28,6 @@ FFmpeg.zip
 *.sdf
 ipch/
 FFusion-RJVB.xcodeproj/
+*.xcworkspace/
 build/
 .claude
