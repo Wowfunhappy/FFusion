@@ -807,12 +807,14 @@ pascal ComponentResult FFusionCodecDecodeBand(FFusionGlobals glob, ImageSubCodec
 		// Store the decoded frame in this DecompressRecord's buffer
 		if (!myDrp->buffer) {
 			// Find an available buffer slot
-			int i;
+			int i, startIdx = (glob->lastAllocatedBuffer + 1) % FFUSION_MAX_BUFFERS;
 			for (i = 0; i < FFUSION_MAX_BUFFERS; i++) {
-				if (!glob->buffers[i].retainCount) {
-					myDrp->buffer = &glob->buffers[i];
-					glob->buffers[i].retainCount = 1;
-					glob->buffers[i].frameNumber = myDrp->frameNumber;
+				int idx = (startIdx + i) % FFUSION_MAX_BUFFERS;
+				if (!glob->buffers[idx].retainCount) {
+					myDrp->buffer = &glob->buffers[idx];
+					glob->buffers[idx].retainCount = 1;
+					glob->buffers[idx].frameNumber = myDrp->frameNumber;
+					glob->lastAllocatedBuffer = idx;
 					break;
 				}
 			}
