@@ -52,12 +52,10 @@ enum{
 	kZMBVCodecInfoResID,
 	kVP6ACodecInfoResID,
 	kVP8CodecInfoResID,
-    kVP9CodecInfoResID,
 	kFFv1CodecInfoResID,
 	kTheoraCodecInfoResID,
     
     kH265CodecInfoResID,
-    kAV1CodecInfoResID,
     
     kEAC3CodecInfoResID,
 

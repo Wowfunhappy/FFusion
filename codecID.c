@@ -24,20 +24,6 @@ int getCodecID(OSType componentType)
 			codecID = AV_CODEC_ID_HEVC;
 			break;
 			
-		case 'VP90':
-		case 'vp09':
-		case 'VP09':
-		case 'vp90':
-			codecID = AV_CODEC_ID_VP9;
-			break;
-			
-		case 'AV01':
-		case 'av01':
-		case 'AV1 ':
-		case 'av1 ':
-			codecID = AV_CODEC_ID_AV1;
-			break;
-			
 		default:
 			break;
 	}
@@ -69,20 +55,6 @@ pascal ComponentResult getFFusionCodecInfo(ComponentInstance self, OSType compon
 			case 'hvc1':
 			case 'hev1':
 				err = GetComponentResource((Component)self, codecInfoResourceType, kH265CodecInfoResID, (Handle *)&tempCodecInfo);
-				break;
-				
-			case 'VP90':
-			case 'vp09':
-			case 'VP09':
-			case 'vp90':
-				err = GetComponentResource((Component)self, codecInfoResourceType, kVP9CodecInfoResID, (Handle *)&tempCodecInfo);
-				break;
-				
-			case 'AV01':
-			case 'av01':
-			case 'AV1 ':
-			case 'av1 ':
-				err = GetComponentResource((Component)self, codecInfoResourceType, kAV1CodecInfoResID, (Handle *)&tempCodecInfo);
 				break;
 				
 			default:	// unsupported codec

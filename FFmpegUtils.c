@@ -129,10 +129,8 @@ void FFInitFFmpeg()
 #endif
 		av_lockmgr_register(FFusionLockMgrCallback);
 		
-		// Register only H265/HEVC, VP9, and AV1 decoders
+		// Register only H265/HEVC decoder
 		REGISTER_DECODER(ff_hevc);
-		REGISTER_DECODER(ff_vp9);
-		REGISTER_DECODER(ff_libdav1d);
 		
 		// avcodec_register_all() is deprecated in FFmpeg 4.x - codecs are auto-registered
 
@@ -192,12 +190,12 @@ void FFInitFFmpeg()
 
 enum AVCodecID FFFourCCToCodecID(OSType formatID)
 {
-	// FFusion only supports video codecs (H265/VP9)
+	// FFusion only supports video codecs (H265/HEVC)
 	return AV_CODEC_ID_NONE;
 }
 
 OSType FFCodecIDToFourCC(enum AVCodecID codecID)
 {
-	// FFusion only supports video codecs (H265/VP9)
+	// FFusion only supports video codecs (H265/HEVC)
 	return AV_CODEC_ID_NONE;
 }

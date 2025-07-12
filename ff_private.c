@@ -337,8 +337,6 @@ OSType forced_map_video_codec_to_mov_tag(enum AVCodecID codec_id)
 	switch (codec_id) {
 		case AV_CODEC_ID_HEVC:
 			return 'hev1';
-		case AV_CODEC_ID_VP9:
-			return 'VP90';
 	}
 	return 0;
 }

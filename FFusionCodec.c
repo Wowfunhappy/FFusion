@@ -3,7 +3,7 @@
 //---------------------------------------------------------------------------
 //FFusion
 //Modern Video Codec for macOS
-//H.265/HEVC and VP9 Support
+//H.265/HEVC Support
 //Based on FFmpeg
 //
 //This library is free software; you can redistribute it and/or

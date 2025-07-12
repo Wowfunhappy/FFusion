@@ -36,7 +36,8 @@ fi
 configureflags="--cc=$CC --disable-amd3dnow --disable-doc --disable-encoders \
      --enable-ffprobe --disable-ffserver --enable-muxers --disable-network --enable-libopenjpeg \
 	--extra-cflags=-I/opt/local/include --extra-ldflags=-L/opt/local/lib \
-     --enable-swscale --enable-avfilter --disable-avdevice --enable-ffmpeg --disable-ffplay --target-os=darwin"
+     --enable-swscale --enable-avfilter --disable-avdevice --enable-ffmpeg --disable-ffplay --target-os=darwin \
+     --disable-libvpx --disable-libdav1d --disable-decoder=vp9 --disable-decoder=av1 --disable-decoder=libvpx_vp9 --disable-decoder=libdav1d"
 
 cflags="-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET \
         -D__DARWIN_UNIX03=0 -Dattribute_deprecated= -w -msse3 -msse4 -mssse3"

@@ -192,7 +192,7 @@ int parse_ac3_bitstream(AudioStreamBasicDescription *asbd, AudioChannelLayout *a
 
 static int parse_mpeg4_extra(FFusionParserContext *parser, const uint8_t *buf, int buf_size)
 {
-	// Deprecated: MPEG-4 parsing not needed for H.265/VP9 only build
+	// Deprecated: MPEG-4 parsing not needed for H.265/HEVC only build
 	return 1;
 }
 
@@ -209,7 +209,7 @@ static int parse_mpeg4_extra(FFusionParserContext *parser, const uint8_t *buf, i
  */
 static int parse_mpeg4_stream(FFusionParserContext *parser, const uint8_t *buf, int buf_size, int *out_buf_size, int *type, int *skippable, int *skipped)
 {
-	// Deprecated: MPEG-4 parsing not needed for H.265/VP9 only build
+	// Deprecated: MPEG-4 parsing not needed for H.265/HEVC only build
 	*out_buf_size = buf_size;
 	*type = AV_PICTURE_TYPE_I;
 	*skippable = 0;
@@ -883,7 +883,7 @@ void initFFusionParsers()
 	if(!inited)
 	{
 		inited = TRUE;
-		// FFusion now only supports H.265/VP9 - legacy parsers disabled
+		// FFusion now only supports H.265/HEVC - legacy parsers disabled
 		// Modern codecs use built-in FFmpeg parsers
 	}
 
