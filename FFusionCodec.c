@@ -579,16 +579,7 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 			DisposeHandle(imgDescExt);
 		}
 		
-		//		//asl_log(NULL, NULL, ASL_LEVEL_ERR, "%p preflighted for %dx%d '%s'; %d bytes of extradata; frame dropping %senabled\n",
-		//						   glob, (**p->imageDescription).width, (**p->imageDescription).height,
-		//						   FourCCString(glob->componentType), glob->avContext->extradata_size,
-		//						   not(glob->isFrameDroppingEnabled) );
-		
-		
-		// Let FFmpeg 4.x handle buffer management natively
 		glob->avContext->opaque = glob;
-		// Disable custom buffer management - FFmpeg 4.x handles this better
-		// glob->avContext->get_buffer2 = FFusionGetBuffer;
 		
 		// multi-slice decoding
 		SetupMultithreadedDecoding(glob->avContext, codecID);
@@ -630,7 +621,6 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
     // Set the pixel depth from the image description
     capabilities->wantedPixelSize = (**p->imageDescription).depth;
 	
-	//asl_log(NULL, NULL, ASL_LEVEL_ERR, "capabilities->wantedPixelSize: %d", capabilities->wantedPixelSize);
 	
     pos = *((OSType **)glob->pixelTypes);
 	
@@ -702,9 +692,6 @@ static int qtTypeForFrameInfo(int original, int fftype, int skippable)
 pascal ComponentResult FFusionCodecBeginBand(FFusionGlobals glob, CodecDecompressParams *p, ImageSubCodecDecompressRecord *drp, long flags)
 {
     FFusionDecompressRecord *myDrp = (FFusionDecompressRecord *)drp->userDecompressRecord;
-	int redisplayFirstFrame = 0;
-	int type = 0;
-	int skippable = 0;
 	
     //////
 	/*  IBNibRef 		nibRef;
@@ -727,9 +714,7 @@ pascal ComponentResult FFusionCodecBeginBand(FFusionGlobals glob, CodecDecompres
 	myDrp->decoded = p->frameTime ? (0 != (p->frameTime->flags & icmFrameAlreadyDecoded)) : false;
 	myDrp->frameData = NULL;
 	myDrp->buffer = NULL;
-	
-	//	//asl_log(NULL, NULL, ASL_LEVEL_ERR, "%p BeginBand #%ld. (%sdecoded)\n", glob, p->frameNumber, not(myDrp->decoded));
-	
+
 	if (!glob->avContext) {
 		//asl_log(NULL, NULL, ASL_LEVEL_ERR, "FFusion: QT tried to call BeginBand without preflighting!\n");
 		return internalComponentErr;
@@ -792,7 +777,6 @@ pascal ComponentResult FFusionCodecDecodeBand(FFusionGlobals glob, ImageSubCodec
 	OSErr err = noErr;
 	AVFrame tempFrame;
 	tempFrame = *av_frame_alloc();
-	FrameData *frameData = NULL;
 	unsigned char *dataPtr = NULL;
 	unsigned int dataSize;
 	
@@ -1058,7 +1042,6 @@ OSErr FFusionDecompress(FFusionGlobals glob, AVCodecContext *context, UInt8 *dat
 	pkt.data = dataPtr;
 	pkt.size = length;
 	
-	// Modern codecs use the new API
 	avcodec_send_packet(context, &pkt);
 	avcodec_receive_frame(context, picture);
 	
