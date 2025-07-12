@@ -55,7 +55,6 @@
 typedef struct
 {
 	AVFrame		*frame;
-	// AVPicture deprecated in FFmpeg 4.x+, use AVFrame directly
 	int		retainCount;
 	int		frameNumber;
 } FFusionBuffer;
@@ -203,35 +202,55 @@ static enum AVPixelFormat FindPixFmtFromVideo(AVCodec *codec, AVCodecContext *av
 {
 	AVCodecContext *tmpContext;
     AVFrame *tmpFrame;
-	int got_picture = 0;
     enum AVPixelFormat pix_fmt;
 	
 	tmpContext = avcodec_alloc_context3(codec);
 	tmpFrame   = av_frame_alloc();
-	avcodec_copy_context(tmpContext, avctx);
+	
+	// Copy codec parameters instead of deprecated avcodec_copy_context
+	tmpContext->coded_width = avctx->coded_width;
+	tmpContext->coded_height = avctx->coded_height;
+	tmpContext->width = avctx->width;
+	tmpContext->height = avctx->height;
+	tmpContext->extradata = avctx->extradata;
+	tmpContext->extradata_size = avctx->extradata_size;
 
     if (avcodec_open2(tmpContext, codec, NULL)) {
 		pix_fmt = AV_PIX_FMT_NONE;
 		goto bail;
 	}
-	AVPacket pkt;
-	av_init_packet(&pkt);
-	pkt.data = (UInt8*)data;
-	pkt.size = bufferSize;
-	int len = avcodec_decode_video2(tmpContext, tmpFrame, &got_picture, &pkt);
-	//asl_log(NULL, NULL, ASL_LEVEL_ERR, "Decoded frame to find pix_fmt, got %d", len);
 	
-	if (len == -1094995529) {
-		//Wowfunhappy: AVERROR_INVALIDDATA. Let's just guess the pixel format.
-		//(This video probably won't work anyway, but worth a try?)
-		return 0;
+	AVPacket *pkt = av_packet_alloc();
+	if (!pkt) {
+		pix_fmt = AV_PIX_FMT_NONE;
+		goto bail;
 	}
 	
-    pix_fmt = tmpContext->pix_fmt;
-	//asl_log(NULL, NULL, ASL_LEVEL_ERR, "Found pix_fmt is: %d", pix_fmt);
+	pkt->data = (UInt8*)data;
+	pkt->size = bufferSize;
+	
+	int ret = avcodec_send_packet(tmpContext, pkt);
+	av_packet_free(&pkt);
+	
+	if (ret < 0) {
+		//Wowfunhappy: Error sending packet (including AVERROR_INVALIDDATA). Let's just guess the pixel format.
+		//(This video probably won't work anyway, but worth a try?)
+		pix_fmt = AV_PIX_FMT_NONE;
+		goto bail;
+	}
+	
+	ret = avcodec_receive_frame(tmpContext, tmpFrame);
+	if (ret == 0) {
+		pix_fmt = tmpContext->pix_fmt;
+		//asl_log(NULL, NULL, ASL_LEVEL_ERR, "Found pix_fmt is: %d", pix_fmt);
+	} else {
+		pix_fmt = AV_PIX_FMT_NONE;
+	}
+	
     avcodec_close(tmpContext);
 bail:
 	av_frame_free(&tmpFrame);
+	avcodec_free_context(&tmpContext);
     return pix_fmt;
 }
 
@@ -1038,12 +1057,9 @@ static FFusionBuffer *retainBuffer(FFusionGlobals glob, FFusionBuffer *buf)
 
 static void releaseBuffer(AVCodecContext *s, FFusionBuffer *buf)
 {
-	FFusionGlobals glob = (FFusionGlobals)s->opaque;
 	buf->retainCount--;
-	//asl_log(NULL, NULL, ASL_LEVEL_ERR, "%p Released Buffer %p #%d to %d.\n", glob, buf, buf->frameNumber, buf->retainCount);
 	if(!buf->retainCount)
 	{
-		//asl_log(NULL, NULL, ASL_LEVEL_ERR, "%p Buffer gone %p #%d", glob, buf, buf->frameNumber);
 		// Clear the buffer for reuse
 		if (buf->frame) {
 			av_frame_free(&buf->frame);
