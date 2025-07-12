@@ -55,7 +55,6 @@
 #endif
 #include "libavcodec/mpegvideo.h"
 #include "libavcodec/parser.h"
-#include "libavcodec/golomb.h"
 #include "libavcodec/mpeg4video.h"
 #include "libavcodec/mpeg4video_parser.h"
 #include "Codecprintf.h"
@@ -296,34 +295,6 @@ static FFusionParser ffusionMpeg12VideoParser = {
 	parse_mpeg12_stream,
 };
 
-typedef struct H264ParserContext_s
-{
-	int is_avc;
-	int nal_length_size;
-	int prevPts;
-
-	int profile_idc;
-	int level_idc;
-
-	int poc_type;
-	int log2_max_frame_num;
-	int frame_mbs_only_flag;
-	int num_reorder_frames;
-	int pic_order_present_flag;
-
-	int log2_max_poc_lsb;
-	int poc_msb;
-	int prev_poc_lsb;
-
-	int delta_pic_order_always_zero_flag;
-	int offset_for_non_ref_pic;
-	int num_ref_frames_in_pic_order_cnt_cycle;
-	int sum_of_offset_for_ref_frames;
-
-	int chroma_format_idc;
-
-	int gaps_in_frame_num_value_allowed_flag;
-}H264ParserContext;
 
 static int decode_nal(const uint8_t *buf, int buf_size, uint8_t *out_buf, int *out_buf_size, int *type, int *nal_ref_idc)
 {
@@ -362,6 +333,8 @@ static int decode_nal(const uint8_t *buf, int buf_size, uint8_t *out_buf, int *o
 	*out_buf_size = outIndex;
 	return 1;
 }
+
+#if 0  // H.264 parsing disabled - AV1 and VP9 only
 
 static void skip_scaling_list(GetBitContext *gb, int size){
 	int i, next = 8, last = 8;
@@ -903,6 +876,8 @@ static FFusionParser ffusionH264Parser = {
 	parse_h264_stream,
 };
 
+#endif  // End H.264 parsing disabled
+
 static FFusionParser *ffusionFirstParser = NULL;
 
 void registerFFusionParsers(FFusionParser *parser)
@@ -1037,6 +1012,7 @@ int ffusionParse(FFusionParserContext *parser, const uint8_t *buf, int buf_size,
 void ffusionLogDebugInfo(FFusionParserContext *parser, FILE *log)
 {
 	if (parser) {
+#if 0  // H.264 parsing disabled - AV1 and VP9 only
 		if (parser->parserStructure == &ffusionH264Parser) {
 			H264ParserContext *h264parser = parser->internalContext;
 
@@ -1044,6 +1020,7 @@ void ffusionLogDebugInfo(FFusionParserContext *parser, FILE *log)
 						h264parser->profile_idc, h264parser->level_idc, h264parser->is_avc, h264parser->frame_mbs_only_flag, h264parser->chroma_format_idc, h264parser->gaps_in_frame_num_value_allowed_flag,
 						h264parser->num_reorder_frames);
 		}
+#endif
 	}
 }
 
@@ -1051,6 +1028,7 @@ FFusionDecodeAbilities ffusionIsParsedVideoDecodable(FFusionParserContext *parse
 {
 	if (!parser) return FFUSION_PREFER_DECODE;
 
+#if 0  // H.264 parsing disabled - AV1 and VP9 only
 	if (parser->parserStructure == &ffusionH264Parser) {
 		H264ParserContext *h264parser = parser->internalContext;
 		FFusionDecodeAbilities ret = FFUSION_PREFER_DECODE;
@@ -1077,6 +1055,7 @@ FFusionDecodeAbilities ffusionIsParsedVideoDecodable(FFusionParserContext *parse
 
 		return ret;
 	}
+#endif
 
 	return FFUSION_PREFER_DECODE;
 }
