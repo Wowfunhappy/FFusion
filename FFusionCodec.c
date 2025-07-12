@@ -541,7 +541,7 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
         glob->avContext = avcodec_alloc_context3(glob->avCodec);
 		
 		// Use low delay
-		glob->avContext->flags |= AV_CODEC_FLAG_LOW_DELAY;
+		//glob->avContext->flags |= AV_CODEC_FLAG_LOW_DELAY;
 		
         // Image size is mandatory for video codecs
 		
@@ -552,6 +552,8 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 		glob->avContext->codec_id  = codecID;
 		
 		if (glob->avContext->codec_id == AV_CODEC_ID_HEVC) {
+			
+			//glob->avContext->flags |= AV_CODEC_FLAG2_FAST;
 			
 			/* Wowfunhappy:
 			 * This magical code fixes HEVC. I don't know why.
@@ -634,7 +636,7 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
     // Instead we have to tell QT to just pass the data corresponding
     // to one frame
 	
-    capabilities->flags |= codecWantsSpecialScaling;
+    //capabilities->flags |= codecWantsSpecialScaling;
 	
     p->requestedBufferWidth = (**p->imageDescription).width;
     p->requestedBufferHeight = (**p->imageDescription).height;
