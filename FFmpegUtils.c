@@ -129,9 +129,10 @@ void FFInitFFmpeg()
 #endif
 		av_lockmgr_register(FFusionLockMgrCallback);
 		
-		// Register only H265/HEVC and VP9 decoders
+		// Register only H265/HEVC, VP9, and AV1 decoders
 		REGISTER_DECODER(ff_hevc);
 		REGISTER_DECODER(ff_vp9);
+		REGISTER_DECODER(ff_libdav1d);
 		
 		// avcodec_register_all() is deprecated in FFmpeg 4.x - codecs are auto-registered
 

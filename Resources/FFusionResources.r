@@ -70,6 +70,15 @@ resource 'dlle' (kDivX1CodecInfoResID) {
 #include "Resources/FFusionResourceInc.r"
 
 
+#define kCodecInfoResID kAV1CodecInfoResID
+#define kCodecName "AV1"
+#define kCodecDescription "Decompresses videos stored in AV1 format."
+#define kCodecSubType 'AV01'
+#include "Resources/FFusionResourceInc.r"
+#define kCodecSubType 'av01'
+#include "Resources/FFusionResourceInc.r"
+
+
 
 
 
