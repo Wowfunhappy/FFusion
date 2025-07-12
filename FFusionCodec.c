@@ -548,14 +548,17 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 		//asl_log(NULL, NULL, ASL_LEVEL_ERR, "Codec Long Name: %s", glob->avCodec->long_name);
 		
 		
-		
-        // we do the same for the AVCodecContext since all context values are
-        // correctly initialized when calling the alloc function
-		
         glob->avContext = avcodec_alloc_context3(glob->avCodec);
 		
-		// Use low delay
-		glob->avContext->flags |= AV_CODEC_FLAG_LOW_DELAY;
+		if (codecID == AV_CODEC_ID_AV1) {
+            // AV1 videos will flicker to black without AV_CODEC_FLAG_LOW_DELAY
+            glob->avContext->flags |= AV_CODEC_FLAG_LOW_DELAY;
+			
+			// AV_CODEC_FLAG2_FAST reduces CPU performance but also hurts video quality.
+			// Because decoding AV1 is such a challenge, let's do everything we can to spare the CPU.
+			glob->avContext->flags |= AV_CODEC_FLAG2_FAST;
+        }
+		
 		
         // Image size is mandatory for video codecs
 		
@@ -583,8 +586,6 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 		
 		// multi-slice decoding
 		SetupMultithreadedDecoding(glob->avContext, codecID);
-		
-		//glob->avContext->flags2 |= CODEC_FLAG2_FAST;
 
         // Finally we open the avcodec
 		
