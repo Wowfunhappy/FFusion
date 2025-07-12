@@ -3,7 +3,6 @@
 //---------------------------------------------------------------------------
 //FFusion
 //Modern Video Codec for macOS
-//H.265/HEVC and VP9 Support
 //Based on FFmpeg
 //
 //This library is free software; you can redistribute it and/or
@@ -566,42 +565,18 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 		
 		glob->avContext->codec_id  = codecID;
 		
-		if (glob->avContext->codec_id == AV_CODEC_ID_HEVC) {
+		count = isImageDescriptionExtensionPresent(p->imageDescription, 'strf');
+		
+		if (count >= 1) {
+			imgDescExt = NewHandle(0);
+			GetImageDescriptionExtension(p->imageDescription, &imgDescExt, 'strf', 1);
 			
-			/* Wowfunhappy:
-			 * This magical code fixes HEVC. I don't know why.
-			 * I just copied and pasted the avc1, and I changed the 'a' to an 'h'.
-			 * I guess this is some kind of header offset?
-			 */
-			
-			//asl_log(NULL, NULL, ASL_LEVEL_ERR, "Does hevc video have mysterious hvcC image Description? %d", isImageDescriptionExtensionPresent(p->imageDescription, 'hvcC'));
-			count = isImageDescriptionExtensionPresent(p->imageDescription, 'hvcC');
-			
-			if (count >= 1) {
-				imgDescExt = NewHandle(0);
-				GetImageDescriptionExtension(p->imageDescription, &imgDescExt, 'hvcC', 1);
-				
-				glob->avContext->extradata = calloc(1, GetHandleSize(imgDescExt) + AV_INPUT_BUFFER_PADDING_SIZE);
-				memcpy(glob->avContext->extradata, *imgDescExt, GetHandleSize(imgDescExt));
-				glob->avContext->extradata_size = GetHandleSize(imgDescExt);
-				
-				DisposeHandle(imgDescExt);
+			if (GetHandleSize(imgDescExt) - 40 > 0) {
+				glob->avContext->extradata = calloc(1, GetHandleSize(imgDescExt) - 40 + AV_INPUT_BUFFER_PADDING_SIZE);
+				memcpy(glob->avContext->extradata, *imgDescExt + 40, GetHandleSize(imgDescExt) - 40);
+				glob->avContext->extradata_size = GetHandleSize(imgDescExt) - 40;
 			}
-			
-		} else {
-			count = isImageDescriptionExtensionPresent(p->imageDescription, 'strf');
-			
-			if (count >= 1) {
-				imgDescExt = NewHandle(0);
-				GetImageDescriptionExtension(p->imageDescription, &imgDescExt, 'strf', 1);
-				
-				if (GetHandleSize(imgDescExt) - 40 > 0) {
-					glob->avContext->extradata = calloc(1, GetHandleSize(imgDescExt) - 40 + AV_INPUT_BUFFER_PADDING_SIZE);
-					memcpy(glob->avContext->extradata, *imgDescExt + 40, GetHandleSize(imgDescExt) - 40);
-					glob->avContext->extradata_size = GetHandleSize(imgDescExt) - 40;
-				}
-				DisposeHandle(imgDescExt);
-			}
+			DisposeHandle(imgDescExt);
 		}
 		
 		//		//asl_log(NULL, NULL, ASL_LEVEL_ERR, "%p preflighted for %dx%d '%s'; %d bytes of extradata; frame dropping %senabled\n",

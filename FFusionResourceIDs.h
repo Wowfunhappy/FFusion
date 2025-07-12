@@ -56,7 +56,6 @@ enum{
 	kFFv1CodecInfoResID,
 	kTheoraCodecInfoResID,
     
-    kH265CodecInfoResID,
     kAV1CodecInfoResID,
     
     kEAC3CodecInfoResID,

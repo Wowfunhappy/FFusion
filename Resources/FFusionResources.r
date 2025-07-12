@@ -38,29 +38,6 @@ resource 'dlle' (kDivX1CodecInfoResID) {
 
 
 
-#define kCodecInfoResID kH265CodecInfoResID
-#define kCodecName "H.265"
-#define kCodecDescription "Decompresses video stored in the H.265 format."
-#define kCodecSubType 'H265'
-#include "Resources/FFusionResourceInc.r"
-#define kCodecSubType 'h265'
-#include "Resources/FFusionResourceInc.r"
-#define kCodecSubType 'X265'
-#include "Resources/FFusionResourceInc.r"
-#define kCodecSubType 'x265'
-#include "Resources/FFusionResourceInc.r"
-#define kCodecSubType 'HEV1'
-#include "Resources/FFusionResourceInc.r"
-#define kCodecSubType 'hev1'
-#include "Resources/FFusionResourceInc.r"
-#define kCodecSubType 'HEVC'
-#include "Resources/FFusionResourceInc.r"
-#define kCodecSubType 'hevc'
-#include "Resources/FFusionResourceInc.r"
-#define kCodecSubType 'hvc1'
-#include "Resources/FFusionResourceInc.r"
-
-
 #define kCodecInfoResID kVP9CodecInfoResID
 #define kCodecName "Google VP9"
 #define kCodecDescription "Decompresses videos stored in Google's VP9 format."

@@ -12,18 +12,6 @@ int getCodecID(OSType componentType)
 	enum AVCodecID codecID = AV_CODEC_ID_NONE;
 	switch(componentType)
 	{
-		case 'H265':
-  		case 'h265':
-  		case 'X265':
-  		case 'x265':
-  		case 'HEV1':
-  		case 'hev1':
-  		case 'HEVC':
-  		case 'hevc':
-		case 'hvc1':
-			codecID = AV_CODEC_ID_HEVC;
-			break;
-			
 		case 'VP90':
 		case 'vp09':
 		case 'VP09':
@@ -59,18 +47,6 @@ pascal ComponentResult getFFusionCodecInfo(ComponentInstance self, OSType compon
 
         switch (componentType)
         {
-			case 'H265':
-			case 'h265':
-			case 'X265':
-			case 'x265':
-			case 'HEV1':
-			case 'HEVC':
-			case 'hevc':
-			case 'hvc1':
-			case 'hev1':
-				err = GetComponentResource((Component)self, codecInfoResourceType, kH265CodecInfoResID, (Handle *)&tempCodecInfo);
-				break;
-				
 			case 'VP90':
 			case 'vp09':
 			case 'VP09':
