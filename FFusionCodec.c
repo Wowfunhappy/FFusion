@@ -207,17 +207,26 @@ static enum AVPixelFormat FindPixFmtFromVideo(AVCodec *codec, AVCodecContext *av
 	
 	tmpContext = avcodec_alloc_context3(codec);
 	tmpFrame   = av_frame_alloc();
-	avcodec_copy_context(tmpContext, avctx);
+	tmpContext->width = avctx->width;
+	tmpContext->height = avctx->height;
+	tmpContext->pix_fmt = avctx->pix_fmt;
+	tmpContext->codec_id = avctx->codec_id;
+	tmpContext->extradata = avctx->extradata;
+	tmpContext->extradata_size = avctx->extradata_size;
 
     if (avcodec_open2(tmpContext, codec, NULL)) {
 		pix_fmt = AV_PIX_FMT_NONE;
 		goto bail;
 	}
-	AVPacket pkt;
-	av_init_packet(&pkt);
-	pkt.data = (UInt8*)data;
-	pkt.size = bufferSize;
-	int len = avcodec_decode_video2(tmpContext, tmpFrame, &got_picture, &pkt);
+	AVPacket *pkt = av_packet_alloc();
+	pkt->data = (UInt8*)data;
+	pkt->size = bufferSize;
+	int len = avcodec_send_packet(tmpContext, pkt);
+	if (len == 0) {
+		len = avcodec_receive_frame(tmpContext, tmpFrame);
+		got_picture = (len == 0);
+	}
+	av_packet_free(&pkt);
 	//asl_log(NULL, NULL, ASL_LEVEL_ERR, "Decoded frame to find pix_fmt, got %d", len);
 	
 	if (len == -1094995529) {
@@ -536,7 +545,7 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
         glob->avContext = avcodec_alloc_context3(glob->avCodec);
 		
 		// Use low delay
-		glob->avContext->flags |= CODEC_FLAG_LOW_DELAY;
+		glob->avContext->flags |= AV_CODEC_FLAG_LOW_DELAY;
 		
         // Image size is mandatory for video codecs
 		
@@ -561,7 +570,7 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 				imgDescExt = NewHandle(0);
 				GetImageDescriptionExtension(p->imageDescription, &imgDescExt, 'hvcC', 1);
 				
-				glob->avContext->extradata = calloc(1, GetHandleSize(imgDescExt) + FF_INPUT_BUFFER_PADDING_SIZE);
+				glob->avContext->extradata = calloc(1, GetHandleSize(imgDescExt) + AV_INPUT_BUFFER_PADDING_SIZE);
 				memcpy(glob->avContext->extradata, *imgDescExt, GetHandleSize(imgDescExt));
 				glob->avContext->extradata_size = GetHandleSize(imgDescExt);
 				
@@ -576,7 +585,7 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 				GetImageDescriptionExtension(p->imageDescription, &imgDescExt, 'strf', 1);
 				
 				if (GetHandleSize(imgDescExt) - 40 > 0) {
-					glob->avContext->extradata = calloc(1, GetHandleSize(imgDescExt) - 40 + FF_INPUT_BUFFER_PADDING_SIZE);
+					glob->avContext->extradata = calloc(1, GetHandleSize(imgDescExt) - 40 + AV_INPUT_BUFFER_PADDING_SIZE);
 					memcpy(glob->avContext->extradata, *imgDescExt + 40, GetHandleSize(imgDescExt) - 40);
 					glob->avContext->extradata_size = GetHandleSize(imgDescExt) - 40;
 				}
@@ -802,8 +811,7 @@ static OSErr PrereqDecompress(FFusionGlobals glob, FrameData *prereq, AVCodecCon
 pascal ComponentResult FFusionCodecDecodeBand(FFusionGlobals glob, ImageSubCodecDecompressRecord *drp, unsigned long flags)
 {
 	OSErr err = noErr;
-	AVFrame tempFrame;
-	tempFrame = *av_frame_alloc();
+	AVFrame *tempFrame = av_frame_alloc();
 	FrameData *frameData = NULL;
 	unsigned char *dataPtr = NULL;
 	unsigned int dataSize;
@@ -828,7 +836,7 @@ pascal ComponentResult FFusionCodecDecodeBand(FFusionGlobals glob, ImageSubCodec
 	dataPtr = FFusionCreateEntireDataBuffer(&(glob->data), (uint8_t *)drp->codecData, dataSize);
 	
 	//asl_log(NULL, NULL, ASL_LEVEL_ERR, "About to call FFusionDecompress from FFusionCodecDecodeBand");
-	err = FFusionDecompress(glob, glob->avContext, dataPtr, myDrp->width, myDrp->height, &tempFrame, dataSize);
+	err = FFusionDecompress(glob, glob->avContext, dataPtr, myDrp->width, myDrp->height, tempFrame, dataSize);
 	
 	// Modern codecs: straightforward buffer handling
 	myDrp->buffer = &glob->buffers[glob->lastAllocatedBuffer];
@@ -836,7 +844,7 @@ pascal ComponentResult FFusionCodecDecodeBand(FFusionGlobals glob, ImageSubCodec
 	retainBuffer(glob, myDrp->buffer);
 	myDrp->decoded = true;
 	glob->decode.lastFrame = myDrp->frameNumber;
-	av_frame_unref(&tempFrame);
+	av_frame_free(&tempFrame);
 	
 	return err;
 }
@@ -996,7 +1004,9 @@ static int FFusionGetBuffer(AVCodecContext *s, AVFrame *pic, int flags)
 				//asl_log(NULL, NULL, ASL_LEVEL_ERR, "%p Starting Buffer %p.\n", glob, &glob->buffers[i]);
 				pic->opaque = &glob->buffers[i];
 				glob->buffers[i].frame = pic;
-				memcpy(&glob->buffers[i].picture, pic, sizeof(AVPicture));
+				// Copy data and linesize from AVFrame to AVPicture (compatible fields)
+				memcpy(glob->buffers[i].picture.data, pic->data, sizeof(glob->buffers[i].picture.data));
+				memcpy(glob->buffers[i].picture.linesize, pic->linesize, sizeof(glob->buffers[i].picture.linesize));
 				glob->buffers[i].retainCount = 0;
 				glob->lastAllocatedBuffer = i;
 				break;
@@ -1037,16 +1047,17 @@ static void releaseBuffer(AVCodecContext *s, FFusionBuffer *buf)
 OSErr FFusionDecompress(FFusionGlobals glob, AVCodecContext *context, UInt8 *dataPtr, int width, int height, AVFrame *picture, int length)
 {
 	OSErr err = noErr;
-	AVPacket pkt;
+	AVPacket *pkt = av_packet_alloc();
 	//asl_log(NULL, NULL, ASL_LEVEL_ERR, "%p Decompress %d bytes.\n", glob, length);
 	
-	av_init_packet(&pkt);
-	pkt.data = dataPtr;
-	pkt.size = length;
+	pkt->data = dataPtr;
+	pkt->size = length;
 	
 	// Modern codecs use the new API
-	avcodec_send_packet(context, &pkt);
+	avcodec_send_packet(context, pkt);
 	avcodec_receive_frame(context, picture);
+	
+	av_packet_free(&pkt);
 	
 	return err;
 }

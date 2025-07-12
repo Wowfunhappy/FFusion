@@ -192,17 +192,7 @@ int parse_ac3_bitstream(AudioStreamBasicDescription *asbd, AudioChannelLayout *a
 
 static int parse_mpeg4_extra(FFusionParserContext *parser, const uint8_t *buf, int buf_size)
 {
-	ParseContext *pc1 = (ParseContext *)parser->pc->priv_data;
-	pc1->frame_start_found = 0;
-	
-	MpegEncContext *s = pc1;
-	GetBitContext gb1, *gb = &gb1;
-
-	s->avctx = parser->avctx;
-	s->current_picture_ptr = &s->current_picture;
-
-	init_get_bits(gb, buf, 8 * buf_size);
-	ff_mpeg4_decode_picture_header(s, gb);
+	// Deprecated: MPEG-4 parsing not needed for H.265/VP9 only build
 	return 1;
 }
 
@@ -219,37 +209,11 @@ static int parse_mpeg4_extra(FFusionParserContext *parser, const uint8_t *buf, i
  */
 static int parse_mpeg4_stream(FFusionParserContext *parser, const uint8_t *buf, int buf_size, int *out_buf_size, int *type, int *skippable, int *skipped)
 {
-	ParseContext *pc1 = (ParseContext *)parser->pc->priv_data;
-	pc1->frame_start_found = 0;
-	
-	int endOfFrame = ff_mpeg4_find_frame_end(pc1, buf, buf_size);
-	
-	MpegEncContext *s = pc1;
-	GetBitContext gb1, *gb = &gb1;
-
-	s->avctx = parser->avctx;
-	s->current_picture_ptr = &s->current_picture;
-
-	init_get_bits(gb, buf, 8 * buf_size);
-	{ int parse_res = ff_mpeg4_decode_picture_header(s, gb);
-		if(parse_res == FRAME_SKIPPED) {
-			*out_buf_size = buf_size;
-			*type = AV_PICTURE_TYPE_P;
-			*skippable = 1;
-			*skipped = 1;
-		}
-		if(parse_res != 0)
-			return 0;
-	}
-
-	*type = s->pict_type;
-	*skippable = (*type == AV_PICTURE_TYPE_B);
+	// Deprecated: MPEG-4 parsing not needed for H.265/VP9 only build
+	*out_buf_size = buf_size;
+	*type = AV_PICTURE_TYPE_I;
+	*skippable = 0;
 	*skipped = 0;
-
-	if(endOfFrame == END_NOT_FOUND)
-		*out_buf_size = buf_size;
-	else
-		*out_buf_size = endOfFrame;
 	return 1;
 }
 
@@ -863,7 +827,7 @@ static int parse_extra_data_h264(FFusionParserContext *parser, const uint8_t *bu
 	{
 		int size = AV_RB16(cur);
 		int out_size = 0;
-		uint8_t *decoded = av_mallocz(size+FF_INPUT_BUFFER_PADDING_SIZE);
+		uint8_t *decoded = av_mallocz(size+AV_INPUT_BUFFER_PADDING_SIZE);
 		if(decode_nal(cur + 2, size, decoded, &out_size, &type, &ref))
 			decode_sps(context, decoded, out_size);
 		cur += size + 2;
@@ -875,7 +839,7 @@ static int parse_extra_data_h264(FFusionParserContext *parser, const uint8_t *bu
 	{
 		int size = AV_RB16(cur);
 		int out_size = 0;
-		uint8_t *decoded = av_mallocz(size+FF_INPUT_BUFFER_PADDING_SIZE);
+		uint8_t *decoded = av_mallocz(size+AV_INPUT_BUFFER_PADDING_SIZE);
 		if(decode_nal(cur + 2, size, decoded, &out_size, &type, &ref))
 			decode_pps(context, decoded, out_size);
 		cur += size + 2;
@@ -919,12 +883,8 @@ void initFFusionParsers()
 	if(!inited)
 	{
 		inited = TRUE;
-		ffusionMpeg4VideoParser.avparse = &mpeg4video_parser;
-		registerFFusionParsers(&ffusionMpeg4VideoParser);
-		ffusionH264Parser.avparse = &h264_parser;
-		registerFFusionParsers(&ffusionH264Parser);
-		ffusionMpeg12VideoParser.avparse = &mpegvideo_parser;
-		registerFFusionParsers(&ffusionMpeg12VideoParser);
+		// FFusion now only supports H.265/VP9 - legacy parsers disabled
+		// Modern codecs use built-in FFmpeg parsers
 	}
 
 	FFusionInitExit(unlock);

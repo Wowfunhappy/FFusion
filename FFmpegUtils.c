@@ -133,7 +133,7 @@ void FFInitFFmpeg()
 		REGISTER_DECODER(ff_hevc);
 		REGISTER_DECODER(ff_vp9);
 		
-		avcodec_register_all();
+		// avcodec_register_all() is deprecated in FFmpeg 4.x - codecs are auto-registered
 
 		Codecprintf( stderr, "FFusion decoder using libavcodec, version %d.%d.%d (%u) / \"%s\"\n",
 					LIBAVCODEC_VERSION_MAJOR, LIBAVCODEC_VERSION_MINOR, LIBAVCODEC_VERSION_MICRO,

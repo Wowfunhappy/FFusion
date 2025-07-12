@@ -741,7 +741,7 @@ int determine_header_offset(ff_global_ptr storage) {
 					break;
 			}
 			else
-				av_free_packet(&packet);
+				av_packet_unref(&packet);
 			int status = formatContext->iformat->read_packet(formatContext, &packet);
 			if(status < 0)
 				break;
@@ -1011,7 +1011,7 @@ ComponentResult import_with_idle(ff_global_ptr storage, long inFlags, long *outF
 		if (!ncstream->valid)
 			continue;
 
-		if((packet.flags & PKT_FLAG_KEY) == 0)
+		if((packet.flags & AV_PKT_FLAG_KEY) == 0)
 			flags |= mediaSampleNotSync;
 
 		if(IS_NUV(storage->componentType) && codecContext->codec_id == CODEC_ID_MP3) trustPacketDuration = false;
@@ -1079,12 +1079,12 @@ ComponentResult import_with_idle(ff_global_ptr storage, long inFlags, long *outF
 		if(idling && framesProcessed >= minFrames && availableSize > 0 && availableSize < storage->dataSize) {
 			margin = availableSize - (packet.pos + packet.size);
 			if(margin < (storage->largestPacketSize * 8)) { // 8x fudge factor for comfortable margin, could be tweaked.
-				av_free_packet(&packet);
+				av_packet_unref(&packet);
 				break;
 			}
 		}
 
-		av_free_packet(&packet);
+		av_packet_unref(&packet);
 
 		//stop processing if we've hit the max frame limit
 		if(maxFrames > 0 && framesProcessed >= maxFrames)

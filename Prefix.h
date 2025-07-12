@@ -23,4 +23,11 @@
 #import <Foundation/Foundation.h>
 #endif
 
+// Fix for double_t compatibility with modern Xcode and old SDKs
+#include <math.h>
+#ifndef double_t
+typedef double double_t;
+typedef float float_t;
+#endif
+
 #include <QuickTime/QuickTime.h>
