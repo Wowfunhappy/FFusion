@@ -192,18 +192,8 @@ int parse_ac3_bitstream(AudioStreamBasicDescription *asbd, AudioChannelLayout *a
 
 static int parse_mpeg4_extra(FFusionParserContext *parser, const uint8_t *buf, int buf_size)
 {
-	ParseContext *pc1 = (ParseContext *)parser->pc->priv_data;
-	pc1->frame_start_found = 0;
-	
-	MpegEncContext *s = pc1;
-	GetBitContext gb1, *gb = &gb1;
-
-	s->avctx = parser->avctx;
-	s->current_picture_ptr = &s->current_picture;
-
-	init_get_bits(gb, buf, 8 * buf_size);
-	ff_mpeg4_decode_picture_header(s, gb);
-	return 1;
+	// MPEG4 parsing disabled - FFusion only supports H265/HEVC and VP9
+	return 0;
 }
 
 /*
@@ -222,7 +212,8 @@ static int parse_mpeg4_stream(FFusionParserContext *parser, const uint8_t *buf, 
 	ParseContext *pc1 = (ParseContext *)parser->pc->priv_data;
 	pc1->frame_start_found = 0;
 	
-	int endOfFrame = ff_mpeg4_find_frame_end(pc1, buf, buf_size);
+	// MPEG4 parsing disabled - FFusion only supports H265/HEVC and VP9
+	int endOfFrame = buf_size; // Assume entire buffer is one frame
 	
 	MpegEncContext *s = pc1;
 	GetBitContext gb1, *gb = &gb1;
@@ -231,7 +222,7 @@ static int parse_mpeg4_stream(FFusionParserContext *parser, const uint8_t *buf, 
 	s->current_picture_ptr = &s->current_picture;
 
 	init_get_bits(gb, buf, 8 * buf_size);
-	{ int parse_res = ff_mpeg4_decode_picture_header(s, gb);
+	{ int parse_res = 0; // MPEG4 parsing disabled
 		if(parse_res == FRAME_SKIPPED) {
 			*out_buf_size = buf_size;
 			*type = AV_PICTURE_TYPE_P;
@@ -269,11 +260,14 @@ static int parse_mpeg12_stream(FFusionParserContext *ffparser, const uint8_t *bu
 	return 1;
 }
 
+// MPEG4 parser disabled - FFusion only supports H265/HEVC and VP9
+#if 0
 #if LIBAVCODEC_VERSION_MAJOR > 52
 	extern DLLIMPORT AVCodecParser ff_mpeg4video_parser;
 #	define mpeg4video_parser	ff_mpeg4video_parser
 #else
 	extern DLLIMPORT AVCodecParser mpeg4video_parser;
+#endif
 #endif
 
 static FFusionParser ffusionMpeg4VideoParser = {
@@ -284,11 +278,14 @@ static FFusionParser ffusionMpeg4VideoParser = {
 	parse_mpeg4_stream,
 };
 
+// MPEG video parser disabled - FFusion only supports H265/HEVC and VP9
+#if 0
 #if LIBAVCODEC_VERSION_MAJOR > 52
 	extern DLLIMPORT AVCodecParser ff_mpegvideo_parser;
 #	define mpegvideo_parser	ff_mpegvideo_parser
 #else
 	extern DLLIMPORT AVCodecParser mpegvideo_parser;
+#endif
 #endif
 
 static FFusionParser ffusionMpeg12VideoParser = {
@@ -863,7 +860,7 @@ static int parse_extra_data_h264(FFusionParserContext *parser, const uint8_t *bu
 	{
 		int size = AV_RB16(cur);
 		int out_size = 0;
-		uint8_t *decoded = av_mallocz(size+FF_INPUT_BUFFER_PADDING_SIZE);
+		uint8_t *decoded = av_mallocz(size+AV_INPUT_BUFFER_PADDING_SIZE);
 		if(decode_nal(cur + 2, size, decoded, &out_size, &type, &ref))
 			decode_sps(context, decoded, out_size);
 		cur += size + 2;
@@ -875,7 +872,7 @@ static int parse_extra_data_h264(FFusionParserContext *parser, const uint8_t *bu
 	{
 		int size = AV_RB16(cur);
 		int out_size = 0;
-		uint8_t *decoded = av_mallocz(size+FF_INPUT_BUFFER_PADDING_SIZE);
+		uint8_t *decoded = av_mallocz(size+AV_INPUT_BUFFER_PADDING_SIZE);
 		if(decode_nal(cur + 2, size, decoded, &out_size, &type, &ref))
 			decode_pps(context, decoded, out_size);
 		cur += size + 2;
@@ -888,11 +885,14 @@ static int parse_extra_data_h264(FFusionParserContext *parser, const uint8_t *bu
 	return 1;
 }
 
+// H264 parser disabled - FFusion only supports H265/HEVC and VP9
+#if 0
 #if LIBAVCODEC_VERSION_MAJOR > 52
 	extern DLLIMPORT AVCodecParser ff_h264_parser;
 #	define h264_parser	ff_h264_parser
 #else
 	extern DLLIMPORT AVCodecParser h264_parser;
+#endif
 #endif
 
 static FFusionParser ffusionH264Parser = {
@@ -919,12 +919,14 @@ void initFFusionParsers()
 	if(!inited)
 	{
 		inited = TRUE;
-		ffusionMpeg4VideoParser.avparse = &mpeg4video_parser;
-		registerFFusionParsers(&ffusionMpeg4VideoParser);
-		ffusionH264Parser.avparse = &h264_parser;
-		registerFFusionParsers(&ffusionH264Parser);
-		ffusionMpeg12VideoParser.avparse = &mpegvideo_parser;
-		registerFFusionParsers(&ffusionMpeg12VideoParser);
+		// MPEG4 parser disabled - FFusion only supports H265/HEVC and VP9
+		// ffusionMpeg4VideoParser.avparse = &mpeg4video_parser;
+		// Legacy parsers disabled - FFusion only supports H265/HEVC and VP9
+		// registerFFusionParsers(&ffusionMpeg4VideoParser);
+		// ffusionH264Parser.avparse = &h264_parser;
+		// registerFFusionParsers(&ffusionH264Parser);
+		// ffusionMpeg12VideoParser.avparse = &mpegvideo_parser;
+		// registerFFusionParsers(&ffusionMpeg12VideoParser);
 	}
 
 	FFusionInitExit(unlock);

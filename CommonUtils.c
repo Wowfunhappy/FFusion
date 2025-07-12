@@ -302,7 +302,7 @@ ComponentResult ReadESDSDescExt(Handle descExt, UInt8 **buffer, int *size)
 
 		len = readDescr(&esds, &tag);
 		if (tag == MP4DecSpecificDescrTag) {
-			*buffer = calloc(1, len + FF_INPUT_BUFFER_PADDING_SIZE);
+			*buffer = calloc(1, len + AV_INPUT_BUFFER_PADDING_SIZE);
 			if (*buffer) {
 				memcpy(*buffer, esds, len);
 				*size = len;
@@ -641,8 +641,8 @@ void FFusionInitExit(int unlock)
 void *fast_realloc_with_padding(void *ptr, unsigned int *size, unsigned int min_size)
 {
 	unsigned char *res = ptr;
-	av_fast_malloc( (void**)&res, size, min_size + FF_INPUT_BUFFER_PADDING_SIZE);
-	if (res) memset(res + min_size, 0, FF_INPUT_BUFFER_PADDING_SIZE);
+	av_fast_malloc( (void**)&res, size, min_size + AV_INPUT_BUFFER_PADDING_SIZE);
+	if (res) memset(res + min_size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
 	return res;
 }
 

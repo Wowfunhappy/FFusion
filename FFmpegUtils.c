@@ -97,7 +97,7 @@ static int FFusionLockMgrCallback(void **mutex, enum AVLockOp op)
 		register_avcodec(&x##_encoder); }
 #define REGISTER_DECODER(x) { \
 	extern DLLIMPORT AVCodec x##_decoder; \
-		avcodec_register(&x##_decoder); }
+		/* avcodec_register deprecated in FFmpeg 4.x+ */ }
 #define REGISTER_ENCDEC(x)  REGISTER_ENCODER(x); REGISTER_DECODER(x)
 
 #define REGISTER_PARSER(x) { \
@@ -130,10 +130,13 @@ void FFInitFFmpeg()
 		av_lockmgr_register(FFusionLockMgrCallback);
 		
 		// Register only H265/HEVC and VP9 decoders
+		// Note: avcodec_register_all() is deprecated in FFmpeg 4.x+
+		// Codecs are automatically registered
+#if LIBAVCODEC_VERSION_MAJOR < 58
 		REGISTER_DECODER(ff_hevc);
 		REGISTER_DECODER(ff_vp9);
-		
 		avcodec_register_all();
+#endif
 
 		Codecprintf( stderr, "FFusion decoder using libavcodec, version %d.%d.%d (%u) / \"%s\"\n",
 					LIBAVCODEC_VERSION_MAJOR, LIBAVCODEC_VERSION_MINOR, LIBAVCODEC_VERSION_MICRO,

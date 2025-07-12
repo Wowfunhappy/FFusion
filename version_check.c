@@ -91,7 +91,7 @@ static void Y420toY422_lastrow(uint8_t *o, uint8_t *yc, uint8_t *uc, uint8_t *vc
 #	define FASTCALL
 #endif
 
-static FASTCALL void Y420toY422_sse2(AVPicture *picture, uint8_t *O, int outRB, int width, int height, unsigned long *N)
+static FASTCALL void Y420toY422_sse2(AVFrame *picture, uint8_t *O, int outRB, int width, int height, unsigned long *N)
 {
 #if 1 && ((__GNUC__ >= 4 && __GNUC_MINOR__ >= 7) || __GNUC__ > 4)
 	uint8_t	*yc = __builtin_assume_aligned(picture->data[0],16), *uc = __builtin_assume_aligned(picture->data[1], 16),
@@ -205,7 +205,7 @@ static FASTCALL void Y420toY422_sse2(AVPicture *picture, uint8_t *O, int outRB, 
 	*N += 1;
 }
 
-static FASTCALL void Y420toY422_x86_scalar(AVPicture *picture, uint8_t *O, int outRB, int width, int height, unsigned long *N)
+static FASTCALL void Y420toY422_x86_scalar(AVFrame *picture, uint8_t *O, int outRB, int width, int height, unsigned long *N)
 {
 #if 1 && ((__GNUC__ >= 4 && __GNUC_MINOR__ >= 7) || __GNUC__ > 4)
 	uint8_t	*yc = __builtin_assume_aligned(picture->data[0],16), *u = __builtin_assume_aligned(picture->data[1], 16),
@@ -368,7 +368,7 @@ int main( int argc, char *argv[] )
 #	endif
 	}
 #endif
-	{ AVPicture pict;
+	{ AVFrame pict;
 	  uint8_t *baseAddr = NULL;
 	  int width = 720, height = 576, outRB = 1440;
 	  double t;

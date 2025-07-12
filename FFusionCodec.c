@@ -55,7 +55,7 @@
 typedef struct
 {
 	AVFrame		*frame;
-	AVPicture	picture;
+	// AVPicture deprecated in FFmpeg 4.x+, use AVFrame directly
 	int		retainCount;
 	int		frameNumber;
 } FFusionBuffer;
@@ -106,7 +106,8 @@ typedef struct
     AVCodec			*avCodec;
     AVCodecContext	*avContext;
     OSType			componentType;
-	AVPicture		*lastDisplayedPicture;
+	AVFrame		*lastDisplayedPicture;
+	int			lastFrameNumber;		// frame number of lastDisplayedPicture
 	FFusionBuffer	buffers[FFUSION_MAX_BUFFERS];	// the buffers which the codec has retained
 	int				lastAllocatedBuffer;		// the index of the buffer which was last allocated
 	// by the codec (and is the latest in decode order)
@@ -383,6 +384,11 @@ pascal ComponentResult FFusionCodecClose(FFusionGlobals glob, ComponentInstance 
 		
 		FFusionDataFree(&(glob->data));
 		
+		// Clean up last displayed picture frame
+		if (glob->lastDisplayedPicture) {
+			av_frame_free(&glob->lastDisplayedPicture);
+		}
+		
         memset(glob, 0, sizeof(FFusionGlobalsRecord));
         DisposePtr((Ptr)glob);
     }
@@ -536,7 +542,7 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
         glob->avContext = avcodec_alloc_context3(glob->avCodec);
 		
 		// Use low delay
-		glob->avContext->flags |= CODEC_FLAG_LOW_DELAY;
+		glob->avContext->flags |= AV_CODEC_FLAG_LOW_DELAY;
 		
         // Image size is mandatory for video codecs
 		
@@ -561,7 +567,7 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 				imgDescExt = NewHandle(0);
 				GetImageDescriptionExtension(p->imageDescription, &imgDescExt, 'hvcC', 1);
 				
-				glob->avContext->extradata = calloc(1, GetHandleSize(imgDescExt) + FF_INPUT_BUFFER_PADDING_SIZE);
+				glob->avContext->extradata = calloc(1, GetHandleSize(imgDescExt) + AV_INPUT_BUFFER_PADDING_SIZE);
 				memcpy(glob->avContext->extradata, *imgDescExt, GetHandleSize(imgDescExt));
 				glob->avContext->extradata_size = GetHandleSize(imgDescExt);
 				
@@ -576,7 +582,7 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 				GetImageDescriptionExtension(p->imageDescription, &imgDescExt, 'strf', 1);
 				
 				if (GetHandleSize(imgDescExt) - 40 > 0) {
-					glob->avContext->extradata = calloc(1, GetHandleSize(imgDescExt) - 40 + FF_INPUT_BUFFER_PADDING_SIZE);
+					glob->avContext->extradata = calloc(1, GetHandleSize(imgDescExt) - 40 + AV_INPUT_BUFFER_PADDING_SIZE);
 					memcpy(glob->avContext->extradata, *imgDescExt + 40, GetHandleSize(imgDescExt) - 40);
 					glob->avContext->extradata_size = GetHandleSize(imgDescExt) - 40;
 				}
@@ -590,12 +596,10 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 		//						   not(glob->isFrameDroppingEnabled) );
 		
 		
-		// some hooks into ffmpeg's buffer allocation to get frames in
-		// decode order without delay more easily
+		// Let FFmpeg 4.x handle buffer management natively
 		glob->avContext->opaque = glob;
-		//glob->avContext->get_buffer = FFusionGetBuffer;
-		glob->avContext->get_buffer2 = FFusionGetBuffer;
-		//glob->avContext->release_buffer = FFusionReleaseBuffer;
+		// Disable custom buffer management - FFmpeg 4.x handles this better
+		// glob->avContext->get_buffer2 = FFusionGetBuffer;
 		
 		// multi-slice decoding
 		SetupMultithreadedDecoding(glob->avContext, codecID);
@@ -748,14 +752,9 @@ pascal ComponentResult FFusionCodecBeginBand(FFusionGlobals glob, CodecDecompres
 	
 	if(myDrp->decoded)
 	{
-		int i;
 		myDrp->frameNumber = p->frameNumber;
-		for (i = 0; i < FFUSION_MAX_BUFFERS; i++) {
-			if (glob->buffers[i].retainCount && glob->buffers[i].frameNumber == myDrp->frameNumber) {
-				myDrp->buffer = retainBuffer(glob, &glob->buffers[i]);
-				break;
-			}
-		}
+		// Frame caching is handled per-DecompressRecord in DecodeBand/DrawBand
+		// The complex legacy buffer tracking is not needed with FFmpeg 4.x
 		return noErr;
 	}
 	
@@ -830,12 +829,35 @@ pascal ComponentResult FFusionCodecDecodeBand(FFusionGlobals glob, ImageSubCodec
 	//asl_log(NULL, NULL, ASL_LEVEL_ERR, "About to call FFusionDecompress from FFusionCodecDecodeBand");
 	err = FFusionDecompress(glob, glob->avContext, dataPtr, myDrp->width, myDrp->height, &tempFrame, dataSize);
 	
-	// Modern codecs: straightforward buffer handling
-	myDrp->buffer = &glob->buffers[glob->lastAllocatedBuffer];
-	myDrp->buffer->frameNumber = myDrp->frameNumber;
-	retainBuffer(glob, myDrp->buffer);
-	myDrp->decoded = true;
-	glob->decode.lastFrame = myDrp->frameNumber;
+	if (err == noErr) {
+		// Store the decoded frame in this DecompressRecord's buffer
+		if (!myDrp->buffer) {
+			// Find an available buffer slot
+			int i;
+			for (i = 0; i < FFUSION_MAX_BUFFERS; i++) {
+				if (!glob->buffers[i].retainCount) {
+					myDrp->buffer = &glob->buffers[i];
+					glob->buffers[i].retainCount = 1;
+					glob->buffers[i].frameNumber = myDrp->frameNumber;
+					break;
+				}
+			}
+		}
+		
+		if (myDrp->buffer) {
+			// Store the decoded frame in the buffer
+			if (!myDrp->buffer->frame) {
+				myDrp->buffer->frame = av_frame_alloc();
+			}
+			if (myDrp->buffer->frame) {
+				av_frame_unref(myDrp->buffer->frame);
+				av_frame_ref(myDrp->buffer->frame, &tempFrame);
+			}
+		}
+		
+		myDrp->decoded = true;
+		glob->decode.lastFrame = myDrp->frameNumber;
+	}
 	av_frame_unref(&tempFrame);
 	
 	return err;
@@ -867,7 +889,7 @@ pascal ComponentResult FFusionCodecDrawBand(FFusionGlobals glob, ImageSubCodecDe
 {
     OSErr err = noErr;
     FFusionDecompressRecord *myDrp = (FFusionDecompressRecord *)drp->userDecompressRecord;
-	AVPicture *picture = NULL;
+	AVFrame *picture = NULL;
 	
 	glob->stats.type[drp->frameType].draw_calls++;
 	RecomputeMaxCounts(glob);
@@ -879,11 +901,9 @@ pascal ComponentResult FFusionCodecDrawBand(FFusionGlobals glob, ImageSubCodecDe
 		if (err) goto err;
 	}
 	
-	if (myDrp->buffer && myDrp->buffer->picture.data[0]) {
-		picture = &myDrp->buffer->picture;
-		glob->lastDisplayedPicture = picture;
-	} else if (glob->lastDisplayedPicture && glob->lastDisplayedPicture->data[0]) {
-		picture = glob->lastDisplayedPicture;
+	// Use the frame stored in this DecompressRecord's buffer
+	if (myDrp->buffer && myDrp->buffer->frame && myDrp->buffer->frame->data[0]) {
+		picture = myDrp->buffer->frame;
 	} else {
 		//Display black (no frame decoded yet)
 		
@@ -937,6 +957,7 @@ pascal ComponentResult FFusionCodecEndBand(FFusionGlobals glob, ImageSubCodecDec
 	glob->stats.type[drp->frameType].end_calls++;
 	if(buf && buf->frame) {
 		releaseBuffer(glob->avContext, buf);
+		myDrp->buffer = NULL;  // Clear the reference
 	}
 	
 	//	//asl_log(NULL, NULL, ASL_LEVEL_ERR, "%p EndBand #%d.\n", glob, myDrp->frameNumber);
@@ -987,22 +1008,25 @@ pascal ComponentResult FFusionCodecGetCodecInfo(FFusionGlobals glob, CodecInfo *
 static int FFusionGetBuffer(AVCodecContext *s, AVFrame *pic, int flags)
 {
 	FFusionGlobals glob = s->opaque;
-	int ret = avcodec_default_get_buffer2(s, pic, NULL);
+	int ret = avcodec_default_get_buffer2(s, pic, flags);
 	int i;
 	
 	if (ret >= 0) {
 		for (i = 0; i < FFUSION_MAX_BUFFERS; i++) {
 			if (!glob->buffers[i].retainCount) {
-				//asl_log(NULL, NULL, ASL_LEVEL_ERR, "%p Starting Buffer %p.\n", glob, &glob->buffers[i]);
+				//asl_log(NULL, NULL, ASL_LEVEL_ERR, "%p Starting Buffer %d.\n", glob, i);
 				pic->opaque = &glob->buffers[i];
 				glob->buffers[i].frame = pic;
-				memcpy(&glob->buffers[i].picture, pic, sizeof(AVPicture));
-				glob->buffers[i].retainCount = 0;
+				// Buffer is now in use
+				glob->buffers[i].retainCount = 1;
 				glob->lastAllocatedBuffer = i;
 				break;
-			} else {
-				
 			}
+		}
+		// Check if we've run out of buffers
+		if (i == FFUSION_MAX_BUFFERS) {
+			//asl_log(NULL, NULL, ASL_LEVEL_ERR, "%p ERROR: No buffers available!\n", glob);
+			// This is a critical error - we've run out of buffers
 		}
 	}
 	
@@ -1025,7 +1049,11 @@ static void releaseBuffer(AVCodecContext *s, FFusionBuffer *buf)
 	if(!buf->retainCount)
 	{
 		//asl_log(NULL, NULL, ASL_LEVEL_ERR, "%p Buffer gone %p #%d", glob, buf, buf->frameNumber);
-		buf->picture.data[0] = NULL;
+		// Clear the buffer for reuse
+		if (buf->frame) {
+			av_frame_free(&buf->frame);
+		}
+		buf->frameNumber = 0;
 	}
 }
 
