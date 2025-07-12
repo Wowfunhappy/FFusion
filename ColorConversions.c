@@ -637,8 +637,8 @@ int ColorConversionFindFor( ColorConversionFuncs *funcs, enum AVCodecID codecID,
 			break;
 		case AV_PIX_FMT_YUV420P10LE:
 			funcs->clear = ClearY422;
-			
-			if (ffPicture) {
+			funcs->convert = Y420_10toY422_8;
+			/*if (ffPicture) {
 				if( (((size_t)baseAddr) % 16) || (rowBytes % 16) ){
 					funcs->convert = Y420_10toY422_8;
 					Codecprintf( stderr,
@@ -654,7 +654,7 @@ int ColorConversionFindFor( ColorConversionFuncs *funcs, enum AVCodecID codecID,
 					Codecprintf( stderr, "ColorConversionFindFor(): using SSE accelerated Y420_10toY422_8 conversion" );
 				}
 			}
-			break;
+			break;*/
 		default:
 			return paramErr;
 	}
