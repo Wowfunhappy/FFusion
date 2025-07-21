@@ -261,7 +261,7 @@ static void SetupMultithreadedDecoding(AVCodecContext *s, enum AVCodecID codecID
 	if (sysctlbyname("hw.activecpu", &nthreads, &len, NULL, 0) == -1) nthreads = 1;
 
 	s->thread_count = nthreads;
-	s->thread_type  = FF_THREAD_SLICE;
+	s->thread_type  = FF_THREAD_FRAME | FF_THREAD_SLICE;
 }
 
 
@@ -553,10 +553,6 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 		if (codecID == AV_CODEC_ID_AV1) {
             // AV1 videos will flicker to black without AV_CODEC_FLAG_LOW_DELAY
             glob->avContext->flags |= AV_CODEC_FLAG_LOW_DELAY;
-			
-			// AV_CODEC_FLAG2_FAST reduces CPU performance but also hurts video quality.
-			// Because decoding AV1 is such a challenge, let's do everything we can to spare the CPU.
-			glob->avContext->flags |= AV_CODEC_FLAG2_FAST;
         }
 		
 		
