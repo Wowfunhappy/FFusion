@@ -553,6 +553,8 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
 		if (codecID == AV_CODEC_ID_AV1) {
             // AV1 videos will flicker to black without AV_CODEC_FLAG_LOW_DELAY
             glob->avContext->flags |= AV_CODEC_FLAG_LOW_DELAY;
+			
+			glob->avContext->flags |= AV_CODEC_FLAG2_FAST;
         }
 		
 		
