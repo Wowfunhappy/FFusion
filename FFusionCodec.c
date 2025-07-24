@@ -261,7 +261,7 @@ static void SetupMultithreadedDecoding(AVCodecContext *s, enum AVCodecID codecID
 	if (sysctlbyname("hw.activecpu", &nthreads, &len, NULL, 0) == -1) nthreads = 1;
 
 	s->thread_count = nthreads;
-	s->thread_type  = FF_THREAD_FRAME | FF_THREAD_SLICE;
+	s->thread_type  = FF_THREAD_SLICE;
 }
 
 
@@ -551,12 +551,11 @@ pascal ComponentResult FFusionCodecPreflight(FFusionGlobals glob, CodecDecompres
         glob->avContext = avcodec_alloc_context3(glob->avCodec);
 		
 		if (codecID == AV_CODEC_ID_AV1) {
+			glob->avCodec = avcodec_find_decoder_by_name("libdav1d");
+			
             // AV1 videos will flicker to black without AV_CODEC_FLAG_LOW_DELAY
             glob->avContext->flags |= AV_CODEC_FLAG_LOW_DELAY;
-			
-			glob->avContext->flags |= AV_CODEC_FLAG2_FAST;
         }
-		
 		
         // Image size is mandatory for video codecs
 		
