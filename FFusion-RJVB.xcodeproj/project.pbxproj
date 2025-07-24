@@ -10,10 +10,10 @@
 		AB4815642E21FBB5002DB3E3 /* libdav1d.a in Frameworks */ = {isa = PBXBuildFile; fileRef = AB4815632E21FBB5002DB3E3 /* libdav1d.a */; };
 		AB967C81269FBAE100A2E4A4 /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AB967C80269FBAE000A2E4A4 /* AudioToolbox.framework */; };
 		AB9E325326975B1E0047DE6E /* FFusion.component in CopyFiles */ = {isa = PBXBuildFile; fileRef = D67BC4B216B166FF00E26386 /* FFusion.component */; };
-		ABAC75C125B4A00E00B55ABF /* libavcodec.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 11D4EFA10A3CE8C10066D45F /* libavcodec.a */; };
-		ABAC75C325B4A00E00B55ABF /* libavformat.a in Frameworks */ = {isa = PBXBuildFile; fileRef = AB38B78225B3848700DBBE4A /* libavformat.a */; };
-		ABAC75C425B4A00E00B55ABF /* libavutil.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 11D4EFA20A3CE8C10066D45F /* libavutil.a */; };
-		ABAC75C525B4A00E00B55ABF /* libswresample.a in Frameworks */ = {isa = PBXBuildFile; fileRef = AB38B78325B3848700DBBE4A /* libswresample.a */; };
+		ABAC75C125B4A00E00B55ABF /* libavcodec.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 11D4EFA10A3CE8C10066D45F /* libavcodec.a */; settings = {ATTRIBUTES = (ForceLoad, ); }; };
+		ABAC75C325B4A00E00B55ABF /* libavformat.a in Frameworks */ = {isa = PBXBuildFile; fileRef = AB38B78225B3848700DBBE4A /* libavformat.a */; settings = {ATTRIBUTES = (ForceLoad, ); }; };
+		ABAC75C425B4A00E00B55ABF /* libavutil.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 11D4EFA20A3CE8C10066D45F /* libavutil.a */; settings = {ATTRIBUTES = (ForceLoad, ); }; };
+		ABAC75C525B4A00E00B55ABF /* libswresample.a in Frameworks */ = {isa = PBXBuildFile; fileRef = AB38B78325B3848700DBBE4A /* libswresample.a */; settings = {ATTRIBUTES = (ForceLoad, ); }; };
 		ABAFF7F325B20487005D96A4 /* VideoDecodeAcceleration.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABAFF7F225B20487005D96A4 /* VideoDecodeAcceleration.framework */; };
 		ABAFF7F525B2048C005D96A4 /* CoreVideo.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABAFF7F425B2048C005D96A4 /* CoreVideo.framework */; };
 		D61D797016BD779600F6FB18 /* version_check.c in Sources */ = {isa = PBXBuildFile; fileRef = D61D796F16BD779600F6FB18 /* version_check.c */; };
@@ -5081,6 +5081,9 @@
 				GCC_INCREASE_PRECOMPILED_HEADER_SHARING = YES;
 				GCC_OPTIMIZATION_LEVEL = fast;
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
+				LLVM_LTO = NO;
+				OTHER_CFLAGS = "-Ofast";
+				OTHER_LDFLAGS = "/Users/jonathan/Desktop/FFusion/FFmpeg/osx86/lib/libavcodec.a /Users/jonathan/Desktop/FFusion/FFmpeg/osx86/lib/libavutil.a /Users/jonathan/Desktop/FFusion/FFmpeg/osx86/lib/libavformat.a /Users/jonathan/Desktop/FFusion/FFmpeg/osx86/lib/libswresample.a";
 				GCC_PREFIX_HEADER = Prefix.h;
 				GCC_PREPROCESSOR_DEFINITIONS = DEBUG_BUILD;
 				GCC_STRICT_ALIASING = YES;
@@ -5119,6 +5122,9 @@
 				GCC_INCREASE_PRECOMPILED_HEADER_SHARING = YES;
 				GCC_OPTIMIZATION_LEVEL = fast;
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
+				LLVM_LTO = NO;
+				OTHER_CFLAGS = "-Ofast";
+				OTHER_LDFLAGS = "/Users/jonathan/Desktop/FFusion/FFmpeg/osx86/lib/libavcodec.a /Users/jonathan/Desktop/FFusion/FFmpeg/osx86/lib/libavutil.a /Users/jonathan/Desktop/FFusion/FFmpeg/osx86/lib/libavformat.a /Users/jonathan/Desktop/FFusion/FFmpeg/osx86/lib/libswresample.a";
 				GCC_PREFIX_HEADER = Prefix.h;
 				GCC_STRICT_ALIASING = YES;
 				GCC_WARN_ABOUT_DEPRECATED_FUNCTIONS = NO;
@@ -5171,13 +5177,15 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ARCHS = "$(ARCHS_STANDARD_32_BIT)";
+				CC = "/opt/local/bin/clang-mp-18";
 				COPY_PHASE_STRIP = NO;
+				CXX = "/opt/local/bin/clang++-mp-18";
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_ENABLE_FIX_AND_CONTINUE = YES;
 				GCC_MODEL_TUNING = G5;
 				GCC_OPTIMIZATION_LEVEL = 0;
-				GCC_VERSION = org.macports.compilers.gcc.4.7;
 				INSTALL_PATH = /usr/local/bin;
+				LD = "/opt/local/bin/clang-mp-18";
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
 					"\"$(SRCROOT)/FFmpeg/osx86/lib\"",
@@ -5192,7 +5200,9 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ARCHS = "$(ARCHS_STANDARD_32_BIT)";
+				CC = "/opt/local/bin/clang-mp-18";
 				COPY_PHASE_STRIP = NO;
+				CXX = "/opt/local/bin/clang++-mp-18";
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				GCC_DEBUGGING_SYMBOLS = full;
 				GCC_ENABLE_FIX_AND_CONTINUE = NO;
@@ -5201,13 +5211,13 @@
 				GCC_MODEL_TUNING = "";
 				GCC_OPTIMIZATION_LEVEL = 3;
 				GCC_PRECOMPILE_PREFIX_HEADER = NO;
-				GCC_VERSION = org.macports.compilers.gcc.4.7;
 				HEADER_SEARCH_PATHS = (
 					"FFmpeg/osx86/include/**",
 					"FFmpeg/source/**",
 					"\"$(BUILT_PRODUCTS_DIR)\"",
 				);
 				INSTALL_PATH = /usr/local/bin;
+				LD = "/opt/local/bin/clang-mp-18";
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
 					"\"$(SRCROOT)/FFmpeg/osx86/lib\"",
@@ -5224,10 +5234,12 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ARCHS = "$(ARCHS_STANDARD_32_BIT)";
+				CC = "/opt/local/bin/clang-mp-18";
+				CXX = "/opt/local/bin/clang++-mp-18";
 				GCC_ENABLE_FIX_AND_CONTINUE = YES;
 				GCC_MODEL_TUNING = G5;
-				GCC_VERSION = org.macports.compilers.gcc.4.7;
 				INSTALL_PATH = /usr/local/bin;
+				LD = "/opt/local/bin/clang-mp-18";
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
 					"\"$(SRCROOT)/FFmpeg/osx86/lib\"",
@@ -5242,12 +5254,12 @@
 			buildSettings = {
 				ARCHS = "$(ARCHS_STANDARD_32_BIT)";
 				EXPORTED_SYMBOLS_FILE = "";
-				GCC_ALTIVEC_EXTENSIONS = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu99;
-				GCC_ENABLE_OBJC_GC = unsupported;
-				GCC_FORCE_CPU_SUBTYPE_ALL = YES;
 				GCC_OPTIMIZATION_LEVEL = fast;
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
+				LLVM_LTO = NO;
+				OTHER_CFLAGS = "-Ofast";
+				OTHER_LDFLAGS = "/Users/jonathan/Desktop/FFusion/FFmpeg/osx86/lib/libavcodec.a /Users/jonathan/Desktop/FFusion/FFmpeg/osx86/lib/libavutil.a /Users/jonathan/Desktop/FFusion/FFmpeg/osx86/lib/libavformat.a /Users/jonathan/Desktop/FFusion/FFmpeg/osx86/lib/libswresample.a";
 				GCC_PREFIX_HEADER = Prefix.h;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					DEBUG_BUILD,
@@ -5299,12 +5311,7 @@
 				DEAD_CODE_STRIPPING = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				EXPORTED_SYMBOLS_FILE = "";
-				GCC_ALTIVEC_EXTENSIONS = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu99;
-				GCC_DEBUGGING_SYMBOLS = full;
-				GCC_ENABLE_OBJC_GC = unsupported;
-				GCC_ENABLE_SYMBOL_SEPARATION = NO;
-				GCC_FORCE_CPU_SUBTYPE_ALL = YES;
 				GCC_INCREASE_PRECOMPILED_HEADER_SHARING = NO;
 				GCC_OPTIMIZATION_LEVEL = fast;
 				GCC_PRECOMPILE_PREFIX_HEADER = NO;
@@ -5332,7 +5339,6 @@
 					/Users/jonathan/Desktop/FFusion/libde265,
 					/opt/local/lib,
 				);
-				OTHER_CFLAGS_i386 = "";
 				OTHER_CPLUSPLUSFLAGS = "$(OTHER_CFLAGS)";
 				OTHER_LDFLAGS = (
 					"-read_only_relocs",
@@ -5354,12 +5360,12 @@
 			buildSettings = {
 				ARCHS = "$(ARCHS_STANDARD_32_BIT)";
 				EXPORTED_SYMBOLS_FILE = "";
-				GCC_ALTIVEC_EXTENSIONS = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu99;
-				GCC_ENABLE_OBJC_GC = unsupported;
-				GCC_FORCE_CPU_SUBTYPE_ALL = YES;
 				GCC_OPTIMIZATION_LEVEL = fast;
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
+				LLVM_LTO = NO;
+				OTHER_CFLAGS = "-Ofast";
+				OTHER_LDFLAGS = "/Users/jonathan/Desktop/FFusion/FFmpeg/osx86/lib/libavcodec.a /Users/jonathan/Desktop/FFusion/FFmpeg/osx86/lib/libavutil.a /Users/jonathan/Desktop/FFusion/FFmpeg/osx86/lib/libavformat.a /Users/jonathan/Desktop/FFusion/FFmpeg/osx86/lib/libswresample.a";
 				GCC_PREFIX_HEADER = Prefix.h;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					DEBUG_BUILD,
